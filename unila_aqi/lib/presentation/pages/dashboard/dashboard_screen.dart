@@ -1,0 +1,392 @@
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:pull_to_refresh/pull_to_refresh.dart';
+import '../../../data/models/room.dart';
+import '../../../presentation/providers/room_provider.dart';
+import '../../../presentation/providers/auth_provider.dart';
+import '../../../presentation/widgets/common/drawer.dart';
+import '../../../presentation/widgets/common/building_section.dart';
+import '../../../presentation/pages/room/room_detail_screen.dart';
+import '../../../core/utils/helpers.dart';
+import '../../../core/constants/colors.dart';
+
+class DashboardScreen extends StatefulWidget {
+  final bool isAdminMode;
+  
+  const DashboardScreen({
+    super.key,
+    this.isAdminMode = false,
+  });
+
+  @override
+  State<DashboardScreen> createState() => _DashboardScreenState();
+}
+
+class _DashboardScreenState extends State<DashboardScreen> {
+  final RefreshController _refreshController = RefreshController();
+  final TextEditingController _searchController = TextEditingController();
+  
+  Timer? _autoRefreshTimer;
+  int _autoRefreshCountdown = 60;
+  bool _isMounted = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _isMounted = true;
+    
+    // Delay initialization to avoid setState during build
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_isMounted) {
+        _loadInitialData();
+        _startAutoRefresh();
+      }
+    });
+  }
+  
+  @override
+  void dispose() {
+    _isMounted = false;
+    _refreshController.dispose();
+    _searchController.dispose();
+    _autoRefreshTimer?.cancel();
+    super.dispose();
+  }
+  
+  Future<void> _loadInitialData() async {
+    if (!_isMounted) return;
+    
+    final roomProvider = Provider.of<RoomProvider>(context, listen: false);
+    await roomProvider.loadRooms();
+  }
+  
+  void _startAutoRefresh() {
+    _autoRefreshTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!_isMounted) {
+        timer.cancel();
+        return;
+      }
+      
+      // Use WidgetsBinding to schedule after build
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!_isMounted) return;
+        
+        setState(() {
+          if (_autoRefreshCountdown <= 0) {
+            _autoRefreshCountdown = 60;
+            _refreshData();
+          } else {
+            _autoRefreshCountdown--;
+          }
+        });
+      });
+    });
+  }
+  
+  Future<void> _refreshData() async {
+    if (!_isMounted) return;
+    
+    final roomProvider = Provider.of<RoomProvider>(context, listen: false);
+    await roomProvider.refresh();
+    
+    if (_isMounted) {
+      _refreshController.refreshCompleted();
+    }
+  }
+  
+  void _handleRoomTap(Room room) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => RoomDetailScreen(room: room),
+      ),
+    );
+  }
+  
+  void _handleLogout() async {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    await authProvider.logout();
+    
+    // Navigate back to mode selection
+    Navigator.pushNamedAndRemoveUntil(
+      context,
+      '/',
+      (route) => false,
+    );
+  }
+  
+  @override
+  Widget build(BuildContext context) {
+    final roomProvider = Provider.of<RoomProvider>(context);
+    
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('UNILA Air Quality Index'),
+        centerTitle: true,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _refreshData,
+            tooltip: 'Refresh',
+          ),
+          Builder(
+            builder: (context) => IconButton(
+              icon: const Icon(Icons.menu),
+              onPressed: () => Scaffold.of(context).openDrawer(),
+              tooltip: 'Menu',
+            ),
+          ),
+        ],
+      ),
+      drawer: AppDrawer(
+        isAdmin: widget.isAdminMode,
+        onDashboardTap: () => Navigator.pop(context),
+        onBuildingsTap: () {
+          // TODO: Navigate to building management
+          Helpers.showSnackBar(context, 'Building management coming soon!');
+        },
+        onRoomsTap: () {
+          // TODO: Navigate to room management
+          Helpers.showSnackBar(context, 'Room management coming soon!');
+        },
+        onDevicesTap: () {
+          // TODO: Navigate to IoT management
+          Helpers.showSnackBar(context, 'IoT management coming soon!');
+        },
+        onProfileTap: () {
+          // TODO: Navigate to profile management
+          Helpers.showSnackBar(context, 'Profile management coming soon!');
+        },
+        onLogoutTap: _handleLogout,
+      ),
+      body: SmartRefresher(
+        controller: _refreshController,
+        onRefresh: _refreshData,
+        header: const WaterDropHeader(
+          waterDropColor: AppColors.primary,
+        ),
+        child: CustomScrollView(
+          slivers: [
+            // Search and Filter Section
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  children: [
+                    // Search Bar
+                    TextField(
+                      controller: _searchController,
+                      decoration: InputDecoration(
+                        hintText: '🔍 Search...',
+                        filled: true,
+                        fillColor: Colors.white,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide.none,
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 12,
+                        ),
+                        suffixIcon: _searchController.text.isNotEmpty
+                            ? IconButton(
+                                icon: const Icon(Icons.clear),
+                                onPressed: () {
+                                  _searchController.clear();
+                                  roomProvider.updateSearchQuery('');
+                                },
+                              )
+                            : null,
+                      ),
+                      onChanged: (value) {
+                        roomProvider.updateSearchQuery(value);
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    // Filter Row
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: AppColors.border),
+                            ),
+                            child: DropdownButtonHideUnderline(
+                              child: DropdownButton<String>(
+                                value: roomProvider.selectedBuilding,
+                                isExpanded: true,
+                                icon: const Icon(Icons.arrow_drop_down),
+                                onChanged: (value) {
+                                  if (value != null) {
+                                    roomProvider.updateBuildingFilter(value);
+                                  }
+                                },
+                                items: roomProvider.buildings.map((building) {
+                                  return DropdownMenuItem(
+                                    value: building,
+                                    child: Text(building),
+                                  );
+                                }).toList(),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: AppColors.border),
+                            ),
+                            child: DropdownButtonHideUnderline(
+                              child: DropdownButton<String>(
+                                value: roomProvider.sortBy,
+                                isExpanded: true,
+                                icon: const Icon(Icons.arrow_drop_down),
+                                onChanged: (value) {
+                                  if (value != null) {
+                                    roomProvider.updateSort(value);
+                                  }
+                                },
+                                items: const [
+                                  DropdownMenuItem(
+                                    value: 'Terbaru',
+                                    child: Text('Terbaru'),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: 'A-Z',
+                                    child: Text('A-Z'),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: 'AQI Terbaik',
+                                    child: Text('AQI Terbaik'),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: 'AQI Terburuk',
+                                    child: Text('AQI Terburuk'),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            // Loading State
+            if (roomProvider.isLoading)
+              const SliverFillRemaining(
+                child: Center(
+                  child: CircularProgressIndicator(),
+                ),
+              )
+            // Error State
+            else if (roomProvider.hasError)
+              SliverFillRemaining(
+                child: Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(
+                        Icons.error_outline,
+                        size: 64,
+                        color: AppColors.error,
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Error: ${roomProvider.errorMessage}',
+                        style: const TextStyle(color: AppColors.error),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 16),
+                      ElevatedButton(
+                        onPressed: _refreshData,
+                        child: const Text('Coba Lagi'),
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            // Empty State
+            else if (roomProvider.rooms.isEmpty)
+              SliverFillRemaining(
+                child: Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(
+                        Icons.search_off,
+                        size: 64,
+                        color: Colors.grey,
+                      ),
+                      const SizedBox(height: 16),
+                      const Text(
+                        'Tidak ada ruangan ditemukan',
+                        style: TextStyle(fontSize: 16, color: Colors.grey),
+                      ),
+                      const SizedBox(height: 8),
+                      if (_searchController.text.isNotEmpty || 
+                          roomProvider.selectedBuilding != 'Semua Gedung')
+                        TextButton(
+                          onPressed: () {
+                            roomProvider.clearFilters();
+                            _searchController.clear();
+                          },
+                          child: const Text('Reset Filter'),
+                        ),
+                    ],
+                  ),
+                ),
+              )
+            // Data State - Grouped by Building
+            else
+              SliverList(
+                delegate: SliverChildBuilderDelegate(
+                  (context, index) {
+                    final buildingEntries = roomProvider.roomsByBuilding.entries.toList();
+                    final buildingName = buildingEntries[index].key;
+                    final rooms = buildingEntries[index].value;
+                    
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: BuildingSection(
+                        buildingName: buildingName,
+                        rooms: rooms,
+                        onRoomTap: _handleRoomTap,
+                      ),
+                    );
+                  },
+                  childCount: roomProvider.roomsByBuilding.length,
+                ),
+              ),
+            // Auto Refresh Indicator
+            SliverToBoxAdapter(
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                child: Center(
+                  child: Text(
+                    'Auto refresh: ${_autoRefreshCountdown}s',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
