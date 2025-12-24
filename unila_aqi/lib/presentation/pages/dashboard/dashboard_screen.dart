@@ -145,11 +145,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
         onDashboardTap: () => Navigator.pop(context),
         onBuildingsTap: () {
           // TODO: Navigate to building management
-          Helpers.showSnackBar(context, 'Building management coming soon!');
+          Navigator.pushNamed(context, '/admin/buildings');
         },
         onRoomsTap: () {
-          // TODO: Navigate to room management
-          Helpers.showSnackBar(context, 'Room management coming soon!');
+          Navigator.pushNamed(context, '/admin/rooms');
         },
         onDevicesTap: () {
           // TODO: Navigate to IoT management

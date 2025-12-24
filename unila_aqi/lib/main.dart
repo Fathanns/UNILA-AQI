@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:unila_aqi/presentation/pages/admin/building_management.dart';
+import 'package:unila_aqi/presentation/pages/admin/room_management.dart';
 import 'core/themes/app_theme.dart';
 import 'presentation/providers/auth_provider.dart';
 import 'presentation/providers/room_provider.dart';
@@ -40,6 +42,8 @@ class MyApp extends StatelessWidget {
         '/': (context) => const ModeSelectionScreen(),
         '/dashboard': (context) => const DashboardScreen(isAdminMode: false),
         '/admin-dashboard': (context) => const DashboardScreen(isAdminMode: true),
+        '/admin/buildings': (context) => const BuildingManagementScreen(),
+        '/admin/rooms': (context) => const RoomManagementScreen(),
       },
       // Enable smooth scrolling
       scrollBehavior: const MaterialScrollBehavior().copyWith(

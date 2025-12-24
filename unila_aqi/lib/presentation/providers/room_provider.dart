@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:unila_aqi/data/repositories/room_repository.dart';
 import '../../data/models/room.dart';
 import '../../core/services/api_service.dart';
 
@@ -39,20 +40,27 @@ class RoomProvider with ChangeNotifier {
   notifyListeners();
 
   try {
-    // Gunakan endpoint test yang sudah tersedia
-    final response = await _apiService.getTestRooms();
-    
-    if (response['success'] == true) {
-      final List<dynamic> data = response['data'];
-      _rooms = data.map((json) => Room.fromJson(json)).toList();
-      _applyFilters();
-    } else {
-      throw Exception('Failed to load rooms: ${response['message']}');
-    }
+    // Gunakan RoomRepository yang baru
+    final RoomRepository roomRepository = RoomRepository();
+    _rooms = await roomRepository.getRooms();
+    _applyFilters();
   } catch (e) {
     _hasError = true;
     _errorMessage = e.toString();
     print('Error loading rooms: $e');
+    
+    // Fallback ke data test jika error
+    try {
+      final response = await _apiService.getTestRooms();
+      if (response['success'] == true) {
+        final List<dynamic> data = response['data'];
+        _rooms = data.map((json) => Room.fromJson(json)).toList();
+        _applyFilters();
+        _hasError = false;
+      }
+    } catch (fallbackError) {
+      print('Fallback also failed: $fallbackError');
+    }
   } finally {
     _isLoading = false;
     notifyListeners();

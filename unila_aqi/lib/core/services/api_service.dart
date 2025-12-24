@@ -140,6 +140,39 @@ class ApiService {
     return await get('sensor-data/$roomId', queryParams: {'range': range});
   }
 
+  // API Methods untuk data historis
+Future<dynamic> getSensorDataHistory(String roomId, {String range = '24h'}) async {
+  try {
+    // Untuk sementara, return mock data karena backend belum selesai
+    // Di Phase 2 nanti akan diimplementasi dengan endpoint real
+    await Future.delayed(const Duration(seconds: 1));
+    
+    // Generate mock data
+    final now = DateTime.now();
+    final List<Map<String, dynamic>> mockData = [];
+    
+    for (int i = 0; i < 24; i++) {
+      final timestamp = now.subtract(Duration(hours: 23 - i));
+      mockData.add({
+        'timestamp': timestamp.toIso8601String(),
+        'aqi': 20 + (i * 3) + (DateTime.now().millisecond % 30),
+        'pm25': 10 + (i * 1.5) + (DateTime.now().millisecond % 10),
+        'pm10': 20 + (i * 2) + (DateTime.now().millisecond % 15),
+        'temperature': 22 + (DateTime.now().millisecond % 8).toDouble(),
+        'humidity': 50 + (DateTime.now().millisecond % 20).toDouble(),
+      });
+    }
+    
+    return {
+      'success': true,
+      'data': mockData,
+      'range': range,
+    };
+  } catch (e) {
+    throw Exception('Failed to load historical data: $e');
+  }
+}
+
   // Dispose
   void dispose() {
     _client.close();

@@ -5,6 +5,8 @@ const simulationService = require('./services/simulationService');
 const { seedSampleData } = require('./utils/seedData');
 const seedRoutes = require('./routes/seedRoutes');
 const testRoutes = require('./routes/testRoutes');
+const buildingRoutes = require('./routes/buildingRoutes');
+const roomRoutes = require('./routes/roomRoutes');
 require('dotenv').config();
 
 const User = require('./models/User');
@@ -24,6 +26,8 @@ app.use(express.json());
 app.use('/api/auth', authRoutes);
 app.use('/api/seed', seedRoutes);
 app.use('/api/test', testRoutes);
+app.use('/api/buildings', buildingRoutes);
+app.use('/api/rooms', roomRoutes);
 
 // Basic route for testing
 app.get('/', (req, res) => {

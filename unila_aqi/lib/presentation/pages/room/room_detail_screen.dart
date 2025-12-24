@@ -1,10 +1,14 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'package:unila_aqi/core/utils/date_formatter.dart';
+import 'package:unila_aqi/data/models/sensor_data.dart';
 import '../../../data/models/room.dart';
 import '../../../core/utils/helpers.dart';
 import '../../../core/constants/colors.dart';
+import '../../../core/services/api_service.dart';
 
 class RoomDetailScreen extends StatefulWidget {
   final Room room;
@@ -19,28 +23,46 @@ class RoomDetailScreen extends StatefulWidget {
 }
 
 class _RoomDetailScreenState extends State<RoomDetailScreen> {
+  final ApiService _apiService = ApiService();
+  List<SensorDataPoint> _historicalData = [];
+  bool _isLoadingHistory = false;
   String _selectedChartRange = '24h';
   Timer? _autoRefreshTimer;
   int _autoRefreshCountdown = 30;
   bool _isRefreshing = false;
   bool _isMounted = false;
+
+Future<void> _loadHistoricalData() async {
+  if (!_isMounted) return;
   
-  // Sample chart data
-  final List<FlSpot> _chartData = [
-    FlSpot(0, 25),
-    FlSpot(2, 35),
-    FlSpot(4, 40),
-    FlSpot(6, 60),
-    FlSpot(8, 75),
-    FlSpot(10, 52),
-    FlSpot(12, 45),
-    FlSpot(14, 65),
-    FlSpot(16, 80),
-    FlSpot(18, 70),
-    FlSpot(20, 55),
-    FlSpot(22, 52),
-    FlSpot(24, 50),
-  ];
+  setState(() => _isLoadingHistory = true);
+  
+  try {
+    final response = await _apiService.getSensorDataHistory(
+      widget.room.id,
+      range: _selectedChartRange,
+    );
+    
+    if (_isMounted && response['success'] == true) {
+      final List<dynamic> data = response['data'];
+      _historicalData = data.map((json) => SensorDataPoint(
+        timestamp: DateTime.parse(json['timestamp']),
+        aqi: json['aqi']?.toInt() ?? 0,
+        pm25: (json['pm25'] ?? 0).toDouble(),
+        pm10: (json['pm10'] ?? 0).toDouble(),
+        co2: (json['co2'] ?? 450).toDouble(),
+        temperature: (json['temperature'] ?? 25).toDouble(),
+        humidity: (json['humidity'] ?? 50).toDouble(),
+      )).toList();
+    }
+  } catch (e) {
+    print('Error loading historical data: $e');
+  } finally {
+    if (_isMounted) {
+      setState(() => _isLoadingHistory = false);
+    }
+  }
+}
 
   @override
   void initState() {
@@ -50,6 +72,7 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
     // Delay auto refresh start
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_isMounted) {
+        _loadHistoricalData();
         _startAutoRefresh();
       }
     });
@@ -83,6 +106,8 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
       });
     });
   }
+
+
 
   Future<void> _refreshData() async {
     if (!_isMounted) return;
@@ -153,235 +178,289 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
   }
 
   Widget _buildHealthRecommendations() {
-    final aqi = widget.room.currentAQI;
-    final aqiColor = Helpers.getAQIColor(aqi);
-    final recommendations = Helpers.getAQIHealthMessage(aqi);
-    
-    List<String> warnings = [];
-    
-    // Add specific warnings based on parameters
-    if (widget.room.currentData.pm25 > 35.4) {
-      warnings.add('PM2.5 tinggi! Gunakan masker');
-    }
-    if (widget.room.currentData.pm10 > 154) {
-      warnings.add('PM10 tinggi! Kurangi aktivitas luar');
-    }
-    if (widget.room.currentData.co2 > 1000) {
-      warnings.add('CO₂ tinggi! Perbaiki ventilasi');
-    }
-    if (widget.room.currentData.temperature > 28) {
-      warnings.add('Suhu panas');
-    }
-    if (widget.room.currentData.humidity > 70) {
-      warnings.add('Kelembaban tinggi');
-    }
-    
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.cardBackground,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(
-                Icons.health_and_safety,
-                color: aqiColor,
-                size: 20,
-              ),
-              const SizedBox(width: 8),
-              Text(
-                'REKOMENDASI & PERINGATAN:',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: aqiColor,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          // AQI Status
-          Row(
-            children: [
-              Icon(
-                Icons.info_outline,
-                color: aqiColor,
-                size: 16,
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  'AQI dalam kategori ${Helpers.getAQILabel(aqi)}',
-                  style: TextStyle(
-                    color: aqiColor,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          // Parameter Checks
-          if (widget.room.currentData.pm25 <= 12)
-            _buildCheckItem('PM2.5 dalam batas aman', true),
-          if (widget.room.currentData.pm10 <= 54)
-            _buildCheckItem('PM10 dalam batas aman', true),
-          if (widget.room.currentData.co2 <= 600)
-            _buildCheckItem('CO₂ dalam batas normal', true),
-          if (widget.room.currentData.temperature >= 22 && widget.room.currentData.temperature <= 26)
-            _buildCheckItem('Suhu ruangan ideal', true),
-          if (widget.room.currentData.humidity >= 40 && widget.room.currentData.humidity <= 60)
-            _buildCheckItem('Kelembaban ideal', true),
-          // Warnings
-          for (final warning in warnings)
-            _buildCheckItem(warning, false),
-          const SizedBox(height: 12),
-          // General Recommendation
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: AppColors.surface,
-              borderRadius: BorderRadius.circular(8),
+  final aqi = widget.room.currentAQI;
+  final aqiColor = Helpers.getAQIColor(aqi);
+  final recommendations = Helpers.getDetailedRecommendations(widget.room);
+  
+  return Container(
+    padding: const EdgeInsets.all(16),
+    decoration: BoxDecoration(
+      color: AppColors.cardBackground,
+      borderRadius: BorderRadius.circular(12),
+      border: Border.all(color: AppColors.border),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(
+              Icons.health_and_safety,
+              color: aqiColor,
+              size: 20,
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Saran:',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w600,
+            const SizedBox(width: 8),
+            Text(
+              'REKOMENDASI KESEHATAN:',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: aqiColor,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        
+        // Parameter Status
+        _buildParameterStatus(),
+        const SizedBox(height: 12),
+        
+        // Recommendations List
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: recommendations.map((rec) => _buildRecommendationItem(rec)).toList(),
+        ),
+      ],
+    ),
+  );
+}
+
+Widget _buildParameterStatus() {
+  final data = widget.room.currentData;
+  
+  return Wrap(
+    spacing: 8,
+    runSpacing: 8,
+    children: [
+      _buildStatusChip('PM2.5: ${data.pm25.toStringAsFixed(1)}', 
+          Helpers.getPM25Color(data.pm25)),
+      _buildStatusChip('PM10: ${data.pm10.toStringAsFixed(1)}', 
+          Helpers.getPM25Color(data.pm10)),
+      _buildStatusChip('CO₂: ${data.co2.round()}', 
+          Helpers.getCO2Color(data.co2)),
+      _buildStatusChip('Suhu: ${data.temperature.toStringAsFixed(1)}°C', 
+          Helpers.getTemperatureColor(data.temperature)),
+      _buildStatusChip('Lembab: ${data.humidity.round()}%', 
+          Helpers.getHumidityColor(data.humidity)),
+    ],
+  );
+}
+
+Widget _buildStatusChip(String text, Color color) {
+  return Container(
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+    decoration: BoxDecoration(
+      color: color.withOpacity(0.1),
+      borderRadius: BorderRadius.circular(16),
+      border: Border.all(color: color),
+    ),
+    child: Text(
+      text,
+      style: TextStyle(
+        fontSize: 11,
+        color: color,
+        fontWeight: FontWeight.w500,
+      ),
+    ),
+  );
+}
+
+Widget _buildRecommendationItem(String text) {
+  return Padding(
+    padding: const EdgeInsets.only(bottom: 8),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Icon(
+          Icons.arrow_right,
+          size: 16,
+          color: Colors.grey,
+        ),
+        const SizedBox(width: 4),
+        Expanded(
+          child: Text(
+            text,
+            style: const TextStyle(fontSize: 14),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+  // Widget _buildCheckItem(String text, bool isGood) {
+  //   return Padding(
+  //     padding: const EdgeInsets.only(bottom: 6),
+  //     child: Row(
+  //       children: [
+  //         Icon(
+  //           isGood ? Icons.check_circle : Icons.warning,
+  //           color: isGood ? AppColors.success : AppColors.warning,
+  //           size: 16,
+  //         ),
+  //         const SizedBox(width: 8),
+  //         Expanded(
+  //           child: Text(
+  //             text,
+  //             style: TextStyle(
+  //               color: isGood ? AppColors.success : AppColors.warning,
+  //             ),
+  //           ),
+  //         ),
+  //       ],
+  //     ),
+  //   );
+  // }
+
+  Widget _buildAQIChart() {
+  if (_isLoadingHistory) {
+    return Container(
+      height: 250,
+      child: const Center(
+        child: CircularProgressIndicator(),
+      ),
+    );
+  }
+  
+  if (_historicalData.isEmpty) {
+    return Container(
+      height: 250,
+      padding: const EdgeInsets.all(16),
+      child: const Center(
+        child: Text('Tidak ada data historis tersedia'),
+      ),
+    );
+  }
+  
+  // Prepare chart data
+  final spots = _historicalData.asMap().entries.map((entry) {
+    final index = entry.key;
+    final data = entry.value;
+    return FlSpot(index.toDouble(), data.aqi.toDouble());
+  }).toList();
+  
+  // Find min and max for Y axis
+  final aqiValues = _historicalData.map((d) => d.aqi).toList();
+  final minY = (aqiValues.reduce(min) * 0.8).toDouble();
+  final maxY = (aqiValues.reduce(max) * 1.2).toDouble();
+  
+  return Container(
+    padding: const EdgeInsets.all(16),
+    decoration: BoxDecoration(
+      color: AppColors.cardBackground,
+      borderRadius: BorderRadius.circular(12),
+      border: Border.all(color: AppColors.border),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text(
+              'GRAFIK AQI:',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            Row(
+              children: ['24h', '7d', '30d'].map((range) {
+                return Padding(
+                  padding: const EdgeInsets.only(left: 8),
+                  child: ChoiceChip(
+                    label: Text(range),
+                    selected: _selectedChartRange == range,
+                    onSelected: (selected) {
+                      if (selected) {
+                        setState(() {
+                          _selectedChartRange = range;
+                          _loadHistoricalData();
+                        });
+                      }
+                    },
+                  ),
+                );
+              }).toList(),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        SizedBox(
+          height: 200,
+          child: LineChart(
+            LineChartData(
+              gridData: FlGridData(
+                show: true,
+                drawVerticalLine: false,
+                horizontalInterval: (maxY - minY) / 5,
+              ),
+              titlesData: FlTitlesData(
+                bottomTitles: AxisTitles(
+                  sideTitles: SideTitles(
+                    showTitles: true,
+                    interval: _historicalData.length > 12 ? 2 : 1,
+                    getTitlesWidget: (value, meta) {
+                      if (value.toInt() >= _historicalData.length) return const Text('');
+                      final time = _historicalData[value.toInt()].timestamp;
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Text(
+                          DateFormatter.formatChartTime(time, _selectedChartRange),
+                          style: const TextStyle(
+                            fontSize: 10,
+                            color: Colors.grey,
+                          ),
+                        ),
+                      );
+                    },
                   ),
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  recommendations,
-                  style: const TextStyle(fontSize: 14),
+                leftTitles: AxisTitles(
+                  sideTitles: SideTitles(
+                    showTitles: true,
+                    interval: (maxY - minY) / 5,
+                    getTitlesWidget: (value, meta) {
+                      return Text(
+                        value.toInt().toString(),
+                        style: const TextStyle(
+                          fontSize: 10,
+                          color: Colors.grey,
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+              ),
+              borderData: FlBorderData(show: false),
+              minX: 0,
+              maxX: _historicalData.length > 0 ? (_historicalData.length - 1).toDouble() : 1,
+              minY: minY,
+              maxY: maxY,
+              lineBarsData: [
+                LineChartBarData(
+                  spots: spots,
+                  isCurved: true,
+                  color: Helpers.getAQIColor(widget.room.currentAQI),
+                  barWidth: 3,
+                  isStrokeCapRound: true,
+                  dotData: const FlDotData(show: false),
+                  belowBarData: BarAreaData(
+                    show: true,
+                    color: Helpers.getAQIColor(widget.room.currentAQI).withOpacity(0.1),
+                  ),
                 ),
               ],
             ),
           ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildCheckItem(String text, bool isGood) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: Row(
-        children: [
-          Icon(
-            isGood ? Icons.check_circle : Icons.warning,
-            color: isGood ? AppColors.success : AppColors.warning,
-            size: 16,
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              text,
-              style: TextStyle(
-                color: isGood ? AppColors.success : AppColors.warning,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildAQIChart() {
-    final minY = _chartData.map((spot) => spot.y).reduce((a, b) => a < b ? a : b) - 10;
-    final maxY = _chartData.map((spot) => spot.y).reduce((a, b) => a > b ? a : b) + 10;
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.cardBackground,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text(
-                'GRAFIK AQI 24 JAM:',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              Row(
-                children: ['24h', '7d', '30d'].map((range) {
-                  return Padding(
-                    padding: const EdgeInsets.only(left: 8),
-                    child: ChoiceChip(
-                      label: Text(range),
-                      selected: _selectedChartRange == range,
-                      onSelected: (selected) {
-                        setState(() {
-                          _selectedChartRange = range;
-                        });
-                      },
-                    ),
-                  );
-                }).toList(),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          SizedBox(
-            height: 200,
-            child: LineChart(
-              LineChartData(
-                gridData: FlGridData(show: false),
-                titlesData: FlTitlesData(show: false),
-                borderData: FlBorderData(show: false),
-                minX: 0,
-                maxX: 24,
-                minY: minY,
-                maxY: maxY,
-                lineBarsData: [
-                  LineChartBarData(
-                    spots: _chartData,
-                    isCurved: true,
-                    color: Helpers.getAQIColor(widget.room.currentAQI),
-                    barWidth: 3,
-                    isStrokeCapRound: true,
-                    dotData: FlDotData(show: false),
-                    belowBarData: BarAreaData(
-                      show: true,
-                      color: Helpers.getAQIColor(widget.room.currentAQI).withOpacity(0.1),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: ['00', '06', '12', '18', '24'].map((hour) {
-              return Text(
-                hour,
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: AppColors.textHint,
-                ),
-              );
-            }).toList(),
-          ),
-        ],
-      ),
-    );
-  }
+        ),
+      ],
+    ),
+  );
+}
 
   @override
   Widget build(BuildContext context) {
@@ -514,13 +593,13 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
                 children: [
                   _buildParameterCard(
                     'PM2.5',
-                    '${widget.room.currentData.pm25.toStringAsFixed(1)}',
+                    widget.room.currentData.pm25.toStringAsFixed(1),
                     Helpers.getPM25Status(widget.room.currentData.pm25),
                     Helpers.getPM25Color(widget.room.currentData.pm25),
                   ),
                   _buildParameterCard(
                     'PM10',
-                    '${widget.room.currentData.pm10.toStringAsFixed(1)}',
+                    widget.room.currentData.pm10.toStringAsFixed(1),
                     Helpers.getPM25Status(widget.room.currentData.pm10),
                     Helpers.getPM25Color(widget.room.currentData.pm10),
                   ),

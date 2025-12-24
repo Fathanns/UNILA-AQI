@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:unila_aqi/data/models/room.dart';
 import '../constants/colors.dart';
 import '../constants/app_constants.dart';
 
@@ -208,4 +209,50 @@ class Helpers {
   static String colorToHex(Color color) {
     return '#${color.value.toRadixString(16).padLeft(8, '0').substring(2)}';
   }
+
+  static List<String> getDetailedRecommendations(Room room) {
+  final recommendations = <String>[];
+  final data = room.currentData;
+  
+  // AQI based recommendations
+  final aqi = room.currentAQI;
+  if (aqi > 150) {
+    recommendations.add('Hindari aktivitas di luar ruangan');
+    recommendations.add('Gunakan masker N95 jika harus keluar');
+    recommendations.add('Tutup jendela dan pintu');
+  } else if (aqi > 100) {
+    recommendations.add('Kelompok sensitif hindari aktivitas luar');
+    recommendations.add('Kurangi aktivitas fisik berat');
+  } else if (aqi > 50) {
+    recommendations.add('Kondisi udara cukup baik untuk aktivitas normal');
+  } else {
+    recommendations.add('Kondisi udara sangat baik');
+  }
+  
+  // PM2.5 specific
+  if (data.pm25 > 35.4) {
+    recommendations.add('PM2.5 tinggi: Gunakan air purifier');
+  }
+  
+  // CO2 specific
+  if (data.co2 > 1000) {
+    recommendations.add('CO₂ tinggi: Buka jendela untuk ventilasi');
+  }
+  
+  // Temperature specific
+  if (data.temperature > 28) {
+    recommendations.add('Suhu panas: Nyalakan AC atau kipas');
+  } else if (data.temperature < 22) {
+    recommendations.add('Suhu dingin: Gunakan pemanas ruangan');
+  }
+  
+  // Humidity specific
+  if (data.humidity > 70) {
+    recommendations.add('Kelembaban tinggi: Gunakan dehumidifier');
+  } else if (data.humidity < 40) {
+    recommendations.add('Kelembaban rendah: Gunakan humidifier');
+  }
+  
+  return recommendations;
+}
 }

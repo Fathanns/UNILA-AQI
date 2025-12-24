@@ -82,10 +82,10 @@ class RoomCard extends StatelessWidget {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  _buildSensorItem('PM2.5', '${room.currentData.pm25.toStringAsFixed(1)}', 
+                  _buildSensorItem('PM2.5', room.currentData.pm25.toStringAsFixed(1), 
                       Helpers.getPM25Status(room.currentData.pm25), 
                       Helpers.getPM25Color(room.currentData.pm25)),
-                  _buildSensorItem('PM10', '${room.currentData.pm10.toStringAsFixed(1)}', 
+                  _buildSensorItem('PM10', room.currentData.pm10.toStringAsFixed(1), 
                       Helpers.getPM25Status(room.currentData.pm10), 
                       Helpers.getPM25Color(room.currentData.pm10)),
                   _buildSensorItem('CO₂', '${room.currentData.co2.round()}', 
@@ -136,11 +136,11 @@ class RoomCard extends StatelessWidget {
                     color: Colors.blue.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: Row(
+                  child: const Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Icon(Icons.sensors, size: 12, color: Colors.blue),
-                      const SizedBox(width: 4),
+                      SizedBox(width: 4),
                       Text(
                         'IoT Device',
                         style: TextStyle(

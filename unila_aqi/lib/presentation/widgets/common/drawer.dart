@@ -65,7 +65,7 @@ class AppDrawer extends StatelessWidget {
           // User Info
           Container(
             padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
+            decoration: const BoxDecoration(
               color: AppColors.surface,
               border: Border(
                 bottom: BorderSide(color: AppColors.border),
@@ -164,7 +164,7 @@ class AppDrawer extends StatelessWidget {
           // Logout Button
           Container(
             padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
+            decoration: const BoxDecoration(
               border: Border(
                 top: BorderSide(color: AppColors.border),
               ),
@@ -177,7 +177,7 @@ class AppDrawer extends StatelessWidget {
                 label: const Text('LOGOUT'),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: AppColors.error,
-                  side: BorderSide(color: AppColors.error),
+                  side: const BorderSide(color: AppColors.error),
                 ),
               ),
             ),
@@ -186,7 +186,7 @@ class AppDrawer extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.all(16),
             child: Text(
-              'v2.1.0',
+              'v1.0.0',
               style: TextStyle(
                 fontSize: 12,
                 color: Colors.grey[600],
