@@ -20,28 +20,48 @@ class RoomCard extends StatelessWidget {
     
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 0),
+      elevation: 2,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Header Row
+              // Header Row - Room name and building
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Expanded(
-                    child: Text(
-                      room.name,
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w600,
-                      ),
-                      overflow: TextOverflow.ellipsis,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          room.name,
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF212529),
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          room.buildingName,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Color(0xFF6C757D),
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
                     ),
                   ),
+                  // Status indicator
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
@@ -50,9 +70,9 @@ class RoomCard extends StatelessWidget {
                       border: Border.all(color: aqiColor),
                     ),
                     child: Text(
-                      'AQI: ${room.currentAQI}',
+                      aqiLabel,
                       style: TextStyle(
-                        fontSize: 14,
+                        fontSize: 12,
                         fontWeight: FontWeight.w600,
                         color: aqiColor,
                       ),
@@ -60,98 +80,247 @@ class RoomCard extends StatelessWidget {
                   ),
                 ],
               ),
-              const SizedBox(height: 8),
-              // AQI Status
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: aqiColor,
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  aqiLabel,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 14,
-                  ),
-                ),
-              ),
+              
               const SizedBox(height: 16),
-              // Sensor Data Grid
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  _buildSensorItem('PM2.5', room.currentData.pm25.toStringAsFixed(1), 
-                      Helpers.getPM25Status(room.currentData.pm25), 
-                      Helpers.getPM25Color(room.currentData.pm25)),
-                  _buildSensorItem('PM10', room.currentData.pm10.toStringAsFixed(1), 
-                      Helpers.getPM25Status(room.currentData.pm10), 
-                      Helpers.getPM25Color(room.currentData.pm10)),
-                  _buildSensorItem('CO₂', '${room.currentData.co2.round()}', 
-                      Helpers.getCO2Status(room.currentData.co2), 
-                      Helpers.getCO2Color(room.currentData.co2)),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  _buildSensorItem('Suhu', '${room.currentData.temperature.toStringAsFixed(1)}°C', 
-                      Helpers.getTemperatureStatus(room.currentData.temperature), 
-                      Helpers.getTemperatureColor(room.currentData.temperature)),
-                  _buildSensorItem('Kelembaban', '${room.currentData.humidity.round()}%', 
-                      Helpers.getHumidityStatus(room.currentData.humidity), 
-                      Helpers.getHumidityColor(room.currentData.humidity)),
-                  Container(), // Empty for alignment
-                ],
-              ),
-              const SizedBox(height: 16),
-              // Footer
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    room.buildingName,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      color: Colors.grey,
+              
+              // AQI Large Display - CENTERED
+              Center(
+                child: Column(
+                  children: [
+                    // Large AQI number
+                    Text(
+                      room.currentAQI.toString(),
+                      style: TextStyle(
+                        fontSize: 64,
+                        fontWeight: FontWeight.w800,
+                        color: aqiColor,
+                        height: 0.9,
+                      ),
                     ),
-                  ),
-                  Text(
-                    'Update: $timeAgo',
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey,
-                    ),
-                  ),
-                ],
-              ),
-              // Data Source Indicator
-              if (room.isIot)
-                Container(
-                  margin: const EdgeInsets.only(top: 8),
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: Colors.blue.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.sensors, size: 12, color: Colors.blue),
-                      SizedBox(width: 4),
-                      Text(
-                        'IoT Device',
-                        style: TextStyle(
-                          fontSize: 10,
-                          color: Colors.blue,
-                          fontWeight: FontWeight.w500,
+                    const SizedBox(height: 4),
+                    // AQI Label
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: aqiColor,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        'INDEKS KUALITAS UDARA',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 12,
+                          letterSpacing: 0.5,
                         ),
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
+              ),
+              
+              const SizedBox(height: 20),
+              
+              // Parameter Grid - 2 rows, 3 columns
+              GridView.count(
+                physics: const NeverScrollableScrollPhysics(),
+                shrinkWrap: true,
+                crossAxisCount: 3,
+                mainAxisSpacing: 12,
+                crossAxisSpacing: 12,
+                childAspectRatio: 1.1,
+                children: [
+                  // PM2.5
+                  _buildParameterCell(
+                    label: 'PM2.5',
+                    value: '${room.currentData.pm25.toStringAsFixed(1)}',
+                    unit: 'µg/m³',
+                    status: Helpers.getPM25Status(room.currentData.pm25),
+                    color: Helpers.getPM25Color(room.currentData.pm25),
+                  ),
+                  
+                  // PM10
+                  _buildParameterCell(
+                    label: 'PM10',
+                    value: '${room.currentData.pm10.toStringAsFixed(1)}',
+                    unit: 'µg/m³',
+                    status: Helpers.getPM25Status(room.currentData.pm10),
+                    color: Helpers.getPM25Color(room.currentData.pm10),
+                  ),
+                  
+                  // CO2
+                  _buildParameterCell(
+                    label: 'CO₂',
+                    value: '${room.currentData.co2.round()}',
+                    unit: 'ppm',
+                    status: Helpers.getCO2Status(room.currentData.co2),
+                    color: Helpers.getCO2Color(room.currentData.co2),
+                  ),
+                  
+                  // Temperature
+                  _buildParameterCell(
+                    label: 'SUHU',
+                    value: '${room.currentData.temperature.toStringAsFixed(1)}',
+                    unit: '°C',
+                    status: Helpers.getTemperatureStatus(room.currentData.temperature),
+                    color: Helpers.getTemperatureColor(room.currentData.temperature),
+                  ),
+                  
+                  // Humidity
+                  _buildParameterCell(
+                    label: 'LEMBAB',
+                    value: '${room.currentData.humidity.round()}',
+                    unit: '%',
+                    status: Helpers.getHumidityStatus(room.currentData.humidity),
+                    color: Helpers.getHumidityColor(room.currentData.humidity),
+                  ),
+                  
+                  // Last Update
+                  Container(
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8F9FA),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFFE9ECEF)),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(10),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(
+                            Icons.update,
+                            size: 18,
+                            color: Color(0xFF6C757D),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Update',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w500,
+                              color: Colors.grey[700],
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            timeAgo.split(' ')[0],
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFF212529),
+                            ),
+                          ),
+                          Text(
+                            timeAgo.split(' ').sublist(1).join(' '),
+                            style: TextStyle(
+                              fontSize: 9,
+                              color: Colors.grey[600],
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              
+              const SizedBox(height: 12),
+              
+              // Footer - Data source and additional info
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  // Data source indicator
+                  if (room.isIot)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFE3F2FD),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.sensors,
+                            size: 12,
+                            color: Colors.blue[700],
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Device IoT',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.blue[700],
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  else
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF3E5F5),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.auto_awesome,
+                            size: 12,
+                            color: Colors.purple[700],
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Simulasi',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.purple[700],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  
+                  // Room status
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: room.isActive 
+                          ? const Color(0xFFE8F5E9) 
+                          : const Color(0xFFF5F5F5),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 6,
+                          height: 6,
+                          decoration: BoxDecoration(
+                            color: room.isActive ? Colors.green : Colors.grey,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          room.isActive ? 'Aktif' : 'Nonaktif',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600,
+                            color: room.isActive ? Colors.green : Colors.grey,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ],
           ),
         ),
@@ -159,41 +328,84 @@ class RoomCard extends StatelessWidget {
     );
   }
   
-  Widget _buildSensorItem(String label, String value, String status, Color color) {
-    return Column(
-      children: [
-        Text(
-          label,
-          style: const TextStyle(
-            fontSize: 12,
-            color: Colors.grey,
-          ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          value,
-          style: const TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        const SizedBox(height: 4),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-          decoration: BoxDecoration(
-            color: color.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Text(
-            status,
-            style: TextStyle(
-              fontSize: 10,
-              color: color,
-              fontWeight: FontWeight.w500,
+  Widget _buildParameterCell({
+    required String label,
+    required String value,
+    required String unit,
+    required String status,
+    required Color color,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8F9FA),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE9ECEF)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(10),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            // Label
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w600,
+                color: Colors.grey[700],
+              ),
             ),
-          ),
+            
+            const SizedBox(height: 4),
+            
+            // Value and Unit
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.baseline,
+              textBaseline: TextBaseline.alphabetic,
+              children: [
+                Text(
+                  value,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF212529),
+                  ),
+                ),
+                const SizedBox(width: 2),
+                Text(
+                  unit,
+                  style: TextStyle(
+                    fontSize: 9,
+                    color: Colors.grey[600],
+                  ),
+                ),
+              ],
+            ),
+            
+            const SizedBox(height: 6),
+            
+            // Status chip
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                status.length > 10 ? '${status.substring(0, 10)}...' : status,
+                style: TextStyle(
+                  fontSize: 9,
+                  fontWeight: FontWeight.w600,
+                  color: color,
+                ),
+                overflow: TextOverflow.ellipsis,
+                maxLines: 1,
+              ),
+            ),
+          ],
         ),
-      ],
+      ),
     );
   }
 }

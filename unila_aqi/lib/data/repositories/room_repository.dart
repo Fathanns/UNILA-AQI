@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math';
 import 'package:http/http.dart' as http;
 import '../models/room.dart';
 import '../../core/constants/app_constants.dart';
@@ -28,28 +29,48 @@ class RoomRepository {
   
   // Get all rooms
   Future<List<Room>> getRooms() async {
-    try {
-      final headers = await _getHeaders();
-      final response = await http.get(
-        Uri.parse('${AppConstants.apiBaseUrl}/rooms'),
-        headers: headers,
-      );
+  try {
+    final headers = await _getHeaders();
+    print('📡 Fetching REAL rooms from: ${AppConstants.apiBaseUrl}/rooms');
+    
+    final response = await http.get(
+      Uri.parse('${AppConstants.apiBaseUrl}/rooms'),
+      headers: headers,
+    );
+    
+    print('📊 Room API Status: ${response.statusCode}');
+    
+    if (response.statusCode == 200) {
+      final jsonResponse = jsonDecode(response.body);
+      print('✅ Room API Success: ${jsonResponse['success']}');
       
-      if (response.statusCode == 200) {
-        final jsonResponse = jsonDecode(response.body);
-        if (jsonResponse['success'] == true) {
-          final List<dynamic> data = jsonResponse['data'];
-          return data.map((json) => Room.fromJson(json)).toList();
-        } else {
-          throw Exception(jsonResponse['message'] ?? 'Failed to fetch rooms');
+      if (jsonResponse['success'] == true) {
+        final List<dynamic> data = jsonResponse['data'];
+        final rooms = data.map((json) => Room.fromJson(json)).toList();
+        
+        print('🎯 Loaded ${rooms.length} REAL rooms from database');
+        
+        // Show sample of rooms
+        if (rooms.isNotEmpty) {
+          print('📝 Sample rooms:');
+          for (int i = 0; i < min(3, rooms.length); i++) {
+            print('   ${i+1}. ${rooms[i].name} - ${rooms[i].buildingName}');
+          }
         }
+        
+        return rooms;
       } else {
-        throw Exception('Failed to fetch rooms: ${response.statusCode}');
+        throw Exception(jsonResponse['message'] ?? 'Failed to fetch rooms');
       }
-    } catch (e) {
-      rethrow;
+    } else {
+      print('❌ Room API Error: ${response.statusCode} - ${response.body}');
+      throw Exception('Failed to fetch rooms: ${response.statusCode}');
     }
+  } catch (e) {
+    print('❌ Room Repository Error: $e');
+    rethrow;
   }
+}
   
   // Get room by ID
   Future<Room> getRoomById(String id) async {

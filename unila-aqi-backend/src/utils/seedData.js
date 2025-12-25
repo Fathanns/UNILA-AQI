@@ -80,7 +80,7 @@ const seedSampleData = async () => {
       }
     }
 
-    // CREATE ROOMS
+    // CREATE ROOMS dengan buildingName yang benar
     let roomCount = 0;
     for (const roomData of sampleRooms) {
       try {
@@ -97,11 +97,11 @@ const seedSampleData = async () => {
             continue;
           }
 
-          // Gunakan insertOne untuk bypass hooks
+          // Gunakan insertOne untuk bypass hooks dengan buildingName yang benar
           const result = await Room.collection.insertOne({
             name: roomData.name,
             building: building._id,
-            buildingName: building.name,
+            buildingName: building.name, // Menggunakan nama building yang benar
             dataSource: roomData.dataSource,
             isActive: true,
             currentAQI: 0,
@@ -152,8 +152,33 @@ const clearSampleData = async () => {
   }
 };
 
+// Fungsi untuk sync building names
+const syncBuildingNames = async () => {
+  try {
+    console.log('🔄 Syncing building names in rooms...');
+    
+    const rooms = await Room.find().populate('building', 'name');
+    let updatedCount = 0;
+    
+    for (const room of rooms) {
+      if (room.building && room.buildingName !== room.building.name) {
+        room.buildingName = room.building.name;
+        await room.save();
+        updatedCount++;
+      }
+    }
+    
+    console.log(`✅ Synced building names for ${updatedCount} rooms`);
+    return { success: true, message: `Synced ${updatedCount} rooms` };
+  } catch (error) {
+    console.error('❌ Error syncing building names:', error);
+    return { success: false, message: error.message };
+  }
+};
+
 // PERHATIAN: Ekspor dengan nama yang benar!
 module.exports = {
   seedSampleData,
-  clearSampleData  // Pastikan nama ini sama dengan yang dideklarasikan
+  clearSampleData,
+  syncBuildingNames  // Tambahkan fungsi sync
 };

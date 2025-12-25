@@ -111,6 +111,9 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
       });
     }
     
+    // Simpan nama lama untuk pengecekan perubahan
+    const oldBuildingName = building.name;
+    
     // Check if new code is unique (if being changed)
     if (code && code !== building.code) {
       const existingBuilding = await Building.findOne({ code });
@@ -129,6 +132,16 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
     building.updatedAt = new Date();
     
     await building.save();
+    
+    // Jika nama gedung berubah, update semua room yang terkait
+    if (oldBuildingName !== building.name) {
+      await Room.updateMany(
+        { building: building._id },
+        { $set: { buildingName: building.name } }
+      );
+      
+      console.log(`✅ Updated building name for all rooms in ${building.name}`);
+    }
     
     res.json({
       success: true,

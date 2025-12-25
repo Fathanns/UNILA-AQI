@@ -8,6 +8,7 @@ const testRoutes = require('./routes/testRoutes');
 const buildingRoutes = require('./routes/buildingRoutes');
 const roomRoutes = require('./routes/roomRoutes');
 const iotDeviceRoutes = require('./routes/iotDeviceRoutes');
+const sensorDataRoutes = require('./routes/sensorDataRoutes');
 require('dotenv').config();
 
 const User = require('./models/User');
@@ -30,6 +31,7 @@ app.use('/api/test', testRoutes);
 app.use('/api/buildings', buildingRoutes);
 app.use('/api/rooms', roomRoutes);
 app.use('/api/iot-devices', iotDeviceRoutes);
+app.use('/api/sensor-data', sensorDataRoutes);
 
 // Basic route for testing
 app.get('/', (req, res) => {
@@ -50,6 +52,9 @@ mongoose.connect(process.env.MONGODB_URI)
     // Seed admin user
     await seedInitialAdmin();
     
+    // Sync building names in rooms
+    await syncBuildingNames();
+    
     // Seed sample buildings and rooms
     const buildingCount = await Building.countDocuments();
     if (buildingCount === 0) {
@@ -69,6 +74,32 @@ mongoose.connect(process.env.MONGODB_URI)
     const maskedUri = uri.replace(/:[^:@]*@/, ':****@');
     console.error('Connection string:', maskedUri);
   });
+
+// Function to sync building names
+async function syncBuildingNames() {
+  try {
+    console.log('🔄 Syncing building names in rooms...');
+    
+    const rooms = await Room.find().populate('building', 'name');
+    let updatedCount = 0;
+    
+    for (const room of rooms) {
+      if (room.building && room.buildingName !== room.building.name) {
+        room.buildingName = room.building.name;
+        await room.save();
+        updatedCount++;
+      }
+    }
+    
+    if (updatedCount > 0) {
+      console.log(`✅ Synced building names for ${updatedCount} rooms`);
+    } else {
+      console.log('✅ All room building names are already synced');
+    }
+  } catch (error) {
+    console.error('❌ Error syncing building names:', error.message);
+  }
+}
 
 // Start server
 const PORT = process.env.PORT || 5000;

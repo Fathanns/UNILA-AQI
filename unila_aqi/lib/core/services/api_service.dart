@@ -111,7 +111,7 @@ class ApiService {
     }
   }
 
-  // Specific API endpoints
+  // ==================== AUTH ENDPOINTS ====================
   Future<dynamic> checkAdminRegistered() async {
     return await get('auth/check-admin');
   }
@@ -124,6 +124,94 @@ class ApiService {
     });
   }
 
+  Future<dynamic> getUserProfile() async {
+    return await get('auth/profile');
+  }
+
+  // ==================== REAL DATA ENDPOINTS ====================
+  
+  // REAL: Get all buildings from database
+  Future<dynamic> getBuildings() async {
+    return await get('buildings');
+  }
+
+  // REAL: Get single building by ID
+  Future<dynamic> getBuildingById(String id) async {
+    return await get('buildings/$id');
+  }
+
+  // REAL: Create building
+  Future<dynamic> createBuilding(Map<String, dynamic> data) async {
+    return await post('buildings', data);
+  }
+
+  // REAL: Update building
+  Future<dynamic> updateBuilding(String id, Map<String, dynamic> data) async {
+    return await put('buildings/$id', data);
+  }
+
+  // REAL: Delete building
+  Future<dynamic> deleteBuilding(String id) async {
+    return await delete('buildings/$id');
+  }
+
+  // REAL: Get all rooms from database
+  Future<dynamic> getRooms() async {
+    return await get('rooms');
+  }
+
+  // REAL: Get single room by ID
+  Future<dynamic> getRoomById(String id) async {
+    return await get('rooms/$id');
+  }
+
+  // REAL: Create room
+  Future<dynamic> createRoom(Map<String, dynamic> data) async {
+    return await post('rooms', data);
+  }
+
+  // REAL: Update room
+  Future<dynamic> updateRoom(String id, Map<String, dynamic> data) async {
+    return await put('rooms/$id', data);
+  }
+
+  // REAL: Delete room
+  Future<dynamic> deleteRoom(String id) async {
+    return await delete('rooms/$id');
+  }
+
+  // REAL: Get all IoT devices
+  Future<dynamic> getIoTDevices() async {
+    return await get('iot-devices');
+  }
+
+  // REAL: Get single IoT device
+  Future<dynamic> getIoTDeviceById(String id) async {
+    return await get('iot-devices/$id');
+  }
+
+  // REAL: Create IoT device
+  Future<dynamic> createIoTDevice(Map<String, dynamic> data) async {
+    return await post('iot-devices', data);
+  }
+
+  // REAL: Update IoT device
+  Future<dynamic> updateIoTDevice(String id, Map<String, dynamic> data) async {
+    return await put('iot-devices/$id', data);
+  }
+
+  // REAL: Delete IoT device
+  Future<dynamic> deleteIoTDevice(String id) async {
+    return await delete('iot-devices/$id');
+  }
+
+  // REAL: Get sensor data for room
+  Future<dynamic> getSensorData(String roomId, {String range = '24h'}) async {
+    return await get('sensor-data/$roomId', queryParams: {'range': range});
+  }
+
+  // ==================== TEST/DEBUG ENDPOINTS ====================
+  // (Keep for debugging but not used in production)
   Future<dynamic> getTestBuildings() async {
     return await get('test/buildings');
   }
@@ -132,46 +220,22 @@ class ApiService {
     return await get('test/rooms');
   }
 
-  Future<dynamic> getRoomDetails(String roomId) async {
-    return await get('rooms/$roomId');
+  Future<dynamic> getTestStatus() async {
+    return await get('test/status');
   }
 
-  Future<dynamic> getSensorData(String roomId, {String range = '24h'}) async {
-    return await get('sensor-data/$roomId', queryParams: {'range': range});
+  // ==================== UTILITY ENDPOINTS ====================
+  Future<dynamic> seedSampleData() async {
+    return await post('seed/seed', {});
   }
 
-  // API Methods untuk data historis
-Future<dynamic> getSensorDataHistory(String roomId, {String range = '24h'}) async {
-  try {
-    // Untuk sementara, return mock data karena backend belum selesai
-    // Di Phase 2 nanti akan diimplementasi dengan endpoint real
-    await Future.delayed(const Duration(seconds: 1));
-    
-    // Generate mock data
-    final now = DateTime.now();
-    final List<Map<String, dynamic>> mockData = [];
-    
-    for (int i = 0; i < 24; i++) {
-      final timestamp = now.subtract(Duration(hours: 23 - i));
-      mockData.add({
-        'timestamp': timestamp.toIso8601String(),
-        'aqi': 20 + (i * 3) + (DateTime.now().millisecond % 30),
-        'pm25': 10 + (i * 1.5) + (DateTime.now().millisecond % 10),
-        'pm10': 20 + (i * 2) + (DateTime.now().millisecond % 15),
-        'temperature': 22 + (DateTime.now().millisecond % 8).toDouble(),
-        'humidity': 50 + (DateTime.now().millisecond % 20).toDouble(),
-      });
-    }
-    
-    return {
-      'success': true,
-      'data': mockData,
-      'range': range,
-    };
-  } catch (e) {
-    throw Exception('Failed to load historical data: $e');
+  Future<dynamic> clearSampleData() async {
+    return await post('seed/clear', {});
   }
-}
+
+  Future<dynamic> syncBuildingNames() async {
+    return await post('rooms/sync-building-names', {});
+  }
 
   // Dispose
   void dispose() {

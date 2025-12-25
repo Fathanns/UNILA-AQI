@@ -5,6 +5,7 @@ import '../../core/services/api_service.dart';
 
 class RoomProvider with ChangeNotifier {
   final ApiService _apiService = ApiService();
+  final RoomRepository _roomRepository = RoomRepository();
   
   List<Room> _rooms = [];
   List<Room> _filteredRooms = [];
@@ -28,44 +29,64 @@ class RoomProvider with ChangeNotifier {
   
   // Get unique buildings for filter
   List<String> get buildings {
-    final buildings = _rooms.map((room) => room.buildingName).toSet().toList();
-    buildings.insert(0, 'Semua Gedung');
-    return buildings;
+    final buildingSet = <String>{'Semua Gedung'};
+    
+    for (final room in _rooms) {
+      if (room.buildingName.isNotEmpty) {
+        buildingSet.add(room.buildingName);
+      }
+    }
+    
+    return buildingSet.toList();
   }
   
-  // Initialize and load rooms
+  // Initialize and load rooms - USE REAL DATA
   Future<void> loadRooms() async {
-  _isLoading = true;
-  _hasError = false;
-  notifyListeners();
-
-  try {
-    // Gunakan RoomRepository yang baru
-    final RoomRepository roomRepository = RoomRepository();
-    _rooms = await roomRepository.getRooms();
-    _applyFilters();
-  } catch (e) {
-    _hasError = true;
-    _errorMessage = e.toString();
-    print('Error loading rooms: $e');
-    
-    // Fallback ke data test jika error
-    try {
-      final response = await _apiService.getTestRooms();
-      if (response['success'] == true) {
-        final List<dynamic> data = response['data'];
-        _rooms = data.map((json) => Room.fromJson(json)).toList();
-        _applyFilters();
-        _hasError = false;
-      }
-    } catch (fallbackError) {
-      print('Fallback also failed: $fallbackError');
-    }
-  } finally {
-    _isLoading = false;
+    _isLoading = true;
+    _hasError = false;
     notifyListeners();
+
+    try {
+      print('🔄 Loading REAL rooms from database...');
+      
+      // OPTION 1: Use RoomRepository (recommended)
+      _rooms = await _roomRepository.getRooms();
+      
+      // OPTION 2: Use ApiService directly
+      // final response = await _apiService.getRooms();
+      // if (response['success'] == true) {
+      //   final List<dynamic> data = response['data'];
+      //   _rooms = data.map((json) => Room.fromJson(json)).toList();
+      // }
+      
+      _applyFilters();
+      
+      print('✅ Loaded ${_rooms.length} REAL rooms from database');
+      
+    } catch (e) {
+      _hasError = true;
+      _errorMessage = e.toString();
+      print('❌ Error loading REAL rooms: $e');
+      
+      // Fallback to test data only as last resort
+      try {
+        print('⚠️ Trying fallback to test data...');
+        final response = await _apiService.getTestRooms();
+        if (response['success'] == true) {
+          final List<dynamic> data = response['data'];
+          _rooms = data.map((json) => Room.fromJson(json)).toList();
+          _applyFilters();
+          _hasError = false;
+          print('⚠️ Loaded ${_rooms.length} rooms from TEST data (fallback)');
+        }
+      } catch (fallbackError) {
+        print('❌ Fallback also failed: $fallbackError');
+      }
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
   }
-}
   
   // Apply all filters and sorting
   void _applyFilters() {
@@ -129,10 +150,11 @@ class RoomProvider with ChangeNotifier {
     final Map<String, List<Room>> result = {};
     
     for (final room in _filteredRooms) {
-      if (!result.containsKey(room.buildingName)) {
-        result[room.buildingName] = [];
+      final buildingName = room.buildingName;
+      if (!result.containsKey(buildingName)) {
+        result[buildingName] = [];
       }
-      result[room.buildingName]!.add(room);
+      result[buildingName]!.add(room);
     }
     
     return result;
@@ -154,34 +176,15 @@ class RoomProvider with ChangeNotifier {
   
   // Get room by ID
   Room? getRoomById(String roomId) {
-    return _rooms.firstWhere((room) => room.id == roomId);
-  }
-  
-  // Update room data (for real-time updates)
-  void updateRoomData(String roomId, RoomData newData) {
-    final index = _rooms.indexWhere((room) => room.id == roomId);
-    if (index != -1) {
-      _rooms[index] = _rooms[index].copyWith(
-        currentAQI: _calculateAQI(newData.pm25),
-        currentData: newData,
-      );
-      _applyFilters();
-      notifyListeners();
+    try {
+      return _rooms.firstWhere((room) => room.id == roomId);
+    } catch (e) {
+      return null;
     }
   }
-  
-  // Simulate AQI calculation
-  int _calculateAQI(double pm25) {
-    if (pm25 <= 12) return (pm25 / 12 * 50).round();
-    if (pm25 <= 35.4) return 50 + ((pm25 - 12) / 23.4 * 50).round();
-    if (pm25 <= 55.4) return 100 + ((pm25 - 35.5) / 19.9 * 50).round();
-    if (pm25 <= 150.4) return 150 + ((pm25 - 55.5) / 94.9 * 50).round();
-    if (pm25 <= 250.4) return 200 + ((pm25 - 150.5) / 99.9 * 100).round();
-    return 300 + ((pm25 - 250.5) / 249.9 * 200).round();
-  }
+ 
 }
 
-// Extension untuk Room copyWith
 extension RoomCopyWith on Room {
   Room copyWith({
     String? id,

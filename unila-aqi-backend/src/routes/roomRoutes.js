@@ -38,6 +38,12 @@ router.get('/:id', authMiddleware, async (req, res) => {
       });
     }
     
+    // Ensure buildingName is synced with building name
+    if (room.building && room.buildingName !== room.building.name) {
+      room.buildingName = room.building.name;
+      await room.save();
+    }
+    
     res.json({
       success: true,
       data: room
@@ -110,10 +116,11 @@ router.post('/', authMiddleware, adminMiddleware, async (req, res) => {
       });
     }
     
+    // Create room with synced building name
     const room = new Room({
       name: name.trim(),
       building: buildingId,
-      buildingName: building.name,
+      buildingName: building.name, // Get building name from Building collection
       dataSource: dataSource || 'simulation',
       iotDeviceId: dataSource === 'iot' ? iotDeviceId : null,
       isActive: isActive !== undefined ? isActive : true,
@@ -183,10 +190,11 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
     
     let buildingChanged = false;
     let oldBuildingId = null;
+    let newBuilding = null;
     
     // If building is being changed
     if (buildingId && buildingId !== room.building.toString()) {
-      const newBuilding = await Building.findById(buildingId);
+      newBuilding = await Building.findById(buildingId);
       if (!newBuilding) {
         return res.status(404).json({
           success: false,
@@ -210,7 +218,7 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
       
       oldBuildingId = room.building;
       room.building = buildingId;
-      room.buildingName = newBuilding.name;
+      room.buildingName = newBuilding.name; // Update building name from new building
       buildingChanged = true;
     } else if (name && name !== room.name) {
       // Check if room name already exists in the same building
@@ -240,6 +248,14 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
     if (isActive !== undefined) room.isActive = isActive;
     room.updatedAt = new Date();
     
+    // If building didn't change, ensure buildingName is synced
+    if (!buildingChanged) {
+      const currentBuilding = await Building.findById(room.building);
+      if (currentBuilding && room.buildingName !== currentBuilding.name) {
+        room.buildingName = currentBuilding.name;
+      }
+    }
+    
     await room.save();
     
     // Update building room counts if building changed
@@ -254,10 +270,16 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
       }
       
       // Update new building count
-      const newBuilding = await Building.findById(buildingId);
       if (newBuilding) {
         newBuilding.roomCount = await Room.countDocuments({ building: buildingId });
         await newBuilding.save();
+      }
+    } else {
+      // Update current building count
+      const currentBuilding = await Building.findById(room.building);
+      if (currentBuilding) {
+        currentBuilding.roomCount = await Room.countDocuments({ building: room.building });
+        await currentBuilding.save();
       }
     }
     
@@ -306,6 +328,33 @@ router.delete('/:id', authMiddleware, adminMiddleware, async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Error deleting room',
+      error: error.message
+    });
+  }
+});
+
+// Utility endpoint: Sync all room building names
+router.post('/sync-building-names', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const rooms = await Room.find().populate('building', 'name');
+    let updatedCount = 0;
+    
+    for (const room of rooms) {
+      if (room.building && room.buildingName !== room.building.name) {
+        room.buildingName = room.building.name;
+        await room.save();
+        updatedCount++;
+      }
+    }
+    
+    res.json({
+      success: true,
+      message: `Building names synced for ${updatedCount} rooms`
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error syncing building names',
       error: error.message
     });
   }

@@ -144,17 +144,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
         isAdmin: widget.isAdminMode,
         onDashboardTap: () => Navigator.pop(context),
         onBuildingsTap: () {
-          // TODO: Navigate to building management
           Navigator.pushNamed(context, '/admin/buildings');
         },
         onRoomsTap: () {
           Navigator.pushNamed(context, '/admin/rooms');
         },
         onDevicesTap: () {
-           Navigator.pushNamed(context, '/admin/iot-devices');
+          Navigator.pushNamed(context, '/admin/iot-devices');
         },
         onProfileTap: () {
-          // TODO: Navigate to profile management
           Helpers.showSnackBar(context, 'Profile management coming soon!');
         },
         onLogoutTap: _handleLogout,
@@ -214,24 +212,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               borderRadius: BorderRadius.circular(8),
                               border: Border.all(color: AppColors.border),
                             ),
-                            child: DropdownButtonHideUnderline(
-                              child: DropdownButton<String>(
-                                value: roomProvider.selectedBuilding,
-                                isExpanded: true,
-                                icon: const Icon(Icons.arrow_drop_down),
-                                onChanged: (value) {
-                                  if (value != null) {
-                                    roomProvider.updateBuildingFilter(value);
-                                  }
-                                },
-                                items: roomProvider.buildings.map((building) {
-                                  return DropdownMenuItem(
-                                    value: building,
-                                    child: Text(building),
-                                  );
-                                }).toList(),
-                              ),
-                            ),
+                            child: _buildBuildingDropdown(roomProvider),
                           ),
                         ),
                         const SizedBox(width: 12),
@@ -243,36 +224,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               borderRadius: BorderRadius.circular(8),
                               border: Border.all(color: AppColors.border),
                             ),
-                            child: DropdownButtonHideUnderline(
-                              child: DropdownButton<String>(
-                                value: roomProvider.sortBy,
-                                isExpanded: true,
-                                icon: const Icon(Icons.arrow_drop_down),
-                                onChanged: (value) {
-                                  if (value != null) {
-                                    roomProvider.updateSort(value);
-                                  }
-                                },
-                                items: const [
-                                  DropdownMenuItem(
-                                    value: 'Terbaru',
-                                    child: Text('Terbaru'),
-                                  ),
-                                  DropdownMenuItem(
-                                    value: 'A-Z',
-                                    child: Text('A-Z'),
-                                  ),
-                                  DropdownMenuItem(
-                                    value: 'AQI Terbaik',
-                                    child: Text('AQI Terbaik'),
-                                  ),
-                                  DropdownMenuItem(
-                                    value: 'AQI Terburuk',
-                                    child: Text('AQI Terburuk'),
-                                  ),
-                                ],
-                              ),
-                            ),
+                            child: _buildSortDropdown(roomProvider),
                           ),
                         ),
                       ],
@@ -384,6 +336,72 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+  
+  Widget _buildBuildingDropdown(RoomProvider roomProvider) {
+    // Remove duplicates from building list
+    final uniqueBuildings = roomProvider.buildings.toSet().toList();
+    
+    // Log for debugging
+    if (uniqueBuildings.length != roomProvider.buildings.length) {
+      print('⚠️ Removed duplicate buildings. Original: ${roomProvider.buildings.length}, Unique: ${uniqueBuildings.length}');
+      print('Duplicates: ${roomProvider.buildings.where((building) => roomProvider.buildings.where((b) => b == building).length > 1).toSet()}');
+    }
+    
+    return DropdownButtonHideUnderline(
+      child: DropdownButton<String>(
+        value: roomProvider.selectedBuilding,
+        isExpanded: true,
+        icon: const Icon(Icons.arrow_drop_down),
+        onChanged: (value) {
+          if (value != null) {
+            roomProvider.updateBuildingFilter(value);
+          }
+        },
+        items: uniqueBuildings.map((building) {
+          return DropdownMenuItem(
+            value: building,
+            child: Text(
+              building,
+              overflow: TextOverflow.ellipsis,
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+  
+  Widget _buildSortDropdown(RoomProvider roomProvider) {
+    return DropdownButtonHideUnderline(
+      child: DropdownButton<String>(
+        value: roomProvider.sortBy,
+        isExpanded: true,
+        icon: const Icon(Icons.arrow_drop_down),
+        onChanged: (value) {
+          if (value != null) {
+            roomProvider.updateSort(value);
+          }
+        },
+        items: const [
+          DropdownMenuItem(
+            value: 'Terbaru',
+            child: Text('Terbaru'),
+          ),
+          DropdownMenuItem(
+            value: 'A-Z',
+            child: Text('A-Z'),
+          ),
+          DropdownMenuItem(
+            value: 'AQI Terbaik',
+            child: Text('AQI Terbaik'),
+          ),
+          DropdownMenuItem(
+            value: 'AQI Terburuk',
+            child: Text('AQI Terburuk'),
+          ),
+        ],
       ),
     );
   }
