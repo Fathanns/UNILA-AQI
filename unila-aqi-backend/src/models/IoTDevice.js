@@ -10,13 +10,7 @@ const iotDeviceSchema = new mongoose.Schema({
     type: String,
     trim: true
   },
-  building: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Building'
-  },
-  buildingName: {
-    type: String
-  },
+  // HAPUS field building dan buildingName
   apiEndpoint: {
     type: String,
     required: true,
@@ -43,16 +37,5 @@ const iotDeviceSchema = new mongoose.Schema({
     default: Date.now
   }
 });
-
-// KOMENTARI SEMUA HOOKS UNTUK SEKARANG
-// buildingSchema.pre('save', function(next) {
-//   this.updatedAt = Date.now();
-//   next();
-// });
-
-// buildingSchema.pre('findOneAndUpdate', function(next) {
-//   this.set({ updatedAt: Date.now() });
-//   next();
-// });
 
 module.exports = mongoose.model('IoTDevice', iotDeviceSchema);

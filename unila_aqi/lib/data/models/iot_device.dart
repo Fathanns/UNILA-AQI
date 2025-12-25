@@ -4,9 +4,7 @@ class IoTDevice {
   final String id;
   final String name;
   final String? description;
-  final String? buildingId;
-  final String? buildingName;
-  final String apiEndpoint;
+  final String apiEndpoint; // Hapus buildingId dan buildingName
   final bool isActive;
   final DateTime? lastUpdate;
   final String status; // 'online', 'offline', 'error'
@@ -17,8 +15,6 @@ class IoTDevice {
     required this.id,
     required this.name,
     this.description,
-    this.buildingId,
-    this.buildingName,
     required this.apiEndpoint,
     required this.isActive,
     this.lastUpdate,
@@ -32,11 +28,6 @@ class IoTDevice {
       id: json['_id'] ?? json['id'],
       name: json['name'],
       description: json['description'],
-      buildingId: json['building'] is String
-          ? json['building']
-          : json['building']?['_id'],
-      buildingName: json['buildingName'] ??
-          (json['building'] is Map ? json['building']['name'] : null),
       apiEndpoint: json['apiEndpoint'],
       isActive: json['isActive'] ?? true,
       lastUpdate: json['lastUpdate'] != null
@@ -53,8 +44,6 @@ class IoTDevice {
       'id': id,
       'name': name,
       'description': description,
-      'building': buildingId,
-      'buildingName': buildingName,
       'apiEndpoint': apiEndpoint,
       'isActive': isActive,
       'lastUpdate': lastUpdate?.toIso8601String(),

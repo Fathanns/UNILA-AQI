@@ -1,15 +1,12 @@
 const express = require('express');
 const router = express.Router();
 const IoTDevice = require('../models/IoTDevice');
-const Building = require('../models/Building');
 const { authMiddleware, adminMiddleware } = require('../middleware/authMiddleware');
 
 // GET all IoT devices
 router.get('/', authMiddleware, async (req, res) => {
   try {
-    const devices = await IoTDevice.find()
-      .populate('building', 'name code')
-      .sort({ name: 1 });
+    const devices = await IoTDevice.find().sort({ name: 1 });
     
     res.json({
       success: true,
@@ -28,8 +25,7 @@ router.get('/', authMiddleware, async (req, res) => {
 // GET single IoT device
 router.get('/:id', authMiddleware, async (req, res) => {
   try {
-    const device = await IoTDevice.findById(req.params.id)
-      .populate('building', 'name code');
+    const device = await IoTDevice.findById(req.params.id);
     
     if (!device) {
       return res.status(404).json({
@@ -54,7 +50,7 @@ router.get('/:id', authMiddleware, async (req, res) => {
 // POST create IoT device (admin only)
 router.post('/', authMiddleware, adminMiddleware, async (req, res) => {
   try {
-    const { name, description, buildingId, apiEndpoint, isActive } = req.body;
+    const { name, description, apiEndpoint, isActive } = req.body;
     
     // Validate required fields
     if (!name) {
@@ -81,17 +77,6 @@ router.post('/', authMiddleware, adminMiddleware, async (req, res) => {
       });
     }
     
-    let building = null;
-    if (buildingId) {
-      building = await Building.findById(buildingId);
-      if (!building) {
-        return res.status(404).json({
-          success: false,
-          message: 'Building not found'
-        });
-      }
-    }
-    
     // Check if device name already exists
     const existingDevice = await IoTDevice.findOne({ name: name.trim() });
     if (existingDevice) {
@@ -104,8 +89,6 @@ router.post('/', authMiddleware, adminMiddleware, async (req, res) => {
     const device = new IoTDevice({
       name: name.trim(),
       description: description?.trim(),
-      building: buildingId,
-      buildingName: building?.name,
       apiEndpoint: apiEndpoint.trim(),
       isActive: isActive !== undefined ? isActive : true,
       status: 'offline',
@@ -132,7 +115,7 @@ router.post('/', authMiddleware, adminMiddleware, async (req, res) => {
 // PUT update IoT device (admin only)
 router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
   try {
-    const { name, description, buildingId, apiEndpoint, isActive } = req.body;
+    const { name, description, apiEndpoint, isActive } = req.body;
     
     const device = await IoTDevice.findById(req.params.id);
     
@@ -155,17 +138,6 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
       }
     }
     
-    let building = null;
-    if (buildingId && buildingId !== device.building?.toString()) {
-      building = await Building.findById(buildingId);
-      if (!building) {
-        return res.status(404).json({
-          success: false,
-          message: 'Building not found'
-        });
-      }
-    }
-    
     // Check if new device name already exists (if changing)
     if (name && name !== device.name) {
       const existingDevice = await IoTDevice.findOne({ 
@@ -184,10 +156,6 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
     // Update fields
     if (name) device.name = name.trim();
     if (description !== undefined) device.description = description?.trim();
-    if (buildingId !== undefined) {
-      device.building = buildingId;
-      device.buildingName = building?.name;
-    }
     if (apiEndpoint) device.apiEndpoint = apiEndpoint.trim();
     if (isActive !== undefined) device.isActive = isActive;
     device.updatedAt = new Date();

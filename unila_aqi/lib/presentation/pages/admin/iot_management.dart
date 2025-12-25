@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../data/repositories/iot_device_repository.dart';
-import '../../../data/repositories/building_repository.dart';
 import '../../../data/models/iot_device.dart';
-import '../../../data/models/building.dart';
 import '../../../core/utils/helpers.dart';
 import '../../../core/constants/colors.dart';
 
@@ -15,12 +13,10 @@ class IoTManagementScreen extends StatefulWidget {
 
 class _IoTManagementScreenState extends State<IoTManagementScreen> {
   final IoTDeviceRepository _deviceRepository = IoTDeviceRepository();
-  final BuildingRepository _buildingRepository = BuildingRepository();
   final TextEditingController _searchController = TextEditingController();
   
   List<IoTDevice> _devices = [];
   List<IoTDevice> _filteredDevices = [];
-  List<Building> _buildings = [];
   bool _isLoading = false;
   bool _hasError = false;
   String _errorMessage = '';
@@ -39,12 +35,10 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
     
     try {
       final devices = await _deviceRepository.getDevices();
-      final buildings = await _buildingRepository.getBuildings();
       
       setState(() {
         _devices = devices;
         _filteredDevices = devices;
-        _buildings = buildings;
       });
     } catch (e) {
       setState(() {
@@ -64,11 +58,9 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
       final filtered = _devices.where((device) {
         final name = device.name.toLowerCase();
         final description = device.description?.toLowerCase() ?? '';
-        final building = device.buildingName?.toLowerCase() ?? '';
         final search = query.toLowerCase();
         return name.contains(search) || 
-               description.contains(search) || 
-               building.contains(search);
+               description.contains(search);
       }).toList();
       setState(() => _filteredDevices = filtered);
     }
@@ -109,7 +101,6 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
       context,
       MaterialPageRoute(
         builder: (context) => AddEditIoTDeviceScreen(
-          buildings: _buildings,
           onDeviceSaved: _loadData,
         ),
       ),
@@ -122,7 +113,6 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
       MaterialPageRoute(
         builder: (context) => AddEditIoTDeviceScreen(
           device: device,
-          buildings: _buildings,
           onDeviceSaved: _loadData,
         ),
       ),
@@ -312,17 +302,6 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
                           fontWeight: FontWeight.w600,
                         ),
                       ),
-                      if (device.buildingName != null)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 4),
-                          child: Text(
-                            'Gedung: ${device.buildingName}',
-                            style: const TextStyle(
-                              fontSize: 14,
-                              color: Colors.grey,
-                            ),
-                          ),
-                        ),
                     ],
                   ),
                 ),
@@ -442,13 +421,11 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
 
 class AddEditIoTDeviceScreen extends StatefulWidget {
   final IoTDevice? device;
-  final List<Building> buildings;
   final VoidCallback onDeviceSaved;
   
   const AddEditIoTDeviceScreen({
     super.key,
     this.device,
-    required this.buildings,
     required this.onDeviceSaved,
   });
   
@@ -465,7 +442,6 @@ class _AddEditIoTDeviceScreenState extends State<AddEditIoTDeviceScreen> {
   final _endpointController = TextEditingController();
   final IoTDeviceRepository _deviceRepository = IoTDeviceRepository();
   
-  String? _selectedBuildingId;
   bool _isActive = true;
   bool _isLoading = false;
   
@@ -479,11 +455,7 @@ class _AddEditIoTDeviceScreenState extends State<AddEditIoTDeviceScreen> {
       _nameController.text = device.name;
       _descriptionController.text = device.description ?? '';
       _endpointController.text = device.apiEndpoint;
-      _selectedBuildingId = device.buildingId;
       _isActive = device.isActive;
-    } else if (widget.buildings.isNotEmpty) {
-      // Default to first building
-      _selectedBuildingId = widget.buildings.first.id;
     }
   }
   
@@ -506,7 +478,6 @@ class _AddEditIoTDeviceScreenState extends State<AddEditIoTDeviceScreen> {
           id: widget.device!.id,
           name: _nameController.text.trim(),
           description: _descriptionController.text.trim().isEmpty ? null : _descriptionController.text.trim(),
-          buildingId: _selectedBuildingId,
           apiEndpoint: _endpointController.text.trim(),
           isActive: _isActive,
         );
@@ -515,7 +486,6 @@ class _AddEditIoTDeviceScreenState extends State<AddEditIoTDeviceScreen> {
         await _deviceRepository.createDevice(
           name: _nameController.text.trim(),
           description: _descriptionController.text.trim().isEmpty ? null : _descriptionController.text.trim(),
-          buildingId: _selectedBuildingId,
           apiEndpoint: _endpointController.text.trim(),
           isActive: _isActive,
         );
@@ -599,48 +569,6 @@ class _AddEditIoTDeviceScreenState extends State<AddEditIoTDeviceScreen> {
                   border: OutlineInputBorder(),
                 ),
                 maxLines: 2,
-              ),
-              
-              const SizedBox(height: 16),
-              
-              const Text(
-                'Gedung',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.grey.shade300),
-                ),
-                child: DropdownButtonHideUnderline(
-                  child: DropdownButton<String>(
-                    value: _selectedBuildingId,
-                    isExpanded: true,
-                    icon: const Icon(Icons.arrow_drop_down),
-                    hint: const Text('Pilih Gedung (opsional)'),
-                    onChanged: (value) {
-                      setState(() => _selectedBuildingId = value);
-                    },
-                    items: [
-                      const DropdownMenuItem(
-                        value: null,
-                        child: Text('Tidak ada'),
-                      ),
-                      ...widget.buildings.map((building) {
-                        return DropdownMenuItem(
-                          value: building.id,
-                          child: Text(building.displayName),
-                        );
-                      }),
-                    ],
-                  ),
-                ),
               ),
               
               const SizedBox(height: 16),

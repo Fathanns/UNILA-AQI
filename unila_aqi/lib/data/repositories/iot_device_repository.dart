@@ -75,11 +75,10 @@ class IoTDeviceRepository {
     }
   }
   
-  // Create device
+  // Create device - HAPUS buildingId parameter
   Future<IoTDevice> createDevice({
     required String name,
     String? description,
-    String? buildingId,
     required String apiEndpoint,
     bool isActive = true,
   }) async {
@@ -88,7 +87,6 @@ class IoTDeviceRepository {
       final body = jsonEncode({
         'name': name,
         'description': description,
-        'buildingId': buildingId,
         'apiEndpoint': apiEndpoint,
         'isActive': isActive,
       });
@@ -115,12 +113,11 @@ class IoTDeviceRepository {
     }
   }
   
-  // Update device
+  // Update device - HAPUS buildingId parameter
   Future<IoTDevice> updateDevice({
     required String id,
     required String name,
     String? description,
-    String? buildingId,
     required String apiEndpoint,
     bool isActive = true,
   }) async {
@@ -129,7 +126,6 @@ class IoTDeviceRepository {
       final body = jsonEncode({
         'name': name,
         'description': description,
-        'buildingId': buildingId,
         'apiEndpoint': apiEndpoint,
         'isActive': isActive,
       });
