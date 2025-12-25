@@ -5,6 +5,8 @@ import '../../../data/models/room.dart';
 import '../../../data/models/building.dart';
 import '../../../core/utils/helpers.dart';
 import '../../../core/constants/colors.dart';
+import '../../../data/repositories/iot_device_repository.dart';
+import '../../../data/models/iot_device.dart';
 
 class RoomManagementScreen extends StatefulWidget {
   const RoomManagementScreen({super.key});
@@ -115,6 +117,8 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
       Helpers.showSnackBar(context, 'Gagal menghapus ruangan: $e', isError: true);
     }
   }
+
+  
   
   void _navigateToAddRoom() {
     Navigator.push(
@@ -474,15 +478,19 @@ class AddEditRoomScreen extends StatefulWidget {
   State<AddEditRoomScreen> createState() => _AddEditRoomScreenState();
 }
 
+
 class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final RoomRepository _roomRepository = RoomRepository();
+  final IoTDeviceRepository _iotDeviceRepository = IoTDeviceRepository();
   
   String? _selectedBuildingId;
   String _selectedDataSource = 'simulation';
+  String? _selectedIotDeviceId;
   bool _isActive = true;
   bool _isLoading = false;
+  List<IoTDevice> _iotDevices = [];
   
   @override
   void initState() {
@@ -494,10 +502,23 @@ class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
       _nameController.text = room.name;
       _selectedBuildingId = room.buildingId;
       _selectedDataSource = room.dataSource;
+      _selectedIotDeviceId = room.iotDeviceId;
       _isActive = room.isActive;
     } else if (widget.buildings.isNotEmpty) {
       // Default to first building
       _selectedBuildingId = widget.buildings.first.id;
+    }
+    
+    // Load IoT devices
+    _loadIoTDevices();
+  }
+  
+  Future<void> _loadIoTDevices() async {
+    try {
+      final devices = await _iotDeviceRepository.getDevices();
+      setState(() => _iotDevices = devices);
+    } catch (e) {
+      print('Error loading IoT devices: $e');
     }
   }
   
@@ -514,6 +535,12 @@ class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
       return;
     }
     
+    // Validasi khusus untuk IoT data source
+    if (_selectedDataSource == 'iot' && _selectedIotDeviceId == null) {
+      Helpers.showSnackBar(context, 'Pilih device IoT terlebih dahulu', isError: true);
+      return;
+    }
+    
     setState(() => _isLoading = true);
     
     try {
@@ -523,6 +550,7 @@ class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
           name: _nameController.text.trim(),
           buildingId: _selectedBuildingId!,
           dataSource: _selectedDataSource,
+          iotDeviceId: _selectedDataSource == 'iot' ? _selectedIotDeviceId : null,
           isActive: _isActive,
         );
         Helpers.showSnackBar(context, 'Ruangan berhasil diperbarui');
@@ -531,6 +559,7 @@ class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
           name: _nameController.text.trim(),
           buildingId: _selectedBuildingId!,
           dataSource: _selectedDataSource,
+          iotDeviceId: _selectedDataSource == 'iot' ? _selectedIotDeviceId : null,
           isActive: _isActive,
         );
         Helpers.showSnackBar(context, 'Ruangan berhasil ditambahkan');
@@ -673,6 +702,61 @@ class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
                     subtitle: const Text('Data dari sensor fisik'),
                     dense: true,
                   ),
+                  
+                  // IoT Device Selection (only show if IoT is selected)
+                  if (_selectedDataSource == 'iot')
+                    Padding(
+                      padding: const EdgeInsets.only(left: 40, top: 8),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Pilih Device IoT:',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.grey.shade300),
+                            ),
+                            child: DropdownButtonHideUnderline(
+                              child: DropdownButton<String>(
+                                value: _selectedIotDeviceId,
+                                isExpanded: true,
+                                icon: const Icon(Icons.arrow_drop_down),
+                                hint: const Text('Pilih Device IoT'),
+                                onChanged: (value) {
+                                  setState(() => _selectedIotDeviceId = value);
+                                },
+                                items: _iotDevices.map((device) {
+                                  return DropdownMenuItem(
+                                    value: device.id,
+                                    child: Text(device.name),
+                                  );
+                                }).toList(),
+                              ),
+                            ),
+                          ),
+                          if (_selectedDataSource == 'iot' && _selectedIotDeviceId == null)
+                            const Padding(
+                              padding: EdgeInsets.only(top: 4),
+                              child: Text(
+                                'Device IoT wajib dipilih untuk sumber data IoT',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.red,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
                 ],
               ),
               

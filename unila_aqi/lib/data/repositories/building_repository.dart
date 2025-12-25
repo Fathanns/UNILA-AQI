@@ -8,7 +8,7 @@ class BuildingRepository {
   final StorageService _storage = StorageService();
   
   Future<String?> _getToken() async {
-    return await _storage.getString('auth_token');
+    return _storage.getString('auth_token');
   }
   
   Future<Map<String, String>> _getHeaders() async {

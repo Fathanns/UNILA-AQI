@@ -318,7 +318,7 @@ class _BuildingManagementScreenState extends State<BuildingManagementScreen> {
                   ),
                   child: Text(
                     '${building.roomCount} ruangan',
-                    style: TextStyle(
+                    style: const TextStyle(
                       fontSize: 12,
                       color: AppColors.primary,
                       fontWeight: FontWeight.w500,

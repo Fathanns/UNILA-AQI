@@ -1,10 +1,10 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
-import '../models/room.dart';
+import '../models/iot_device.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/services/storage_service.dart';
 
-class RoomRepository {
+class IoTDeviceRepository {
   final StorageService _storage = StorageService();
   
   Future<String?> _getToken() async {
@@ -26,12 +26,12 @@ class RoomRepository {
     return headers;
   }
   
-  // Get all rooms
-  Future<List<Room>> getRooms() async {
+  // Get all IoT devices
+  Future<List<IoTDevice>> getDevices() async {
     try {
       final headers = await _getHeaders();
       final response = await http.get(
-        Uri.parse('${AppConstants.apiBaseUrl}/rooms'),
+        Uri.parse('${AppConstants.apiBaseUrl}/iot-devices'),
         headers: headers,
       );
       
@@ -39,62 +39,62 @@ class RoomRepository {
         final jsonResponse = jsonDecode(response.body);
         if (jsonResponse['success'] == true) {
           final List<dynamic> data = jsonResponse['data'];
-          return data.map((json) => Room.fromJson(json)).toList();
+          return data.map((json) => IoTDevice.fromJson(json)).toList();
         } else {
-          throw Exception(jsonResponse['message'] ?? 'Failed to fetch rooms');
+          throw Exception(jsonResponse['message'] ?? 'Failed to fetch devices');
         }
       } else {
-        throw Exception('Failed to fetch rooms: ${response.statusCode}');
+        throw Exception('Failed to fetch devices: ${response.statusCode}');
       }
     } catch (e) {
       rethrow;
     }
   }
   
-  // Get room by ID
-  Future<Room> getRoomById(String id) async {
+  // Get device by ID
+  Future<IoTDevice> getDeviceById(String id) async {
     try {
       final headers = await _getHeaders();
       final response = await http.get(
-        Uri.parse('${AppConstants.apiBaseUrl}/rooms/$id'),
+        Uri.parse('${AppConstants.apiBaseUrl}/iot-devices/$id'),
         headers: headers,
       );
       
       if (response.statusCode == 200) {
         final jsonResponse = jsonDecode(response.body);
         if (jsonResponse['success'] == true) {
-          return Room.fromJson(jsonResponse['data']);
+          return IoTDevice.fromJson(jsonResponse['data']);
         } else {
-          throw Exception(jsonResponse['message'] ?? 'Failed to fetch room');
+          throw Exception(jsonResponse['message'] ?? 'Failed to fetch device');
         }
       } else {
-        throw Exception('Failed to fetch room: ${response.statusCode}');
+        throw Exception('Failed to fetch device: ${response.statusCode}');
       }
     } catch (e) {
       rethrow;
     }
   }
   
-  // Create room
-  Future<Room> createRoom({
+  // Create device
+  Future<IoTDevice> createDevice({
     required String name,
-    required String buildingId,
-    String dataSource = 'simulation',
-    String? iotDeviceId,
+    String? description,
+    String? buildingId,
+    required String apiEndpoint,
     bool isActive = true,
   }) async {
     try {
       final headers = await _getHeaders();
       final body = jsonEncode({
         'name': name,
+        'description': description,
         'buildingId': buildingId,
-        'dataSource': dataSource,
-        'iotDeviceId': iotDeviceId,
+        'apiEndpoint': apiEndpoint,
         'isActive': isActive,
       });
       
       final response = await http.post(
-        Uri.parse('${AppConstants.apiBaseUrl}/rooms'),
+        Uri.parse('${AppConstants.apiBaseUrl}/iot-devices'),
         headers: headers,
         body: body,
       );
@@ -102,40 +102,40 @@ class RoomRepository {
       if (response.statusCode == 201) {
         final jsonResponse = jsonDecode(response.body);
         if (jsonResponse['success'] == true) {
-          return Room.fromJson(jsonResponse['data']);
+          return IoTDevice.fromJson(jsonResponse['data']);
         } else {
-          throw Exception(jsonResponse['message'] ?? 'Failed to create room');
+          throw Exception(jsonResponse['message'] ?? 'Failed to create device');
         }
       } else {
         final error = jsonDecode(response.body);
-        throw Exception(error['message'] ?? 'Failed to create room');
+        throw Exception(error['message'] ?? 'Failed to create device');
       }
     } catch (e) {
       rethrow;
     }
   }
   
-  // Update room
-  Future<Room> updateRoom({
+  // Update device
+  Future<IoTDevice> updateDevice({
     required String id,
     required String name,
-    required String buildingId,
-    String dataSource = 'simulation',
-    String? iotDeviceId,
+    String? description,
+    String? buildingId,
+    required String apiEndpoint,
     bool isActive = true,
   }) async {
     try {
       final headers = await _getHeaders();
       final body = jsonEncode({
         'name': name,
+        'description': description,
         'buildingId': buildingId,
-        'dataSource': dataSource,
-        'iotDeviceId': iotDeviceId,
+        'apiEndpoint': apiEndpoint,
         'isActive': isActive,
       });
       
       final response = await http.put(
-        Uri.parse('${AppConstants.apiBaseUrl}/rooms/$id'),
+        Uri.parse('${AppConstants.apiBaseUrl}/iot-devices/$id'),
         headers: headers,
         body: body,
       );
@@ -143,31 +143,31 @@ class RoomRepository {
       if (response.statusCode == 200) {
         final jsonResponse = jsonDecode(response.body);
         if (jsonResponse['success'] == true) {
-          return Room.fromJson(jsonResponse['data']);
+          return IoTDevice.fromJson(jsonResponse['data']);
         } else {
-          throw Exception(jsonResponse['message'] ?? 'Failed to update room');
+          throw Exception(jsonResponse['message'] ?? 'Failed to update device');
         }
       } else {
         final error = jsonDecode(response.body);
-        throw Exception(error['message'] ?? 'Failed to update room');
+        throw Exception(error['message'] ?? 'Failed to update device');
       }
     } catch (e) {
       rethrow;
     }
   }
   
-  // Delete room
-  Future<void> deleteRoom(String id) async {
+  // Delete device
+  Future<void> deleteDevice(String id) async {
     try {
       final headers = await _getHeaders();
       final response = await http.delete(
-        Uri.parse('${AppConstants.apiBaseUrl}/rooms/$id'),
+        Uri.parse('${AppConstants.apiBaseUrl}/iot-devices/$id'),
         headers: headers,
       );
       
       if (response.statusCode != 200) {
         final error = jsonDecode(response.body);
-        throw Exception(error['message'] ?? 'Failed to delete room');
+        throw Exception(error['message'] ?? 'Failed to delete device');
       }
     } catch (e) {
       rethrow;

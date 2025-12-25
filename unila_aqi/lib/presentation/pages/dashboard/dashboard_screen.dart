@@ -151,8 +151,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           Navigator.pushNamed(context, '/admin/rooms');
         },
         onDevicesTap: () {
-          // TODO: Navigate to IoT management
-          Helpers.showSnackBar(context, 'IoT management coming soon!');
+           Navigator.pushNamed(context, '/admin/iot-devices');
         },
         onProfileTap: () {
           // TODO: Navigate to profile management

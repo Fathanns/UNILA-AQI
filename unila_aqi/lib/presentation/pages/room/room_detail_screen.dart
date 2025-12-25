@@ -315,9 +315,9 @@ Widget _buildRecommendationItem(String text) {
 
   Widget _buildAQIChart() {
   if (_isLoadingHistory) {
-    return Container(
+    return const SizedBox(
       height: 250,
-      child: const Center(
+      child: Center(
         child: CircularProgressIndicator(),
       ),
     );
@@ -437,7 +437,7 @@ Widget _buildRecommendationItem(String text) {
               ),
               borderData: FlBorderData(show: false),
               minX: 0,
-              maxX: _historicalData.length > 0 ? (_historicalData.length - 1).toDouble() : 1,
+              maxX: _historicalData.isNotEmpty ? (_historicalData.length - 1).toDouble() : 1,
               minY: minY,
               maxY: maxY,
               lineBarsData: [
