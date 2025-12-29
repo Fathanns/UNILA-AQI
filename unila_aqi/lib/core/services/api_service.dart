@@ -207,8 +207,38 @@ class ApiService {
 
   // REAL: Get sensor data for room
   Future<dynamic> getSensorData(String roomId, {String range = '24h'}) async {
-    return await get('sensor-data/$roomId', queryParams: {'range': range});
+  try {
+    final headers = await _getHeaders();
+    
+    final response = await http.get(
+      Uri.parse('$baseUrl/sensor-data/$roomId?range=$range'),
+      headers: headers,
+    );
+    
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body);
+    } else if (response.statusCode == 401) {
+      // Coba tanpa token
+      final publicResponse = await http.get(
+        Uri.parse('$baseUrl/sensor-data/$roomId?range=$range'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+      );
+      
+      if (publicResponse.statusCode == 200) {
+        return jsonDecode(publicResponse.body);
+      }
+      
+      throw Exception('Failed to fetch sensor data: ${publicResponse.statusCode}');
+    } else {
+      throw Exception('Failed to fetch sensor data: ${response.statusCode}');
+    }
+  } catch (e) {
+    throw Exception('Network error: $e');
   }
+}
 
   // ==================== TEST/DEBUG ENDPOINTS ====================
   // (Keep for debugging but not used in production)

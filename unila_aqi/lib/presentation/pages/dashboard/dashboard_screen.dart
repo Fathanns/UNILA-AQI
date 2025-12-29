@@ -55,12 +55,26 @@ class _DashboardScreenState extends State<DashboardScreen> {
     super.dispose();
   }
   
-  Future<void> _loadInitialData() async {
-    if (!_isMounted) return;
-    
-    final roomProvider = Provider.of<RoomProvider>(context, listen: false);
+ Future<void> _loadInitialData() async {
+  if (!_isMounted) return;
+  
+  final roomProvider = Provider.of<RoomProvider>(context, listen: false);
+  
+  try {
     await roomProvider.loadRooms();
+  } catch (e) {
+    print('❌ Error loading rooms: $e');
+    
+    // Tampilkan pesan error yang user-friendly
+    if (e.toString().contains('401') || e.toString().contains('Access denied')) {
+      Helpers.showSnackBar(
+        context, 
+        'Tidak bisa mengakses data. Silakan login sebagai admin atau hubungi administrator.',
+        isError: true
+      );
+    }
   }
+}
   
   void _startAutoRefresh() {
     _autoRefreshTimer = Timer.periodic(const Duration(seconds: 1), (timer) {

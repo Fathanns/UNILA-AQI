@@ -5,7 +5,7 @@ const Building = require('../models/Building');
 const { authMiddleware, adminMiddleware } = require('../middleware/authMiddleware');
 
 // GET all rooms
-router.get('/', authMiddleware, async (req, res) => {
+router.get('/', async (req, res) => {
   try {
     const rooms = await Room.find()
       .populate('building', 'name code')
@@ -26,7 +26,7 @@ router.get('/', authMiddleware, async (req, res) => {
 });
 
 // GET single room
-router.get('/:id', authMiddleware, async (req, res) => {
+router.get('/:id', async (req, res) => {
   try {
     const room = await Room.findById(req.params.id)
       .populate('building', 'name code');
@@ -36,12 +36,6 @@ router.get('/:id', authMiddleware, async (req, res) => {
         success: false,
         message: 'Room not found'
       });
-    }
-    
-    // Ensure buildingName is synced with building name
-    if (room.building && room.buildingName !== room.building.name) {
-      room.buildingName = room.building.name;
-      await room.save();
     }
     
     res.json({

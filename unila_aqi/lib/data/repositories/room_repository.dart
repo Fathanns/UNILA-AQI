@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:math';
 import 'package:http/http.dart' as http;
 import '../models/room.dart';
 import '../../core/constants/app_constants.dart';
@@ -30,40 +29,59 @@ class RoomRepository {
   // Get all rooms
   Future<List<Room>> getRooms() async {
   try {
+    print('📡 Fetching rooms from: ${AppConstants.apiBaseUrl}/rooms');
+    
+    // Coba dengan token terlebih dahulu (untuk admin)
     final headers = await _getHeaders();
-    print('📡 Fetching REAL rooms from: ${AppConstants.apiBaseUrl}/rooms');
+    
+    print('🔑 Using token: ${headers.containsKey('Authorization') ? 'YES' : 'NO'}');
     
     final response = await http.get(
       Uri.parse('${AppConstants.apiBaseUrl}/rooms'),
       headers: headers,
     );
     
-    print('📊 Room API Status: ${response.statusCode}');
+    print('📊 API Status: ${response.statusCode}');
     
     if (response.statusCode == 200) {
       final jsonResponse = jsonDecode(response.body);
-      print('✅ Room API Success: ${jsonResponse['success']}');
+      print('✅ API Success: ${jsonResponse['success']}');
       
       if (jsonResponse['success'] == true) {
         final List<dynamic> data = jsonResponse['data'];
         final rooms = data.map((json) => Room.fromJson(json)).toList();
         
-        print('🎯 Loaded ${rooms.length} REAL rooms from database');
-        
-        // Show sample of rooms
-        if (rooms.isNotEmpty) {
-          print('📝 Sample rooms:');
-          for (int i = 0; i < min(3, rooms.length); i++) {
-            print('   ${i+1}. ${rooms[i].name} - ${rooms[i].buildingName}');
-          }
-        }
-        
+        print('🎯 Loaded ${rooms.length} rooms');
         return rooms;
       } else {
         throw Exception(jsonResponse['message'] ?? 'Failed to fetch rooms');
       }
+    } else if (response.statusCode == 401) {
+      print('⚠️ Token invalid or expired, trying without token...');
+      
+      // Coba tanpa token (untuk user mode)
+      final publicResponse = await http.get(
+        Uri.parse('${AppConstants.apiBaseUrl}/rooms'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+      );
+      
+      if (publicResponse.statusCode == 200) {
+        final jsonResponse = jsonDecode(publicResponse.body);
+        if (jsonResponse['success'] == true) {
+          final List<dynamic> data = jsonResponse['data'];
+          final rooms = data.map((json) => Room.fromJson(json)).toList();
+          
+          print('🎯 Loaded ${rooms.length} rooms without token');
+          return rooms;
+        }
+      }
+      
+      throw Exception('Access denied. Please login as admin or try user mode.');
     } else {
-      print('❌ Room API Error: ${response.statusCode} - ${response.body}');
+      print('❌ API Error: ${response.statusCode} - ${response.body}');
       throw Exception('Failed to fetch rooms: ${response.statusCode}');
     }
   } catch (e) {

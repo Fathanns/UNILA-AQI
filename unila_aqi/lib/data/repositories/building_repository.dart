@@ -28,28 +28,53 @@ class BuildingRepository {
   
   // Get all buildings
   Future<List<Building>> getBuildings() async {
-    try {
-      final headers = await _getHeaders();
-      final response = await http.get(
+  try {
+    print('📡 Fetching buildings from: ${AppConstants.apiBaseUrl}/buildings');
+    
+    // Coba dengan token terlebih dahulu
+    final headers = await _getHeaders();
+    
+    final response = await http.get(
+      Uri.parse('${AppConstants.apiBaseUrl}/buildings'),
+      headers: headers,
+    );
+    
+    print('📊 Building API Status: ${response.statusCode}');
+    
+    if (response.statusCode == 200) {
+      final jsonResponse = jsonDecode(response.body);
+      if (jsonResponse['success'] == true) {
+        final List<dynamic> data = jsonResponse['data'];
+        return data.map((json) => Building.fromJson(json)).toList();
+      } else {
+        throw Exception(jsonResponse['message'] ?? 'Failed to fetch buildings');
+      }
+    } else if (response.statusCode == 401) {
+      // Coba tanpa token
+      final publicResponse = await http.get(
         Uri.parse('${AppConstants.apiBaseUrl}/buildings'),
-        headers: headers,
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
       );
       
-      if (response.statusCode == 200) {
-        final jsonResponse = jsonDecode(response.body);
+      if (publicResponse.statusCode == 200) {
+        final jsonResponse = jsonDecode(publicResponse.body);
         if (jsonResponse['success'] == true) {
           final List<dynamic> data = jsonResponse['data'];
           return data.map((json) => Building.fromJson(json)).toList();
-        } else {
-          throw Exception(jsonResponse['message'] ?? 'Failed to fetch buildings');
         }
-      } else {
-        throw Exception('Failed to fetch buildings: ${response.statusCode}');
       }
-    } catch (e) {
-      rethrow;
+      
+      throw Exception('Access denied for buildings');
+    } else {
+      throw Exception('Failed to fetch buildings: ${response.statusCode}');
     }
+  } catch (e) {
+    rethrow;
   }
+}
   
   // Get building by ID
   Future<Building> getBuildingById(String id) async {
