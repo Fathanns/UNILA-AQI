@@ -1,3 +1,5 @@
+// File: lib/data/repositories/building_repository.dart
+
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/building.dart';
@@ -28,53 +30,64 @@ class BuildingRepository {
   
   // Get all buildings
   Future<List<Building>> getBuildings() async {
-  try {
-    print('📡 Fetching buildings from: ${AppConstants.apiBaseUrl}/buildings');
-    
-    // Coba dengan token terlebih dahulu
-    final headers = await _getHeaders();
-    
-    final response = await http.get(
-      Uri.parse('${AppConstants.apiBaseUrl}/buildings'),
-      headers: headers,
-    );
-    
-    print('📊 Building API Status: ${response.statusCode}');
-    
-    if (response.statusCode == 200) {
-      final jsonResponse = jsonDecode(response.body);
-      if (jsonResponse['success'] == true) {
-        final List<dynamic> data = jsonResponse['data'];
-        return data.map((json) => Building.fromJson(json)).toList();
-      } else {
-        throw Exception(jsonResponse['message'] ?? 'Failed to fetch buildings');
-      }
-    } else if (response.statusCode == 401) {
-      // Coba tanpa token
-      final publicResponse = await http.get(
+    try {
+      print('📡 Fetching buildings from: ${AppConstants.apiBaseUrl}/buildings');
+      
+      final headers = await _getHeaders();
+      print('🔑 Token available: ${headers.containsKey('Authorization')}');
+      
+      final response = await http.get(
         Uri.parse('${AppConstants.apiBaseUrl}/buildings'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
+        headers: headers,
       );
       
-      if (publicResponse.statusCode == 200) {
-        final jsonResponse = jsonDecode(publicResponse.body);
+      print('📊 Response status: ${response.statusCode}');
+      // print('📄 Response body: ${response.body}');
+      
+      if (response.statusCode == 200) {
+        final jsonResponse = jsonDecode(response.body);
+        print('✅ API success: ${jsonResponse['success']}');
+        
         if (jsonResponse['success'] == true) {
           final List<dynamic> data = jsonResponse['data'];
-          return data.map((json) => Building.fromJson(json)).toList();
+          final buildings = data.map((json) => Building.fromJson(json)).toList();
+          
+          print('🎯 Loaded ${buildings.length} buildings');
+          return buildings;
+        } else {
+          throw Exception(jsonResponse['message'] ?? 'Failed to fetch buildings');
         }
+      } else if (response.statusCode == 401) {
+        // Try without token (public access)
+        print('⚠️ Token invalid, trying public access...');
+        
+        final publicResponse = await http.get(
+          Uri.parse('${AppConstants.apiBaseUrl}/buildings'),
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+          },
+        );
+        
+        if (publicResponse.statusCode == 200) {
+          final jsonResponse = jsonDecode(publicResponse.body);
+          if (jsonResponse['success'] == true) {
+            final List<dynamic> data = jsonResponse['data'];
+            return data.map((json) => Building.fromJson(json)).toList();
+          }
+        }
+        
+        throw Exception('Unauthorized. Please login.');
+      } else if (response.statusCode == 404) {
+        throw Exception('Buildings endpoint not found (404). Check backend server.');
+      } else {
+        throw Exception('Failed to fetch buildings: ${response.statusCode}');
       }
-      
-      throw Exception('Access denied for buildings');
-    } else {
-      throw Exception('Failed to fetch buildings: ${response.statusCode}');
+    } catch (e) {
+      print('❌ Building repository error: $e');
+      rethrow;
     }
-  } catch (e) {
-    rethrow;
   }
-}
   
   // Get building by ID
   Future<Building> getBuildingById(String id) async {
@@ -92,6 +105,8 @@ class BuildingRepository {
         } else {
           throw Exception(jsonResponse['message'] ?? 'Failed to fetch building');
         }
+      } else if (response.statusCode == 404) {
+        throw Exception('Building not found (404)');
       } else {
         throw Exception('Failed to fetch building: ${response.statusCode}');
       }
@@ -114,11 +129,17 @@ class BuildingRepository {
         'description': description,
       });
       
+      print('📤 Creating building: $name');
+      print('📤 Request body: $body');
+      
       final response = await http.post(
         Uri.parse('${AppConstants.apiBaseUrl}/buildings'),
         headers: headers,
         body: body,
       );
+      
+      print('📊 Create response: ${response.statusCode}');
+      print('📄 Response body: ${response.body}');
       
       if (response.statusCode == 201) {
         final jsonResponse = jsonDecode(response.body);
@@ -129,7 +150,7 @@ class BuildingRepository {
         }
       } else {
         final error = jsonDecode(response.body);
-        throw Exception(error['message'] ?? 'Failed to create building');
+        throw Exception(error['message'] ?? 'Failed to create building: ${response.statusCode}');
       }
     } catch (e) {
       rethrow;
@@ -166,7 +187,7 @@ class BuildingRepository {
         }
       } else {
         final error = jsonDecode(response.body);
-        throw Exception(error['message'] ?? 'Failed to update building');
+        throw Exception(error['message'] ?? 'Failed to update building: ${response.statusCode}');
       }
     } catch (e) {
       rethrow;
@@ -181,6 +202,9 @@ class BuildingRepository {
         Uri.parse('${AppConstants.apiBaseUrl}/buildings/$id'),
         headers: headers,
       );
+      
+      print('🗑️ Delete building response: ${response.statusCode}');
+      print('📄 Delete response body: ${response.body}');
       
       if (response.statusCode != 200) {
         final error = jsonDecode(response.body);

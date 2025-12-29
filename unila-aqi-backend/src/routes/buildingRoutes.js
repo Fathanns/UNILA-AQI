@@ -1,57 +1,32 @@
+// File: src/routes/buildingRoutes.js
+
 const express = require('express');
 const router = express.Router();
 const Building = require('../models/Building');
 const Room = require('../models/Room');
 const { authMiddleware, adminMiddleware } = require('../middleware/authMiddleware');
 
-// GET all buildings
-router.get('/:roomId', async (req, res) => {
+// GET all buildings (PUBLIC - untuk semua user)
+router.get('/', async (req, res) => {
   try {
-    const { roomId } = req.params;
-    const { range = '24h' } = req.query;
-    
-    let dateFilter = {};
-    const now = new Date();
-    
-    // Set date range
-    switch (range) {
-      case '24h':
-        dateFilter = { timestamp: { $gte: new Date(now - 24 * 60 * 60 * 1000) } };
-        break;
-      case '7d':
-        dateFilter = { timestamp: { $gte: new Date(now - 7 * 24 * 60 * 60 * 1000) } };
-        break;
-      case '30d':
-        dateFilter = { timestamp: { $gte: new Date(now - 30 * 24 * 60 * 60 * 1000) } };
-        break;
-      default:
-        dateFilter = { timestamp: { $gte: new Date(now - 24 * 60 * 60 * 1000) } };
-    }
-    
-    const sensorData = await SensorData.find({
-      roomId: roomId,
-      ...dateFilter
-    })
-    .sort({ timestamp: 1 })
-    .limit(100);
+    const buildings = await Building.find().sort({ name: 1 });
     
     res.json({
       success: true,
-      data: sensorData,
-      count: sensorData.length,
-      range: range
+      count: buildings.length,
+      data: buildings
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: 'Error fetching sensor data',
+      message: 'Error fetching buildings',
       error: error.message
     });
   }
 });
 
-// GET single building
-router.get('/:id', authMiddleware, async (req, res) => {
+// GET single building (PUBLIC - untuk semua user)
+router.get('/:id', async (req, res) => {
   try {
     const building = await Building.findById(req.params.id);
     
@@ -75,7 +50,7 @@ router.get('/:id', authMiddleware, async (req, res) => {
   }
 });
 
-// POST create building (admin only)
+// POST create building (ADMIN ONLY)
 router.post('/', authMiddleware, adminMiddleware, async (req, res) => {
   try {
     const { name, code, description } = req.body;
@@ -124,7 +99,7 @@ router.post('/', authMiddleware, adminMiddleware, async (req, res) => {
   }
 });
 
-// PUT update building (admin only)
+// PUT update building (ADMIN ONLY)
 router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
   try {
     const { name, code, description } = req.body;
@@ -137,9 +112,6 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
         message: 'Building not found'
       });
     }
-    
-    // Simpan nama lama untuk pengecekan perubahan
-    const oldBuildingName = building.name;
     
     // Check if new code is unique (if being changed)
     if (code && code !== building.code) {
@@ -160,16 +132,6 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
     
     await building.save();
     
-    // Jika nama gedung berubah, update semua room yang terkait
-    if (oldBuildingName !== building.name) {
-      await Room.updateMany(
-        { building: building._id },
-        { $set: { buildingName: building.name } }
-      );
-      
-      console.log(`✅ Updated building name for all rooms in ${building.name}`);
-    }
-    
     res.json({
       success: true,
       message: 'Building updated successfully',
@@ -184,7 +146,7 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
   }
 });
 
-// DELETE building (admin only)
+// DELETE building (ADMIN ONLY)
 router.delete('/:id', authMiddleware, adminMiddleware, async (req, res) => {
   try {
     const buildingId = req.params.id;

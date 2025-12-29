@@ -38,18 +38,33 @@ class AppDrawer extends StatelessWidget {
             child: Column(
               children: [
                 Container(
-                  width: 80,
-                  height: 80,
-                  decoration: const BoxDecoration(
-                    color: Colors.white,
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.air,
-                    size: 40,
-                    color: AppColors.primary,
-                  ),
+              width: 100,
+              height: 100,
+              decoration: BoxDecoration(
+                color: AppColors.primary,
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: AppColors.primary,
+                  width: 2,
                 ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.white,
+                    blurRadius: 1.5,
+                    offset: const Offset(1, 2),
+                  ),
+                ],
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(8.0), // Padding untuk memberi ruang
+                child: Image.asset(
+                  'assets/images/logo_unila.png',
+                  width: 104, // 120 - (8*2) = 104
+                  height: 104,
+                  fit: BoxFit.contain, // Gunakan contain agar tidak terpotong
+                ),
+              ),
+            ),
                 const SizedBox(height: 16),
                 Text(
                   'UNILA Air Quality Index',
