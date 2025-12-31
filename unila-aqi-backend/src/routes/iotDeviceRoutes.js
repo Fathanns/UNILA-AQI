@@ -257,4 +257,42 @@ router.patch('/:id/status', authMiddleware, adminMiddleware, async (req, res) =>
   }
 });
 
+router.post('/force-poll', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const iotService = require('../services/iotService');
+    const result = await iotService.forcePollAll();
+    
+    res.json({
+      success: true,
+      message: 'Force polling initiated',
+      ...result
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error forcing poll',
+      error: error.message
+    });
+  }
+});
+
+// Get IoT service status
+router.get('/service/status', authMiddleware, async (req, res) => {
+  try {
+    const iotService = require('../services/iotService');
+    const status = iotService.getStatus();
+    
+    res.json({
+      success: true,
+      data: status
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error getting service status',
+      error: error.message
+    });
+  }
+});
+
 module.exports = router;

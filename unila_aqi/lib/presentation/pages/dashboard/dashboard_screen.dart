@@ -109,6 +109,31 @@ class _DashboardScreenState extends State<DashboardScreen> {
       _refreshController.refreshCompleted();
     }
   }
+
+  Future<void> _forceRefresh() async {
+  if (!_isMounted) return;
+  
+  setState(() {
+    _autoRefreshCountdown = 0; // Trigger immediate refresh
+  });
+  
+  await _refreshData();
+  
+  // Show confirmation
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(
+      content: Row(
+        children: [
+          Icon(Icons.refresh, color: Colors.white, size: 20),
+          SizedBox(width: 8),
+          Text('Data diperbarui secara manual'),
+        ],
+      ),
+      backgroundColor: Colors.green,
+      duration: Duration(seconds: 2),
+    ),
+  );
+}
   
   void _handleRoomTap(Room room) {
     Navigator.push(
@@ -140,19 +165,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
         title: const Text('UNILA Air Quality Index'),
         centerTitle: true,
         actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _refreshData,
-            tooltip: 'Refresh',
-          ),
-          Builder(
-            builder: (context) => IconButton(
-              icon: const Icon(Icons.menu),
-              onPressed: () => Scaffold.of(context).openDrawer(),
-              tooltip: 'Menu',
-            ),
-          ),
-        ],
+  IconButton(
+    icon: Icon(Icons.refresh),
+    onPressed: _refreshData,
+    tooltip: 'Refresh',
+  ),
+  IconButton(
+    icon: Icon(Icons.update),
+    onPressed: _forceRefresh,
+    tooltip: 'Force Refresh',
+  ),
+  Builder(
+    builder: (context) => IconButton(
+      icon: Icon(Icons.menu),
+      onPressed: () => Scaffold.of(context).openDrawer(),
+      tooltip: 'Menu',
+    ),
+  ),
+],
       ),
       drawer: AppDrawer(
         isAdmin: widget.isAdminMode,

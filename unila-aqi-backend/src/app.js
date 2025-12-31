@@ -212,6 +212,29 @@ app.get('/api/simple-test', (req, res) => {
   });
 });
 
+
+app.post('/api/force-refresh', async (req, res) => {
+  try {
+    // Force simulation service to update
+    simulationService.updateAllRooms();
+    
+    // Force IoT service to poll
+    iotService.forcePollAll();
+    
+    res.json({
+      success: true,
+      message: 'Force refresh initiated',
+      timestamp: new Date()
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error forcing refresh',
+      error: error.message
+    });
+  }
+});
+
 server.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`🌐 API Base URL: http://localhost:${PORT}/api`);

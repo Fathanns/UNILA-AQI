@@ -1,12 +1,11 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:unila_aqi/data/repositories/room_repository.dart';
 import 'package:unila_aqi/core/services/socket_service.dart';
 import 'package:unila_aqi/core/services/storage_service.dart';
 import '../../data/models/room.dart';
-import '../../core/services/api_service.dart';
 
 class RoomProvider with ChangeNotifier {
-  final ApiService _apiService = ApiService();
   final RoomRepository _roomRepository = RoomRepository();
   final SocketService _socketService = SocketService();
   final StorageService _storageService = StorageService();
@@ -21,18 +20,30 @@ class RoomProvider with ChangeNotifier {
   bool _hasError = false;
   String _errorMessage = '';
   bool _socketConnected = false;
+  bool _isRefreshing = false;
   
+  // Timer for periodic refresh
+  Timer? _refreshTimer;
+  final Duration _refreshInterval = Duration(seconds: 15); // Refresh every 15 seconds
+  DateTime _lastUpdate = DateTime.now();
+  
+  // Stream subscriptions
+  StreamSubscription? _socketSubscription;
+  StreamSubscription? _dataSubscription;
+
   // Getters
   List<Room> get rooms => _filteredRooms;
   List<Room> get allRooms => _rooms;
   bool get isLoading => _isLoading;
+  bool get isRefreshing => _isRefreshing;
   bool get hasError => _hasError;
   String get errorMessage => _errorMessage;
   String get selectedBuilding => _selectedBuilding;
   String get sortBy => _sortBy;
   String get searchQuery => _searchQuery;
   bool get socketConnected => _socketConnected;
-  
+  DateTime get lastUpdate => _lastUpdate;
+
   // Get unique buildings for filter
   List<String> get buildings {
     final buildingSet = <String>{'Semua Gedung'};
@@ -46,7 +57,7 @@ class RoomProvider with ChangeNotifier {
     return buildingSet.toList();
   }
   
-  // Initialize socket connection
+  // Initialize socket connection and start periodic refresh
   Future<void> initSocket() async {
     try {
       // Get auth token
@@ -55,11 +66,25 @@ class RoomProvider with ChangeNotifier {
       // Connect to WebSocket
       await _socketService.connect(token: token);
       
+      // Setup connection listener
+      _socketSubscription = _socketService.connectionStream.listen((connected) {
+        _socketConnected = connected;
+        if (connected) {
+          _startPeriodicRefresh();
+        } else {
+          _stopPeriodicRefresh();
+        }
+        notifyListeners();
+      });
+      
+      // Setup data listener
+      _dataSubscription = _socketService.dataStream.listen(_handleSocketData);
+      
       // Setup room update listener
       _socketService.on('room-update', _handleRoomUpdate);
       
-      // Setup notification listener
-      _socketService.on('notification', _handleNotification);
+      // Setup dashboard update listener
+      _socketService.on('dashboard-update', _handleDashboardUpdate);
       
       // Update connection status
       _socketConnected = _socketService.isConnected;
@@ -67,12 +92,57 @@ class RoomProvider with ChangeNotifier {
       
       if (_socketConnected) {
         print('✅ Socket.io initialized and connected');
+        _startPeriodicRefresh();
       }
       
       notifyListeners();
     } catch (e) {
       print('❌ Error initializing socket: $e');
       _socketConnected = false;
+      _startPeriodicRefresh(); // Start timer even without socket
+    }
+  }
+  
+  // Start periodic refresh timer
+  void _startPeriodicRefresh() {
+    if (_refreshTimer != null && _refreshTimer!.isActive) {
+      _refreshTimer!.cancel();
+    }
+    
+    _refreshTimer = Timer.periodic(_refreshInterval, (timer) {
+      if (_socketConnected) {
+        // Use socket for real-time updates
+        _socketService.requestRefresh();
+      } else {
+        // Fallback to API refresh
+        _refreshData();
+      }
+    });
+    
+    print('🔄 Started periodic refresh every ${_refreshInterval.inSeconds}s');
+  }
+  
+  // Stop periodic refresh timer
+  void _stopPeriodicRefresh() {
+    if (_refreshTimer != null) {
+      _refreshTimer!.cancel();
+      _refreshTimer = null;
+      print('⏹️ Stopped periodic refresh');
+    }
+  }
+  
+  // Handle socket data stream
+  void _handleSocketData(Map<String, dynamic> data) {
+    final type = data['type'];
+    final payload = data['data'];
+    
+    switch (type) {
+      case 'room-update':
+        _handleRoomUpdate(payload);
+        break;
+      case 'dashboard-update':
+        _handleDashboardUpdate(payload);
+        break;
     }
   }
   
@@ -113,6 +183,9 @@ class RoomProvider with ChangeNotifier {
         // Update room in list
         _rooms[roomIndex] = updatedRoom;
         
+        // Update last update time
+        _lastUpdate = DateTime.now();
+        
         // Reapply filters
         _applyFilters();
         
@@ -126,10 +199,20 @@ class RoomProvider with ChangeNotifier {
     }
   }
   
-  // Handle notification from WebSocket
-  void _handleNotification(dynamic data) {
-    print('🔔 Notification: ${data['message']}');
-    // You can add notification handling logic here
+  // Handle dashboard update
+  void _handleDashboardUpdate(dynamic data) {
+    try {
+      final type = data['type'];
+      
+      switch (type) {
+        case 'room-data-updated':
+          // Trigger a refresh of all data
+          _refreshData();
+          break;
+      }
+    } catch (e) {
+      print('❌ Error handling dashboard update: $e');
+    }
   }
   
   // Join room for real-time updates
@@ -157,56 +240,99 @@ class RoomProvider with ChangeNotifier {
     await initSocket();
   }
   
-  // Initialize and load rooms - USE REAL DATA
+  // Initialize and load rooms
   Future<void> loadRooms() async {
     _isLoading = true;
     _hasError = false;
     notifyListeners();
 
     try {
-      print('🔄 Loading REAL rooms from database...');
+      print('🔄 Loading rooms from database...');
       
       // Initialize socket on first load
       if (!_socketConnected) {
         await initSocket();
       }
       
-      // OPTION 1: Use RoomRepository (recommended)
       _rooms = await _roomRepository.getRooms();
-      
-      // OPTION 2: Use ApiService directly
-      // final response = await _apiService.getRooms();
-      // if (response['success'] == true) {
-      //   final List<dynamic> data = response['data'];
-      //   _rooms = data.map((json) => Room.fromJson(json)).toList();
-      // }
-      
       _applyFilters();
       
-      print('✅ Loaded ${_rooms.length} REAL rooms from database');
+      print('✅ Loaded ${_rooms.length} rooms from database');
       
     } catch (e) {
       _hasError = true;
       _errorMessage = e.toString();
-      print('❌ Error loading REAL rooms: $e');
-      
-      // Fallback to test data only as last resort
-      try {
-        print('⚠️ Trying fallback to test data...');
-        final response = await _apiService.getTestRooms();
-        if (response['success'] == true) {
-          final List<dynamic> data = response['data'];
-          _rooms = data.map((json) => Room.fromJson(json)).toList();
-          _applyFilters();
-          _hasError = false;
-          print('⚠️ Loaded ${_rooms.length} rooms from TEST data (fallback)');
-        }
-      } catch (fallbackError) {
-        print('❌ Fallback also failed: $fallbackError');
-      }
+      print('❌ Error loading rooms: $e');
     } finally {
       _isLoading = false;
       notifyListeners();
+    }
+  }
+  
+  // Refresh data with loading indicator
+  Future<void> refresh() async {
+    if (_isRefreshing) return;
+    
+    _isRefreshing = true;
+    _hasError = false;
+    notifyListeners();
+
+    try {
+      print('🔄 Manual refresh initiated');
+      
+      // Force refresh from API
+      _rooms = await _roomRepository.getRooms();
+      _applyFilters();
+      
+      // Update last update time
+      _lastUpdate = DateTime.now();
+      
+      print('✅ Manual refresh completed: ${_rooms.length} rooms');
+      
+    } catch (e) {
+      _hasError = true;
+      _errorMessage = e.toString();
+      print('❌ Error during refresh: $e');
+    } finally {
+      _isRefreshing = false;
+      notifyListeners();
+    }
+  }
+  
+  // Internal refresh without loading indicator (for periodic updates)
+  Future<void> _refreshData() async {
+    try {
+      print('🔄 Background refresh initiated');
+      
+      final newRooms = await _roomRepository.getRooms();
+      
+      // Check if data has actually changed
+      bool hasChanges = false;
+      if (newRooms.length != _rooms.length) {
+        hasChanges = true;
+      } else {
+        for (int i = 0; i < newRooms.length; i++) {
+          if (newRooms[i].currentAQI != _rooms[i].currentAQI ||
+              newRooms[i].updatedAt != _rooms[i].updatedAt) {
+            hasChanges = true;
+            break;
+          }
+        }
+      }
+      
+      if (hasChanges) {
+        _rooms = newRooms;
+        _applyFilters();
+        _lastUpdate = DateTime.now();
+        
+        print('✅ Background refresh completed with changes');
+        notifyListeners();
+      } else {
+        print('ℹ️ Background refresh: no changes detected');
+      }
+      
+    } catch (e) {
+      print('❌ Error during background refresh: $e');
     }
   }
   
@@ -282,11 +408,6 @@ class RoomProvider with ChangeNotifier {
     return result;
   }
   
-  // Refresh data
-  Future<void> refresh() async {
-    await loadRooms();
-  }
-  
   // Clear filters
   void clearFilters() {
     _selectedBuilding = 'Semua Gedung';
@@ -308,38 +429,20 @@ class RoomProvider with ChangeNotifier {
   // Dispose
   @override
   void dispose() {
-    // Disconnect socket when provider is disposed
+    // Stop refresh timer
+    _stopPeriodicRefresh();
+    
+    // Cancel subscriptions
+    _socketSubscription?.cancel();
+    _dataSubscription?.cancel();
+    
+    // Disconnect socket
     _socketService.disconnect();
+    
+    // Remove event listeners
+    _socketService.off('room-update');
+    _socketService.off('dashboard-update');
+    
     super.dispose();
-  }
-}
-
-extension RoomCopyWith on Room {
-  Room copyWith({
-    String? id,
-    String? name,
-    String? buildingId,
-    String? buildingName,
-    String? dataSource,
-    String? iotDeviceId,
-    bool? isActive,
-    int? currentAQI,
-    RoomData? currentData,
-    DateTime? createdAt,
-    DateTime? updatedAt,
-  }) {
-    return Room(
-      id: id ?? this.id,
-      name: name ?? this.name,
-      buildingId: buildingId ?? this.buildingId,
-      buildingName: buildingName ?? this.buildingName,
-      dataSource: dataSource ?? this.dataSource,
-      iotDeviceId: iotDeviceId ?? this.iotDeviceId,
-      isActive: isActive ?? this.isActive,
-      currentAQI: currentAQI ?? this.currentAQI,
-      currentData: currentData ?? this.currentData,
-      createdAt: createdAt ?? this.createdAt,
-      updatedAt: updatedAt ?? this.updatedAt,
-    );
   }
 }

@@ -267,6 +267,9 @@ class ApiService {
     return await post('rooms/sync-building-names', {});
   }
 
+Future<dynamic> forceRefresh() async {
+  return await post('force-refresh', {});
+}
   // Dispose
   void dispose() {
     _client.close();

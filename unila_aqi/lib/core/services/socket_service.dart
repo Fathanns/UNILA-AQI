@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:socket_io_client/socket_io_client.dart' as IO;
+import 'package:flutter/foundation.dart';
+import 'package:unila_aqi/core/services/storage_service.dart';
 
 class SocketService {
   static final SocketService _instance = SocketService._internal();
@@ -10,33 +12,56 @@ class SocketService {
   IO.Socket? _socket;
   bool _isConnected = false;
   String? _currentRoomId;
-  final Map<String, Function(dynamic)> _eventHandlers = {};
+  final Map<String, List<Function(dynamic)>> _eventHandlers = {};
+  Timer? _reconnectTimer;
+  int _reconnectAttempts = 0;
+  final int _maxReconnectAttempts = 5;
+  final Duration _reconnectInterval = Duration(seconds: 3);
+  bool _isConnecting = false;
+  
+  // Connection state management
+  final StreamController<bool> _connectionController = StreamController<bool>.broadcast();
+  final StreamController<Map<String, dynamic>> _dataController = StreamController<Map<String, dynamic>>.broadcast();
 
   // Getters
   bool get isConnected => _isConnected;
+  bool get isConnecting => _isConnecting;
   IO.Socket? get socket => _socket;
+  Stream<bool> get connectionStream => _connectionController.stream;
+  Stream<Map<String, dynamic>> get dataStream => _dataController.stream;
 
   // Connect to server
   Future<void> connect({String? token}) async {
-    try {
-      if (_socket != null && _isConnected) {
-        print('✅ Socket is already connected');
-        return;
+    if (_isConnecting || _isConnected) {
+      if (kDebugMode) {
+        print('⚠️ Socket is already connecting or connected');
       }
+      return;
+    }
 
-      print('🔄 Connecting to WebSocket server...');
+    try {
+      _isConnecting = true;
+      
+      if (kDebugMode) {
+        print('🔄 Connecting to WebSocket server...');
+      }
 
       // Disconnect existing socket if any
       disconnect();
 
-      // Create new socket connection
+      // Create new socket connection with optimized settings
       _socket = IO.io(
         'http://10.0.2.2:5000', // Use localhost for emulator
         IO.OptionBuilder()
-          .setTransports(['websocket', 'polling'])
+          .setTransports(['websocket', 'polling']) // Prefer WebSocket
           .enableAutoConnect()
+          .setReconnectionDelay(1000)
+          .setReconnectionDelayMax(5000)
+          .setReconnectionAttempts(_maxReconnectAttempts)
+          .setTimeout(30000)
           .setExtraHeaders({
-            if (token != null) 'Authorization': 'Bearer $token'
+            if (token != null) 'Authorization': 'Bearer $token',
+            'Cache-Control': 'no-cache'
           })
           .build(),
       );
@@ -44,12 +69,24 @@ class SocketService {
       // Setup event listeners
       _setupEventListeners();
 
-      // Connect manually
+      // Connect manually with timeout
       _socket!.connect();
+      
+      // Set connection timeout
+      Timer(Duration(seconds: 10), () {
+        if (_isConnecting && !_isConnected) {
+          if (kDebugMode) {
+            print('❌ Connection timeout');
+          }
+          _handleConnectionError('Connection timeout');
+        }
+      });
 
     } catch (e) {
-      print('❌ Error connecting to WebSocket: $e');
-      rethrow;
+      if (kDebugMode) {
+        print('❌ Error connecting to WebSocket: $e');
+      }
+      _handleConnectionError(e.toString());
     }
   }
 
@@ -59,49 +96,187 @@ class SocketService {
 
     // Connection established
     _socket!.onConnect((_) {
+      _isConnecting = false;
       _isConnected = true;
-      print('✅ WebSocket Connected: ${_socket!.id}');
+      _reconnectAttempts = 0;
+      
+      if (_reconnectTimer != null) {
+        _reconnectTimer!.cancel();
+        _reconnectTimer = null;
+      }
+      
+      if (kDebugMode) {
+        print('✅ WebSocket Connected: ${_socket!.id}');
+      }
+      
+      _connectionController.add(true);
       
       // Rejoin room if previously joined
       if (_currentRoomId != null) {
         joinRoom(_currentRoomId!);
       }
+      
+      // Subscribe to dashboard updates
+      _socket!.emit('subscribe-dashboard');
     });
 
     // Connection disconnected
     _socket!.onDisconnect((_) {
+      if (kDebugMode) {
+        print('❌ WebSocket Disconnected');
+      }
+      
+      _isConnecting = false;
       _isConnected = false;
-      print('❌ WebSocket Disconnected');
+      _connectionController.add(false);
+      
+      // Try to reconnect
+      _scheduleReconnect();
     });
 
     // Connection error
     _socket!.onError((data) {
-      print('❌ WebSocket Error: $data');
+      if (kDebugMode) {
+        print('❌ WebSocket Error: $data');
+      }
+      _handleConnectionError(data.toString());
+    });
+
+    // Connect error
+    _socket!.onConnectError((data) {
+      if (kDebugMode) {
+        print('❌ WebSocket Connect Error: $data');
+      }
+      _handleConnectionError(data.toString());
     });
 
     // Ping-Pong for connection testing
     _socket!.on('pong', (data) {
-      print('🏓 Pong received: $data');
+      if (kDebugMode) {
+        print('🏓 Pong received: $data');
+      }
     });
 
-    // Room update handler
+    // Room update handler - OPTIMIZED
     _socket!.on('room-update', (data) {
-      print('📡 Room update received: ${data['roomId']}');
+      if (kDebugMode) {
+        print('📡 Room update received: ${data['roomId']}');
+      }
+      
+      // Add timestamp if not present
+      if (data['timestamp'] == null) {
+        data['timestamp'] = DateTime.now().toIso8601String();
+      }
       
       // Call registered handlers for this event
       if (_eventHandlers.containsKey('room-update')) {
-        _eventHandlers['room-update']!(data);
+        for (final handler in _eventHandlers['room-update']!) {
+          try {
+            handler(data);
+          } catch (e) {
+            if (kDebugMode) {
+              print('❌ Error in room-update handler: $e');
+            }
+          }
+        }
       }
+      
+      // Broadcast to data stream
+      _dataController.add({
+        'type': 'room-update',
+        'data': data,
+        'timestamp': DateTime.now()
+      });
+    });
+
+    // Dashboard update handler
+    _socket!.on('dashboard-update', (data) {
+      if (kDebugMode) {
+        print('📊 Dashboard update: ${data['type']}');
+      }
+      
+      // Call registered handlers
+      if (_eventHandlers.containsKey('dashboard-update')) {
+        for (final handler in _eventHandlers['dashboard-update']!) {
+          try {
+            handler(data);
+          } catch (e) {
+            if (kDebugMode) {
+              print('❌ Error in dashboard-update handler: $e');
+            }
+          }
+        }
+      }
+      
+      // Broadcast to data stream
+      _dataController.add({
+        'type': 'dashboard-update',
+        'data': data,
+        'timestamp': DateTime.now()
+      });
     });
 
     // Global notification handler
     _socket!.on('notification', (data) {
-      print('🔔 Notification received: ${data['message']}');
+      if (kDebugMode) {
+        print('🔔 Notification received: ${data['message']}');
+      }
       
       if (_eventHandlers.containsKey('notification')) {
-        _eventHandlers['notification']!(data);
+        for (final handler in _eventHandlers['notification']!) {
+          try {
+            handler(data);
+          } catch (e) {
+            if (kDebugMode) {
+              print('❌ Error in notification handler: $e');
+            }
+          }
+        }
       }
     });
+  }
+
+  // Handle connection error
+  void _handleConnectionError(String error) {
+    _isConnecting = false;
+    _isConnected = false;
+    _connectionController.add(false);
+    
+    if (kDebugMode) {
+      print('⚠️ Connection error: $error');
+    }
+    
+    _scheduleReconnect();
+  }
+
+  // Schedule reconnection
+  void _scheduleReconnect() {
+    if (_reconnectAttempts >= _maxReconnectAttempts) {
+      if (kDebugMode) {
+        print('⚠️ Max reconnection attempts reached');
+      }
+      return;
+    }
+
+    if (_reconnectTimer == null || !_reconnectTimer!.isActive) {
+      _reconnectAttempts++;
+      
+      if (kDebugMode) {
+        print('🔄 Scheduling reconnect attempt $_reconnectAttempts in ${_reconnectInterval.inSeconds}s');
+      }
+
+      _reconnectTimer = Timer(_reconnectInterval, () async {
+        if (!_isConnected && !_isConnecting) {
+          if (kDebugMode) {
+            print('🔄 Attempting to reconnect...');
+          }
+          // Get new token if needed
+          final storageService = StorageService();
+          final token = await storageService.getString('auth_token');
+          await connect(token: token);
+        }
+      });
+    }
   }
 
   // Join a room
@@ -109,9 +284,20 @@ class SocketService {
     if (_socket != null && _isConnected) {
       _socket!.emit('join-room', roomId);
       _currentRoomId = roomId;
-      print('📡 Joined room: $roomId');
+      
+      if (kDebugMode) {
+        print('📡 Joined room: $roomId');
+      }
     } else {
-      print('⚠️ Socket not connected, cannot join room');
+      if (kDebugMode) {
+        print('⚠️ Socket not connected, queuing room join');
+      }
+      _currentRoomId = roomId;
+      
+      // Try to connect
+      if (!_isConnecting) {
+        connect();
+      }
     }
   }
 
@@ -122,7 +308,10 @@ class SocketService {
       if (_currentRoomId == roomId) {
         _currentRoomId = null;
       }
-      print('📡 Left room: $roomId');
+      
+      if (kDebugMode) {
+        print('📡 Left room: $roomId');
+      }
     }
   }
 
@@ -130,18 +319,44 @@ class SocketService {
   void ping() {
     if (_socket != null && _isConnected) {
       _socket!.emit('ping');
-      print('🏓 Ping sent');
+      
+      if (kDebugMode) {
+        print('🏓 Ping sent');
+      }
+    }
+  }
+
+  // Request manual refresh
+  void requestRefresh() {
+    if (_socket != null && _isConnected) {
+      _socket!.emit('request-refresh');
+      
+      if (kDebugMode) {
+        print('🔄 Manual refresh requested');
+      }
     }
   }
 
   // Register event handler
   void on(String event, Function(dynamic) handler) {
-    _eventHandlers[event] = handler;
+    if (!_eventHandlers.containsKey(event)) {
+      _eventHandlers[event] = [];
+    }
+    _eventHandlers[event]!.add(handler);
   }
 
   // Unregister event handler
-  void off(String event) {
-    _eventHandlers.remove(event);
+  void off(String event, [Function(dynamic)? handler]) {
+    if (_eventHandlers.containsKey(event)) {
+      if (handler != null) {
+        _eventHandlers[event]!.remove(handler);
+        if (_eventHandlers[event]!.isEmpty) {
+          _eventHandlers.remove(event);
+        }
+      } else {
+        _eventHandlers.remove(event);
+      }
+    }
   }
 
   // Disconnect from server
@@ -152,13 +367,28 @@ class SocketService {
         leaveRoom(_currentRoomId!);
       }
       
+      // Cancel reconnect timer
+      if (_reconnectTimer != null) {
+        _reconnectTimer!.cancel();
+        _reconnectTimer = null;
+      }
+      
       // Disconnect socket
       _socket!.disconnect();
+      _socket!.destroy();
       _socket = null;
+      
+      _isConnecting = false;
       _isConnected = false;
       _currentRoomId = null;
       _eventHandlers.clear();
-      print('🔌 WebSocket disconnected');
+      _reconnectAttempts = 0;
+      
+      _connectionController.add(false);
+      
+      if (kDebugMode) {
+        print('🔌 WebSocket disconnected');
+      }
     }
   }
 
@@ -177,7 +407,7 @@ class SocketService {
         ping();
         
         return await completer.future.timeout(
-          Duration(seconds: 5),
+          Duration(seconds: 3),
           onTimeout: () {
             _socket!.off('pong', tempHandler);
             return false;
@@ -188,5 +418,12 @@ class SocketService {
       }
     }
     return false;
+  }
+
+  // Clean up resources
+  void dispose() {
+    disconnect();
+    _connectionController.close();
+    _dataController.close();
   }
 }
