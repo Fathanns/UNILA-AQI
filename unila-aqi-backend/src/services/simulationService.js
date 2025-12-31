@@ -8,18 +8,20 @@ class SimulationService {
   constructor() {
     this.isRunning = false;
     this.task = null;
+    this.io = null;
   }
 
   /**
    * Start simulation for all active rooms
    */
-  start() {
+  start(io) {
     if (this.isRunning) {
       console.log('⚠️ Simulation is already running');
       return;
     }
 
-    console.log('🚀 Starting simulation service...');
+    this.io = io;
+    console.log('🚀 Starting simulation service with Socket.io...');
 
     // Schedule task to run every minute
     this.task = cron.schedule('* * * * *', async () => {
@@ -112,6 +114,21 @@ class SimulationService {
 
       await historicalData.save();
 
+      // Broadcast update via Socket.io
+      if (this.io) {
+        this.io.to(room._id.toString()).emit('room-update', {
+          roomId: room._id,
+          data: {
+            currentAQI: room.currentAQI,
+            currentData: room.currentData,
+            updatedAt: room.updatedAt
+          },
+          timestamp: new Date()
+        });
+        
+        console.log(`📢 Broadcast update for room ${room.name}: AQI ${room.currentAQI}`);
+      }
+
       // Clean old data (older than 7 days)
       const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
       await SensorData.deleteMany({ 
@@ -166,7 +183,8 @@ class SimulationService {
     return {
       isRunning: this.isRunning,
       lastUpdate: new Date(),
-      nextUpdate: new Date(Date.now() + 60000) // 1 minute from now
+      nextUpdate: new Date(Date.now() + 60000), // 1 minute from now
+      socketConnected: this.io !== null
     };
   }
 }

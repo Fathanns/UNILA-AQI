@@ -1,7 +1,10 @@
 const mongoose = require('mongoose');
 const express = require('express');
 const cors = require('cors');
+const http = require('http');
+const socketIo = require('socket.io');
 const simulationService = require('./services/simulationService');
+const iotService = require('./services/iotService');
 const { seedSampleData } = require('./utils/seedData');
 const seedRoutes = require('./routes/seedRoutes');
 const testRoutes = require('./routes/testRoutes');
@@ -19,6 +22,14 @@ const IoTDevice = require('./models/IoTDevice');
 const authRoutes = require('./routes/authRoutes');
 
 const app = express();
+const server = http.createServer(app);
+const io = socketIo(server, {
+  cors: {
+    origin: "*", // Allow all origins for development
+    methods: ["GET", "POST", "PUT", "DELETE"],
+    credentials: true
+  }
+});
 
 // Middleware
 app.use(cors());
@@ -38,11 +49,67 @@ app.get('/', (req, res) => {
   res.json({ 
     message: 'UNILA AQI Backend API is running',
     database: process.env.MONGODB_URI ? 'Connected' : 'Not configured',
-    timestamp: new Date()
+    timestamp: new Date(),
+    socketIO: 'Active'
   });
 });
 
-// MongoDB connection - SIMPLIFIED
+// Socket.io Connection Handler
+io.on('connection', (socket) => {
+  console.log(`🔌 New client connected: ${socket.id}`);
+  
+  // Join specific room
+  socket.on('join-room', (roomId) => {
+    socket.join(roomId);
+    console.log(`📡 Socket ${socket.id} joined room: ${roomId}`);
+  });
+  
+  // Leave room
+  socket.on('leave-room', (roomId) => {
+    socket.leave(roomId);
+    console.log(`📡 Socket ${socket.id} left room: ${roomId}`);
+  });
+  
+  // Handle disconnection
+  socket.on('disconnect', () => {
+    console.log(`🔌 Client disconnected: ${socket.id}`);
+  });
+  
+  // Ping for connection testing
+  socket.on('ping', () => {
+    socket.emit('pong', { timestamp: new Date() });
+  });
+});
+
+// Make io accessible to other modules
+app.set('socketio', io);
+
+// Function to broadcast room updates
+const broadcastRoomUpdate = (roomId, data) => {
+  if (io) {
+    io.to(roomId).emit('room-update', {
+      roomId,
+      data,
+      timestamp: new Date()
+    });
+    console.log(`📢 Broadcast update to room ${roomId}: AQI ${data.aqi}`);
+  }
+};
+
+// Function to broadcast to all connected clients
+const broadcastToAll = (event, data) => {
+  if (io) {
+    io.emit(event, data);
+  }
+};
+
+// Export for use in other modules
+module.exports = {
+  broadcastRoomUpdate,
+  broadcastToAll
+};
+
+// MongoDB connection
 mongoose.connect(process.env.MONGODB_URI)
   .then(async () => {
     console.log('✅ Connected to MongoDB Atlas');
@@ -64,12 +131,14 @@ mongoose.connect(process.env.MONGODB_URI)
       console.log(`📊 Database already has ${buildingCount} buildings, skipping sample seeding`);
     }
     
-    // Start simulation service
-    simulationService.start();
+    // Start simulation service with socket.io instance
+    simulationService.start(io);
+    iotService.start(io);
+
+    console.log('✅ All services started');
   })
   .catch((err) => {
     console.error('❌ MongoDB connection error:', err.message);
-    // Show partial connection string for debugging
     const uri = process.env.MONGODB_URI || '';
     const maskedUri = uri.replace(/:[^:@]*@/, ':****@');
     console.error('Connection string:', maskedUri);
@@ -138,12 +207,14 @@ app.get('/api/simple-test', (req, res) => {
     message: 'Simple test endpoint working',
     timestamp: new Date(),
     status: 'OK',
-    dbConnected: mongoose.connection.readyState === 1
+    dbConnected: mongoose.connection.readyState === 1,
+    socketConnected: io !== undefined
   });
 });
 
-app.listen(PORT, () => {
+server.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`🌐 API Base URL: http://localhost:${PORT}/api`);
-  console.log(`📡 WebSocket URL: http://localhost:${PORT}`);
+  console.log(`📡 WebSocket URL: ws://localhost:${PORT}`);
+  console.log(`🔌 Socket.IO ready for real-time updates`);
 });

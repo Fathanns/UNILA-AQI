@@ -1,0 +1,13 @@
+{
+  "name": "unila-aqi-iot-simulator-simple",
+  "version": "1.0.0",
+  "description": "Simple IoT Simulator for UNILA AQI - No Dependencies Required",
+  "main": "iot-simulator-server-simple.js",
+  "scripts": {
+    "start": "node iot-simulator-server-simple.js",
+    "dev": "node iot-simulator-server-simple.js"
+  },
+  "keywords": ["iot", "aqi", "unila", "sensor", "simulator"],
+  "author": "UNILA AQI Team",
+  "license": "MIT"
+}

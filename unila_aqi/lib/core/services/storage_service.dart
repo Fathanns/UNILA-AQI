@@ -12,6 +12,47 @@ class StorageService {
     _prefs = await SharedPreferences.getInstance();
   }
 
+  // Socket.io connection settings
+  Future<void> setSocketConnected(bool value) async {
+    await _prefs.setBool('socket_connected', value);
+  }
+
+  bool getSocketConnected() {
+    return _prefs.getBool('socket_connected') ?? false;
+  }
+
+  Future<void> setLastSocketConnection(DateTime date) async {
+    await _prefs.setString('last_socket_connection', date.toIso8601String());
+  }
+
+  DateTime? getLastSocketConnection() {
+    final value = _prefs.getString('last_socket_connection');
+    return value != null ? DateTime.parse(value) : null;
+  }
+
+  // Room subscription management
+  Future<void> addSubscribedRoom(String roomId) async {
+    final rooms = getSubscribedRooms();
+    if (!rooms.contains(roomId)) {
+      rooms.add(roomId);
+      await _prefs.setStringList('subscribed_rooms', rooms);
+    }
+  }
+
+  Future<void> removeSubscribedRoom(String roomId) async {
+    final rooms = getSubscribedRooms();
+    rooms.remove(roomId);
+    await _prefs.setStringList('subscribed_rooms', rooms);
+  }
+
+  List<String> getSubscribedRooms() {
+    return _prefs.getStringList('subscribed_rooms') ?? [];
+  }
+
+  Future<void> clearSubscribedRooms() async {
+    await _prefs.remove('subscribed_rooms');
+  }
+
   // String operations
   Future<void> setString(String key, String value) async {
     await _prefs.setString(key, value);

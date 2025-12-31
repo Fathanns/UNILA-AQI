@@ -29,7 +29,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   final TextEditingController _searchController = TextEditingController();
   
   Timer? _autoRefreshTimer;
-  int _autoRefreshCountdown = 60;
+  int _autoRefreshCountdown = 10;
   bool _isMounted = false;
 
   @override
@@ -89,7 +89,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         
         setState(() {
           if (_autoRefreshCountdown <= 0) {
-            _autoRefreshCountdown = 60;
+            _autoRefreshCountdown = 10;
             _refreshData();
           } else {
             _autoRefreshCountdown--;

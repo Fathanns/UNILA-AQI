@@ -34,6 +34,12 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Initialize socket connection when app starts
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final roomProvider = Provider.of<RoomProvider>(context, listen: false);
+      roomProvider.initSocket();
+    });
+
     return MaterialApp(
       title: 'UNILA Air Quality Index',
       debugShowCheckedModeBanner: false,
