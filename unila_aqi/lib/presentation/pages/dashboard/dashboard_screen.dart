@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:pull_to_refresh/pull_to_refresh.dart';
+import 'package:unila_aqi/core/services/socket_service.dart';
 import '../../../data/models/room.dart';
 import '../../../presentation/providers/room_provider.dart';
 import '../../../presentation/providers/auth_provider.dart';
@@ -34,26 +35,63 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   @override
   void initState() {
-    super.initState();
-    _isMounted = true;
-    
-    // Delay initialization to avoid setState during build
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_isMounted) {
-        _loadInitialData();
-        _startAutoRefresh();
+  super.initState();
+  _isMounted = true;
+  
+  // Delay initialization to avoid setState during build
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    if (_isMounted) {
+      _loadInitialData();
+      _startAutoRefresh();
+      _setupBuildingUpdateListener(); // Tambahkan ini
+    }
+  });
+}
+
+void _setupBuildingUpdateListener() {
+  Provider.of<RoomProvider>(context, listen: false);
+  final socketService = SocketService();
+  
+  // Listen for building updates
+  socketService.on('building-updated', (data) {
+    if (_isMounted) {
+      print('🏢 Building update received: ${data['action']}');
+      
+      // Jika building diedit, refresh data
+      if (data['action'] == 'updated') {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (_isMounted) {
+            _refreshData();
+            
+            // Show notification
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Data gedung diperbarui'),
+                backgroundColor: Colors.green,
+                duration: Duration(seconds: 2),
+              ),
+            );
+          }
+        });
       }
-    });
-  }
+    }
+  });
+}
   
   @override
-  void dispose() {
-    _isMounted = false;
-    _refreshController.dispose();
-    _searchController.dispose();
-    _autoRefreshTimer?.cancel();
-    super.dispose();
-  }
+  @override
+void dispose() {
+  _isMounted = false;
+  _refreshController.dispose();
+  _searchController.dispose();
+  _autoRefreshTimer?.cancel();
+  
+  // Remove building update listener
+  final socketService = SocketService();
+  socketService.off('building-updated');
+  
+  super.dispose();
+}
   
  Future<void> _loadInitialData() async {
   if (!_isMounted) return;

@@ -3,14 +3,14 @@ const Room = require('../models/Room');
 const SensorData = require('../models/SensorData');
 const { generateSensorData, simulateAnomaly } = require('../utils/dataGenerator');
 const { getAQICategory } = require('../utils/aqiCalculator');
-
+ 
 class SimulationService {
   constructor() {
     this.isRunning = false;
     this.task = null;
     this.io = null;
   }
-
+ 
   /**
    * Start simulation for all active rooms
    */
@@ -19,22 +19,22 @@ class SimulationService {
       console.log('⚠️ Simulation is already running');
       return;
     }
-
+ 
     this.io = io;
     console.log('🚀 Starting simulation service with Socket.io...');
-
+ 
     // Schedule task to run every minute
     this.task = cron.schedule('* * * * *', async () => {
       await this.updateAllRooms();
     });
-
+ 
     this.isRunning = true;
     console.log('✅ Simulation service started (updates every minute)');
-
+ 
     // Initial update
     this.updateAllRooms();
   }
-
+ 
   /**
    * Stop simulation
    */
@@ -45,7 +45,7 @@ class SimulationService {
       console.log('⏹️ Simulation service stopped');
     }
   }
-
+ 
   /**
    * Update data for all rooms with simulation data source
    */
@@ -56,97 +56,118 @@ class SimulationService {
         isActive: true, 
         dataSource: 'simulation' 
       }).populate('building', 'name');
-
+ 
       console.log(`🔄 Updating ${rooms.length} rooms...`);
-
+ 
       for (const room of rooms) {
         await this.updateRoomData(room);
       }
-
+ 
       console.log(`✅ Updated ${rooms.length} rooms at ${new Date().toLocaleTimeString()}`);
     } catch (error) {
       console.error('❌ Error updating rooms:', error.message);
     }
   }
-
+ 
   /**
    * Update data for a single room
    */
   async updateRoomData(room) {
-    try {
-      // Generate new sensor data
-      let sensorData = generateSensorData(this.getRoomType(room.name));
-      
-      // Simulate anomalies occasionally
-      sensorData = simulateAnomaly(sensorData);
-
-      // Get AQI category info
-      const aqiInfo = getAQICategory(sensorData.aqi);
-
-      // Update room's current data
-      room.currentAQI = sensorData.aqi;
-      room.currentData = {
-        pm25: sensorData.pm25,
-        pm10: sensorData.pm10,
-        co2: sensorData.co2,
-        temperature: sensorData.temperature,
-        humidity: sensorData.humidity,
-        updatedAt: new Date()
-      };
-      room.updatedAt = new Date();
-
-      await room.save();
-
-      // Save historical data (keep last 7 days)
-      const historicalData = new SensorData({
-        roomId: room._id,
-        roomName: room.name,
-        buildingName: room.building?.name || room.buildingName,
-        aqi: sensorData.aqi,
-        pm25: sensorData.pm25,
-        pm10: sensorData.pm10,
-        co2: sensorData.co2,
-        temperature: sensorData.temperature,
-        humidity: sensorData.humidity,
-        category: sensorData.category,
-        timestamp: new Date()
-      });
-
-      await historicalData.save();
-
-      // Broadcast update via Socket.io
-      if (this.io) {
-        this.io.to(room._id.toString()).emit('room-update', {
-          roomId: room._id,
-          data: {
-            currentAQI: room.currentAQI,
-            currentData: room.currentData,
-            updatedAt: room.updatedAt
-          },
-          timestamp: new Date()
-        });
-        
-        console.log(`📢 Broadcast update for room ${room.name}: AQI ${room.currentAQI}`);
-      }
-
-      // Clean old data (older than 7 days)
-      const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-      await SensorData.deleteMany({ 
-        roomId: room._id, 
-        timestamp: { $lt: sevenDaysAgo } 
-      });
-
-    } catch (error) {
-      console.error(`❌ Error updating room ${room.name}:`, error.message);
-    }
+  try {
+    // Generate new sensor data
+    let sensorData = generateSensorData(this.getRoomType(room.name));
+ 
+    // Simulate anomalies occasionally
+    sensorData = simulateAnomaly(sensorData);
+ 
+    // Get AQI category info
+    const aqiInfo = getAQICategory(sensorData.aqi);
+ 
+    // Update room's current data
+    room.currentAQI = sensorData.aqi;
+    room.currentData = {
+      pm25: sensorData.pm25,
+      pm10: sensorData.pm10,
+      co2: sensorData.co2,
+      temperature: sensorData.temperature,
+      humidity: sensorData.humidity,
+      updatedAt: new Date()
+    };
+    room.updatedAt = new Date();
+ 
+    await room.save();
+ 
+    // Save historical data (keep last 7 days)
+    const historicalData = new SensorData({
+      roomId: room._id,
+      roomName: room.name,
+      buildingName: room.building?.name || room.buildingName,
+      aqi: sensorData.aqi,
+      pm25: sensorData.pm25,
+      pm10: sensorData.pm10,
+      co2: sensorData.co2,
+      temperature: sensorData.temperature,
+      humidity: sensorData.humidity,
+      category: sensorData.category,
+      timestamp: new Date()
+    });
+ 
+    await historicalData.save();
+ 
+    // 🔥 PERBAIKAN: Broadcast update via Socket.io untuk data simulasi juga
+    this.broadcastRoomUpdate(room, sensorData);
+ 
+    // Clean old data (older than 7 days)
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    await SensorData.deleteMany({ 
+      roomId: room._id, 
+      timestamp: { $lt: sevenDaysAgo } 
+    });
+ 
+  } catch (error) {
+    console.error(`❌ Error updating room ${room.name}:`, error.message);
   }
-
+}
+ 
+/**
+ * 🔥 BARU: Broadcast room update via Socket.io
+ */
+broadcastRoomUpdate(room, sensorData) {
+  if (this.io) {
+    const updateData = {
+      roomId: room._id,
+      data: {
+        currentAQI: room.currentAQI,
+        currentData: room.currentData,
+        updatedAt: room.updatedAt
+      },
+      timestamp: new Date(),
+      source: 'simulation',
+      deviceName: null
+    };
+ 
+    // Broadcast to room-specific channel
+    this.io.to(room._id.toString()).emit('room-update', updateData);
+ 
+    // Also broadcast to general updates channel for dashboard
+    this.io.emit('dashboard-update', {
+      type: 'room-data-updated',
+      roomId: room._id,
+      aqi: room.currentAQI,
+      building: room.buildingName,
+      timestamp: new Date()
+    });
+ 
+    console.log(`📢 Broadcast update for SIMULATION room ${room.name}: AQI ${room.currentAQI}`);
+  }
+}
+ 
   /**
    * Determine room type based on name
    */
   getRoomType(roomName) {
     const name = roomName.toLowerCase();
-    
+ 
     if (name.includes('lab') || name.includes('praktikum')) {
       return 'laboratory';
     } else if (name.includes('kelas') || name.includes('ruang') || name.includes('r.') || name.includes('gd.')) {
@@ -156,10 +177,10 @@ class SimulationService {
     } else if (name.includes('aula') || name.includes('auditorium') || name.includes('hall')) {
       return 'crowded';
     }
-    
+ 
     return 'normal';
   }
-
+ 
   /**
    * Manually trigger update for a specific room
    */
@@ -175,7 +196,7 @@ class SimulationService {
       throw new Error(`Error updating room: ${error.message}`);
     }
   }
-
+ 
   /**
    * Get simulation status
    */
@@ -188,8 +209,8 @@ class SimulationService {
     };
   }
 }
-
+ 
 // Create singleton instance
 const simulationService = new SimulationService();
-
+ 
 module.exports = simulationService;

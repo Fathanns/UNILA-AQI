@@ -35,7 +35,7 @@ const io = socketIo(server, {
 app.use(cors());
 app.use(express.json());
 
-// Routes
+// Routesf
 app.use('/api/auth', authRoutes);
 app.use('/api/seed', seedRoutes);
 app.use('/api/test', testRoutes);
@@ -241,3 +241,11 @@ server.listen(PORT, () => {
   console.log(`📡 WebSocket URL: ws://localhost:${PORT}`);
   console.log(`🔌 Socket.IO ready for real-time updates`);
 });
+
+app.use((req, res, next) => {
+  req.io = io;
+  next();
+});
+
+// Export io for use in other modules
+app.set('socketio', io);

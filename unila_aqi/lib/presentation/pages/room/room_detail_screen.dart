@@ -42,21 +42,55 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
   int _selectedChartType = 0; // 0: AQI, 1: PM2.5, 2: Temperature
   bool _showChartGrid = true;
 
+  
+
   @override
   void initState() {
-    super.initState();
-    _isMounted = true;
-    _currentRoomData = widget.room;
-    
-    // Join room for real-time updates
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _joinRoomForUpdates();
-      _setupRealtimeListener();
-      _loadHistoricalData();
-      _startAutoRefresh();
-      _checkSocketConnection();
-    });
-  }
+  super.initState();
+  _isMounted = true;
+  _currentRoomData = widget.room;
+  
+  // Join room for real-time updates
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    _joinRoomForUpdates();
+    _setupRealtimeListener();
+    _setupBuildingUpdateListener(); // Tambahkan ini
+    _loadHistoricalData();
+    _startAutoRefresh();
+    _checkSocketConnection();
+  });
+}
+
+void _setupBuildingUpdateListener() {
+  // Listen for building name updates specific to this room
+  _socketService.on('room-building-updated', (data) {
+    if (_isMounted && data['buildingId'] == widget.room.buildingId) {
+      final newBuildingName = data['newBuildingName'];
+      
+      print('🏢 Building name updated for this room: $newBuildingName');
+      
+      // Update room data with new building name
+      setState(() {
+        _currentRoomData = Room(
+          id: _currentRoomData.id,
+          name: _currentRoomData.name,
+          buildingId: _currentRoomData.buildingId,
+          buildingName: newBuildingName, // Update building name
+          dataSource: _currentRoomData.dataSource,
+          iotDeviceId: _currentRoomData.iotDeviceId,
+          isActive: _currentRoomData.isActive,
+          currentAQI: _currentRoomData.currentAQI,
+          currentData: _currentRoomData.currentData,
+          createdAt: _currentRoomData.createdAt,
+          updatedAt: _currentRoomData.updatedAt,
+        );
+      });
+      
+      // Show notification
+      _showNotification('Nama gedung diperbarui: $newBuildingName', 'info');
+    }
+  });
+}
 
   void _joinRoomForUpdates() {
     _socketService.joinRoom(widget.room.id);
@@ -274,21 +308,22 @@ Future<void> _loadHistoricalData() async {
 
   @override
   void dispose() {
-    _isMounted = false;
-    
-    // Leave room
-    _socketService.leaveRoom(widget.room.id);
-    
-    // Remove event listeners
-    _socketService.off('room-update');
-    _socketService.off('notification');
-    
-    // Cancel subscription
-    _roomUpdateSubscription?.cancel();
-    
-    _autoRefreshTimer?.cancel();
-    super.dispose();
-  }
+  _isMounted = false;
+  
+  // Leave room
+  _socketService.leaveRoom(widget.room.id);
+  
+  // Remove event listeners
+  _socketService.off('room-update');
+  _socketService.off('notification');
+  _socketService.off('room-building-updated'); // Tambahkan ini
+  
+  // Cancel subscription
+  _roomUpdateSubscription?.cancel();
+  
+  _autoRefreshTimer?.cancel();
+  super.dispose();
+}
 
   void _startAutoRefresh() {
     _autoRefreshTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
