@@ -224,134 +224,28 @@ class RoomProvider with ChangeNotifier {
   }
 }
 
-void handleRoomUpdated(Map<String, dynamic> data) {
-  try {
-    final roomData = data['room'];
-    final action = data['action'];
-    final roomId = roomData['id'];
-    
-    print('🔄 Processing room $action: ${roomData['name']} ($roomId)');
-    
-    switch (action) {
-      case 'updated':
-        final roomIndex = _rooms.indexWhere((room) => room.id == roomId);
-        
-        if (roomIndex != -1) {
-          // Update existing room
-          final updatedRoom = Room(
-            id: roomId,
-            name: roomData['name'],
-            buildingId: roomData['buildingId'],
-            buildingName: roomData['buildingName'],
-            dataSource: roomData['dataSource'],
-            iotDeviceId: roomData['iotDeviceId'],
-            isActive: roomData['isActive'],
-            currentAQI: roomData['currentAQI'] ?? 0,
-            currentData: RoomData(
-              pm25: (roomData['currentData']['pm25'] ?? 0).toDouble(),
-              pm10: (roomData['currentData']['pm10'] ?? 0).toDouble(),
-              co2: (roomData['currentData']['co2'] ?? 0).toDouble(),
-              temperature: (roomData['currentData']['temperature'] ?? 0).toDouble(),
-              humidity: (roomData['currentData']['humidity'] ?? 0).toDouble(),
-              updatedAt: DateTime.parse(roomData['currentData']['updatedAt']),
-            ),
-            createdAt: DateTime.parse(roomData['createdAt']),
-            updatedAt: DateTime.parse(roomData['updatedAt']),
-          );
-          
-          _rooms[roomIndex] = updatedRoom;
-          
-          // Reapply filters
-          _applyFilters();
-          
-          // Update last update time
-          _lastUpdate = DateTime.now();
-          
-          // Notify listeners
-          notifyListeners();
-          
-          print('✅ Room updated: ${updatedRoom.name}');
-        } else {
-          // Room not found, add it
-          final newRoom = Room(
-            id: roomId,
-            name: roomData['name'],
-            buildingId: roomData['buildingId'],
-            buildingName: roomData['buildingName'],
-            dataSource: roomData['dataSource'],
-            iotDeviceId: roomData['iotDeviceId'],
-            isActive: roomData['isActive'],
-            currentAQI: roomData['currentAQI'] ?? 0,
-            currentData: RoomData(
-              pm25: (roomData['currentData']['pm25'] ?? 0).toDouble(),
-              pm10: (roomData['currentData']['pm10'] ?? 0).toDouble(),
-              co2: (roomData['currentData']['co2'] ?? 0).toDouble(),
-              temperature: (roomData['currentData']['temperature'] ?? 0).toDouble(),
-              humidity: (roomData['currentData']['humidity'] ?? 0).toDouble(),
-              updatedAt: DateTime.parse(roomData['currentData']['updatedAt']),
-            ),
-            createdAt: DateTime.parse(roomData['createdAt']),
-            updatedAt: DateTime.parse(roomData['updatedAt']),
-          );
-          
-          _rooms.add(newRoom);
-          
-          // Reapply filters
-          _applyFilters();
-          
-          // Update last update time
-          _lastUpdate = DateTime.now();
-          
-          // Notify listeners
-          notifyListeners();
-          
-          print('✅ Room added: ${newRoom.name}');
-        }
-        break;
-        
-      case 'deleted':
-        // Remove room from list
-        final removedCount = _rooms.removeWhere((room) => room.id == roomId);
-        
-        if (removedCount > 0) {
-          // Reapply filters
-          _applyFilters();
-          
-          // Update last update time
-          _lastUpdate = DateTime.now();
-          
-          // Notify listeners
-          notifyListeners();
-          
-          print('🗑️ Room deleted: ${roomData['name']}');
-        }
-        break;
-        
-      default:
-        print('ℹ️ Unknown room action: $action');
-    }
-  } catch (e) {
-    print('❌ Error handling room update: $e');
-  }
-}
-
-void handleRoomStatusChanged(Map<String, dynamic> data) {
+void handleRoomNameChanged(Map<String, dynamic> data) {
   try {
     final roomId = data['roomId'];
-    final newStatus = data['newStatus'];
+    final newName = data['newName'];
+    final oldName = data['oldName'];
+    final buildingName = data['buildingName'];
     
+    print('🔄 Processing room name change: $oldName -> $newName ($roomId)');
+    
+    // Cari room di list
     final roomIndex = _rooms.indexWhere((room) => room.id == roomId);
     
     if (roomIndex != -1) {
-      // Update room status
+      // Update room dengan nama baru
       final updatedRoom = Room(
         id: _rooms[roomIndex].id,
-        name: _rooms[roomIndex].name,
+        name: newName, // Update nama room
         buildingId: _rooms[roomIndex].buildingId,
-        buildingName: _rooms[roomIndex].buildingName,
+        buildingName: buildingName,
         dataSource: _rooms[roomIndex].dataSource,
         iotDeviceId: _rooms[roomIndex].iotDeviceId,
-        isActive: newStatus,
+        isActive: _rooms[roomIndex].isActive,
         currentAQI: _rooms[roomIndex].currentAQI,
         currentData: _rooms[roomIndex].currentData,
         createdAt: _rooms[roomIndex].createdAt,
@@ -363,13 +257,20 @@ void handleRoomStatusChanged(Map<String, dynamic> data) {
       // Reapply filters
       _applyFilters();
       
+      // Update last update time
+      _lastUpdate = DateTime.now();
+      
       // Notify listeners
       notifyListeners();
       
-      print('✅ Room status updated: ${updatedRoom.name} -> ${newStatus ? 'Active' : 'Inactive'}');
+      print('✅ Room name updated: $oldName -> $newName');
+    } else {
+      print('⚠️ Room not found in local list: $roomId');
+      // Jika room tidak ditemukan, refresh data
+      _refreshData();
     }
   } catch (e) {
-    print('❌ Error handling room status change: $e');
+    print('❌ Error handling room name change: $e');
   }
 }
  
