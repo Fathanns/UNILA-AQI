@@ -113,7 +113,7 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
       _addToHistoricalData(_currentRoomData);
 
       // Show update notification
-      _showUpdateNotification(_currentRoomData);
+      // _showUpdateNotification(_currentRoomData);
 
       print('🔄 Real-time update: Room ${_currentRoomData.name} - AQI ${_currentRoomData.currentAQI}');
     } catch (e) {
@@ -138,40 +138,40 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
     ));
   }
 
-  void _showUpdateNotification(Room updatedRoom) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            Icon(Icons.update, color: Colors.white, size: 20),
-            SizedBox(width: 8),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Data diperbarui',
-                    style: TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  SizedBox(height: 2),
-                  Text(
-                    'AQI: ${updatedRoom.currentAQI} (${Helpers.getAQILabel(updatedRoom.currentAQI)})',
-                    style: TextStyle(fontSize: 12),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        backgroundColor: Helpers.getAQIColor(updatedRoom.currentAQI),
-        duration: Duration(seconds: 3),
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8),
-        ),
-      ),
-    );
-  }
+  // void _showUpdateNotification(Room updatedRoom) {
+  //   ScaffoldMessenger.of(context).showSnackBar(
+  //     SnackBar(
+  //       content: Row(
+  //         children: [
+  //           Icon(Icons.update, color: Colors.white, size: 20),
+  //           SizedBox(width: 8),
+  //           Expanded(
+  //             child: Column(
+  //               crossAxisAlignment: CrossAxisAlignment.start,
+  //               children: [
+  //                 Text(
+  //                   'Data diperbarui',
+  //                   style: TextStyle(fontWeight: FontWeight.bold),
+  //                 ),
+  //                 SizedBox(height: 2),
+  //                 Text(
+  //                   'AQI: ${updatedRoom.currentAQI} (${Helpers.getAQILabel(updatedRoom.currentAQI)})',
+  //                   style: TextStyle(fontSize: 12),
+  //                 ),
+  //               ],
+  //             ),
+  //           ),
+  //         ],
+  //       ),
+  //       backgroundColor: Helpers.getAQIColor(updatedRoom.currentAQI),
+  //       duration: Duration(seconds: 3),
+  //       behavior: SnackBarBehavior.floating,
+  //       shape: RoundedRectangleBorder(
+  //         borderRadius: BorderRadius.circular(8),
+  //       ),
+  //     ),
+  //   );
+  // }
 
   void _showNotification(String message, String type) {
     Color backgroundColor;
@@ -840,74 +840,75 @@ if (chartMaxY <= chartMinY) {
   }
 
   Widget _buildLastUpdateInfo() {
-    final timeAgo = Helpers.formatTimeAgo(_currentRoomData.currentData.updatedAt);
-    
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        children: [
-          Icon(
-            Icons.update,
-            size: 16,
-            color: Colors.grey,
+  // Ganti dengan:
+  final lastUpdateFormatted = Helpers.formatLastUpdateWithDate(_currentRoomData.currentData.updatedAt);
+  
+  return Container(
+    padding: const EdgeInsets.all(12),
+    decoration: BoxDecoration(
+      color: AppColors.surface,
+      borderRadius: BorderRadius.circular(8),
+    ),
+    child: Row(
+      children: [
+        Icon(
+          Icons.update,
+          size: 16,
+          color: Colors.grey,
+        ),
+        SizedBox(width: 8),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Update terakhir',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey,
+                ),
+              ),
+              Text(
+                lastUpdateFormatted,
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
           ),
-          SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Update terakhir',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey,
-                  ),
-                ),
-                Text(
-                  timeAgo,
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ],
-            ),
+        ),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          decoration: BoxDecoration(
+            color: _currentRoomData.isActive ? Colors.green.withOpacity(0.1) : Colors.grey.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(12),
           ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: _currentRoomData.isActive ? Colors.green.withOpacity(0.1) : Colors.grey.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Row(
-              children: [
-                Container(
-                  width: 6,
-                  height: 6,
-                  decoration: BoxDecoration(
-                    color: _currentRoomData.isActive ? Colors.green : Colors.grey,
-                    shape: BoxShape.circle,
-                  ),
+          child: Row(
+            children: [
+              Container(
+                width: 6,
+                height: 6,
+                decoration: BoxDecoration(
+                  color: _currentRoomData.isActive ? Colors.green : Colors.grey,
+                  shape: BoxShape.circle,
                 ),
-                SizedBox(width: 4),
-                Text(
-                  _currentRoomData.isActive ? 'Aktif' : 'Nonaktif',
-                  style: TextStyle(
-                    fontSize: 10,
-                    color: _currentRoomData.isActive ? Colors.green : Colors.grey,
-                  ),
+              ),
+              SizedBox(width: 4),
+              Text(
+                _currentRoomData.isActive ? 'Aktif' : 'Nonaktif',
+                style: TextStyle(
+                  fontSize: 10,
+                  color: _currentRoomData.isActive ? Colors.green : Colors.grey,
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
-        ],
-      ),
-    );
-  }
+        ),
+      ],
+    ),
+  );
+}
 
   @override
   Widget build(BuildContext context) {
@@ -1133,7 +1134,7 @@ if (chartMaxY <= chartMinY) {
                           Icon(
                             _currentRoomData.dataSource == 'iot' 
                                 ? Icons.sensors 
-                                : Icons.sim_card,
+                                : Icons.auto_awesome,
                             size: 12,
                             color: _currentRoomData.dataSource == 'iot' 
                                 ? Colors.blue 
@@ -1141,7 +1142,7 @@ if (chartMaxY <= chartMinY) {
                           ),
                           SizedBox(width: 4),
                           Text(
-                            _currentRoomData.dataSource == 'iot' ? 'IoT' : 'Sim',
+                            _currentRoomData.dataSource == 'iot' ? 'IoT' : 'Simulasi',
                             style: TextStyle(
                               fontSize: 10,
                               color: _currentRoomData.dataSource == 'iot' 

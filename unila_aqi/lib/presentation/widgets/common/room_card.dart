@@ -6,6 +6,7 @@ class RoomCard extends StatelessWidget {
   final Room room;
   final VoidCallback? onTap;
   
+  
   const RoomCard({
     super.key,
     required this.room,
@@ -16,7 +17,6 @@ class RoomCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final aqiColor = Helpers.getAQIColor(room.currentAQI);
     final aqiLabel = Helpers.getAQILabel(room.currentAQI);
-    final timeAgo = Helpers.formatTimeAgo(room.currentData.updatedAt);
     
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 0),
@@ -187,37 +187,34 @@ class RoomCard extends StatelessWidget {
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          const Icon(
-                            Icons.update,
-                            size: 18,
-                            color: Color(0xFF6C757D),
-                          ),
+                          
                           const SizedBox(height: 4),
                           Text(
-                            'Update',
+                            'UPDATE',
                             style: TextStyle(
                               fontSize: 10,
-                              fontWeight: FontWeight.w500,
+                              fontWeight: FontWeight.w600,
                               color: Colors.grey[700],
                             ),
                           ),
-                          const SizedBox(height: 2),
-                          Text(
-                            timeAgo.split(' ')[0],
-                            style: const TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                              color: Color(0xFF212529),
-                            ),
-                          ),
-                          Text(
-                            timeAgo.split(' ').sublist(1).join(' '),
-                            style: TextStyle(
-                              fontSize: 9,
-                              color: Colors.grey[600],
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
+                          const SizedBox(height: 4),
+                          Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.baseline,
+              textBaseline: TextBaseline.alphabetic,
+              children: [
+                Text(
+                  Helpers.formatLastUpdate(room.currentData.updatedAt),
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF212529),
+                  ),
+                ),
+                const SizedBox(width: 2),
+              ],
+            ),
+                         
                         ],
                       ),
                     ),

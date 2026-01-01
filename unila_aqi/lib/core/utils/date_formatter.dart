@@ -33,15 +33,18 @@ class DateFormatter {
   }
 
   static String formatChartTime(DateTime date, String range) {
-    switch (range) {
-      case '24h':
-        return DateFormat('HH:mm').format(date);
-      case '7d':
-        return DateFormat('E').format(date);
-      case '30d':
-        return DateFormat('dd/MM').format(date);
-      default:
-        return DateFormat('HH:mm').format(date);
-    }
+  // Konversi ke waktu lokal
+  final localDate = date.toLocal();
+  
+  switch (range) {
+    case '24h':
+      return DateFormat('HH:mm').format(localDate); // Format 24 jam
+    case '7d':
+      return DateFormat('E').format(localDate); // Hari dalam seminggu (Sen, Sel, etc)
+    case '30d':
+      return DateFormat('dd/MM').format(localDate); // Tanggal/bulan
+    default:
+      return DateFormat('HH:mm').format(localDate);
   }
+}
 }

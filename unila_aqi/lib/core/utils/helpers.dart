@@ -102,6 +102,122 @@ class Helpers {
     return DateFormat(format).format(dateTime);
   }
 
+
+  // Tambah method format baru untuk waktu update
+    static String formatLastUpdate(DateTime dateTime) {
+    // Konversi ke waktu lokal
+    final localTime = dateTime.toLocal();
+    return '  ${_formatLocalTime(localTime)}';
+  }
+
+static String formatLastUpdateWithDate(DateTime dateTime) {
+    // Konversi ke waktu lokal
+    final localTime = dateTime.toLocal();
+    final now = DateTime.now().toLocal();
+    
+    // Jika tanggal sama dengan hari ini
+    if (localTime.year == now.year &&
+        localTime.month == now.month &&
+        localTime.day == now.day) {
+      return 'Hari ini ${_formatLocalTime(localTime)}';
+    }
+    
+    // Jika tanggal kemarin
+    final yesterday = DateTime(now.year, now.month, now.day - 1);
+    if (localTime.year == yesterday.year &&
+        localTime.month == yesterday.month &&
+        localTime.day == yesterday.day) {
+      return 'Kemarin ${_formatLocalTime(localTime)}';
+    }
+    
+    // Format dengan tanggal (menggunakan format lokal)
+    return DateFormat('dd/MM HH:mm').format(localTime);
+  }
+
+   static String _formatLocalTime(DateTime localTime) {
+    // Format 24 jam
+    final hour = localTime.hour.toString().padLeft(2, '0');
+    final minute = localTime.minute.toString().padLeft(2, '0');
+    return '$hour:$minute';
+  }
+
+   static String formatLocalTimeForDisplay(DateTime dateTime) {
+    final localTime = dateTime.toLocal();
+    
+    // Cek preferensi waktu 12/24 jam berdasarkan locale
+    final format = DateFormat.Hm(); // Otomatis menggunakan 12/24 jam sesuai locale
+    return format.format(localTime);
+  }
+
+  static String formatLocalTimeWithAmPm(DateTime dateTime) {
+    final localTime = dateTime.toLocal();
+    final format = DateFormat('hh:mm a'); // Contoh: 02:30 PM
+    return format.format(localTime);
+  }
+
+   static String formatLocalDateTimeFull(DateTime dateTime) {
+    final localTime = dateTime.toLocal();
+    return DateFormat('dd MMM yyyy HH:mm').format(localTime); // Contoh: 15 Jan 2024 14:30
+  }
+
+
+// Method untuk format real-time (akan diupdate setiap detik)
+static String formatRealTimeUpdate(DateTime dateTime) {
+  final now = DateTime.now();
+  final difference = now.difference(dateTime);
+  
+  // Format yang berbeda berdasarkan berapa lama yang lalu
+  if (difference.inSeconds < 10) {
+    return 'Live • Baru saja';
+  } else if (difference.inSeconds < 60) {
+    return 'Live • ${difference.inSeconds} detik lalu';
+  } else if (difference.inMinutes < 5) {
+    return 'Live • ${difference.inMinutes} menit lalu';
+  } else {
+    return 'Terakhir update ${DateFormat('HH:mm').format(dateTime)}';
+  }
+}
+
+// Method untuk format dengan indikator status
+static Map<String, dynamic> formatUpdateWithStatus(DateTime dateTime) {
+  final now = DateTime.now();
+  final difference = now.difference(dateTime);
+  
+  String text;
+  Color color;
+  IconData icon;
+  
+  if (difference.inSeconds < 30) {
+    text = 'Live • ${DateFormat('HH:mm').format(dateTime)}';
+    color = Colors.green;
+    icon = Icons.circle;
+  } else if (difference.inSeconds < 60) {
+    text = 'Baru • ${DateFormat('HH:mm').format(dateTime)}';
+    color = Colors.green;
+    icon = Icons.circle;
+  } else if (difference.inMinutes < 5) {
+    text = 'Terakhir update ${DateFormat('HH:mm').format(dateTime)}';
+    color = Colors.blue;
+    icon = Icons.circle;
+  } else if (difference.inMinutes < 15) {
+    text = 'Terakhir update ${DateFormat('HH:mm').format(dateTime)}';
+    color = Colors.orange;
+    icon = Icons.circle;
+  } else {
+    text = 'Update lama • ${DateFormat('dd/MM HH:mm').format(dateTime)}';
+    color = Colors.grey;
+    icon = Icons.circle;
+  }
+  
+  return {
+    'text': text,
+    'color': color,
+    'icon': icon,
+    'isRecent': difference.inMinutes < 5,
+    'difference': difference
+  };
+}
+
   static String formatTimeAgo(DateTime dateTime) {
     final now = DateTime.now();
     final difference = now.difference(dateTime);
@@ -217,11 +333,10 @@ class Helpers {
   // AQI based recommendations
   final aqi = room.currentAQI;
   if (aqi > 150) {
-    recommendations.add('Hindari aktivitas di luar ruangan');
-    recommendations.add('Gunakan masker N95 jika harus keluar');
-    recommendations.add('Tutup jendela dan pintu');
+    recommendations.add('Hindari aktivitas di dalam ruangan');
+    recommendations.add('Gunakan masker ketika berada di ruangan ini');
   } else if (aqi > 100) {
-    recommendations.add('Kelompok sensitif hindari aktivitas luar');
+    recommendations.add('udara sensitif, hindari aktivitas di dalam ruangan ini');
     recommendations.add('Kurangi aktivitas fisik berat');
   } else if (aqi > 50) {
     recommendations.add('Kondisi udara cukup baik untuk aktivitas normal');
@@ -252,6 +367,8 @@ class Helpers {
   } else if (data.humidity < 40) {
     recommendations.add('Kelembaban rendah: Gunakan humidifier');
   }
+
+  
   
   return recommendations;
 }
