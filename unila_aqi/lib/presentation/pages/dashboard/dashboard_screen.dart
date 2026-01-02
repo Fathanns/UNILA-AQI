@@ -29,8 +29,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
   final RefreshController _refreshController = RefreshController();
   final TextEditingController _searchController = TextEditingController();
   
-  Timer? _autoRefreshTimer;
-  int _autoRefreshCountdown = 10;
+  // Timer? _autoRefreshTimer;
+  // int _autoRefreshCountdown = 10;
   bool _isMounted = false;
 
   @override
@@ -42,8 +42,51 @@ class _DashboardScreenState extends State<DashboardScreen> {
   WidgetsBinding.instance.addPostFrameCallback((_) {
     if (_isMounted) {
       _loadInitialData();
-      _startAutoRefresh();
-      _setupBuildingUpdateListener(); // Tambahkan ini
+      // _startAutoRefresh();
+      _setupBuildingUpdateListener();
+      _setupRoomNameUpdateListener(); // 🔥 BARU: Tambah listener untuk update nama ruangan
+    }
+  });
+}
+
+// 🔥 BARU: Setup listener untuk update nama ruangan
+void _setupRoomNameUpdateListener() {
+  Provider.of<RoomProvider>(context, listen: false);
+  final socketService = SocketService();
+  
+  // Listen for room name updates
+  socketService.on('room-name-changed', (data) {
+    if (_isMounted) {
+      print('🔄 Room name update received: ${data['oldName']} -> ${data['newName']}');
+      
+      // Refresh data untuk update tampilan
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_isMounted) {
+          _refreshData();
+          
+          // Show notification
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Nama ruangan diperbarui: ${data['oldName']} -> ${data['newName']}'),
+              backgroundColor: Colors.blue,
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+      });
+    }
+  });
+  
+  // Listen for dashboard-room-updated events
+  socketService.on('dashboard-room-updated', (data) {
+    if (_isMounted && data['action'] == 'updated') {
+      print('📡 Dashboard room update received');
+      
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_isMounted) {
+          _refreshData();
+        }
+      });
     }
   });
 }
@@ -84,11 +127,13 @@ void dispose() {
   _isMounted = false;
   _refreshController.dispose();
   _searchController.dispose();
-  _autoRefreshTimer?.cancel();
+  // _autoRefreshTimer?.cancel();
   
-  // Remove building update listener
+  // Remove event listeners
   final socketService = SocketService();
   socketService.off('building-updated');
+  socketService.off('room-name-changed'); // 🔥 BARU: Hapus listener nama ruangan
+  socketService.off('dashboard-room-updated'); // 🔥 BARU: Hapus listener dashboard
   
   super.dispose();
 }
@@ -114,28 +159,28 @@ void dispose() {
   }
 }
   
-  void _startAutoRefresh() {
-    _autoRefreshTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (!_isMounted) {
-        timer.cancel();
-        return;
-      }
+  // void _startAutoRefresh() {
+  //   _autoRefreshTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+  //     if (!_isMounted) {
+  //       timer.cancel();
+  //       return;
+  //     }
       
-      // Use WidgetsBinding to schedule after build
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!_isMounted) return;
+  //     // Use WidgetsBinding to schedule after build
+  //     WidgetsBinding.instance.addPostFrameCallback((_) {
+  //       if (!_isMounted) return;
         
-        setState(() {
-          if (_autoRefreshCountdown <= 0) {
-            _autoRefreshCountdown = 10;
-            _refreshData();
-          } else {
-            _autoRefreshCountdown--;
-          }
-        });
-      });
-    });
-  }
+  //       setState(() {
+  //         if (_autoRefreshCountdown <= 0) {
+  //           _autoRefreshCountdown = 10;
+  //           _refreshData();
+  //         } else {
+  //           _autoRefreshCountdown--;
+  //         }
+  //       });
+  //     });
+  //   });
+  // }
   
   Future<void> _refreshData() async {
     if (!_isMounted) return;
@@ -402,20 +447,20 @@ void dispose() {
                 ),
               ),
             // Auto Refresh Indicator
-            SliverToBoxAdapter(
-              child: Container(
-                padding: const EdgeInsets.all(16),
-                child: Center(
-                  child: Text(
-                    'Auto refresh: ${_autoRefreshCountdown}s',
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey,
-                    ),
-                  ),
-                ),
-              ),
-            ),
+            // SliverToBoxAdapter(
+            //   child: Container(
+            //     padding: const EdgeInsets.all(16),
+            //     child: Center(
+            //       child: Text(
+            //         'Auto refresh: ${_autoRefreshCountdown}s',
+            //         style: const TextStyle(
+            //           fontSize: 12,
+            //           color: Colors.grey,
+            //         ),
+            //       ),
+            //     ),
+            //   ),
+            // ),
           ],
         ),
       ),

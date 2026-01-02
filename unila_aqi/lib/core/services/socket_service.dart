@@ -158,36 +158,36 @@ class SocketService {
     });
 
     // Room update handler - OPTIMIZED
-    _socket!.on('room-update', (data) {
-      if (kDebugMode) {
-        print('📡 Room update received: ${data['roomId']}');
-      }
-      
-      // Add timestamp if not present
-      if (data['timestamp'] == null) {
-        data['timestamp'] = DateTime.now().toIso8601String();
-      }
-      
-      // Call registered handlers for this event
-      if (_eventHandlers.containsKey('room-update')) {
-        for (final handler in _eventHandlers['room-update']!) {
-          try {
-            handler(data);
-          } catch (e) {
-            if (kDebugMode) {
-              print('❌ Error in room-update handler: $e');
-            }
+     _socket!.on('room-update', (data) {
+    if (kDebugMode) {
+      print('📡 Room update received: ${data['roomId']}');
+    }
+    
+    // Add timestamp if not present
+    if (data['timestamp'] == null) {
+      data['timestamp'] = DateTime.now().toIso8601String();
+    }
+    
+    // Call registered handlers for this event
+    if (_eventHandlers.containsKey('room-update')) {
+      for (final handler in _eventHandlers['room-update']!) {
+        try {
+          handler(data);
+        } catch (e) {
+          if (kDebugMode) {
+            print('❌ Error in room-update handler: $e');
           }
         }
       }
-      
-      // Broadcast to data stream
-      _dataController.add({
-        'type': 'room-update',
-        'data': data,
-        'timestamp': DateTime.now()
-      });
+    }
+    
+    // Broadcast to data stream
+    _dataController.add({
+      'type': 'room-update',
+      'data': data,
+      'timestamp': DateTime.now()
     });
+  });
 
     // Dashboard update handler
     _socket!.on('dashboard-update', (data) {
@@ -216,24 +216,98 @@ class SocketService {
       });
     });
 
-    // Global notification handler
-    _socket!.on('notification', (data) {
-      if (kDebugMode) {
-        print('🔔 Notification received: ${data['message']}');
-      }
-      
-      if (_eventHandlers.containsKey('notification')) {
-        for (final handler in _eventHandlers['notification']!) {
-          try {
-            handler(data);
-          } catch (e) {
-            if (kDebugMode) {
-              print('❌ Error in notification handler: $e');
-            }
+    // 🔥 BARU: Dashboard room updated handler
+  _socket!.on('dashboard-room-updated', (data) {
+    if (kDebugMode) {
+      print('📊 Dashboard room updated: ${data['action']} - ${data['room']['name']}');
+    }
+    
+    // Call registered handlers
+    if (_eventHandlers.containsKey('dashboard-room-updated')) {
+      for (final handler in _eventHandlers['dashboard-room-updated']!) {
+        try {
+          handler(data);
+        } catch (e) {
+          if (kDebugMode) {
+            print('❌ Error in dashboard-room-updated handler: $e');
           }
         }
       }
+    }
+    
+    // Broadcast to data stream
+    _dataController.add({
+      'type': 'dashboard-room-updated',
+      'data': data,
+      'timestamp': DateTime.now()
     });
+  });
+
+  // 🔥 BARU: Room name changed handler
+  _socket!.on('room-name-changed', (data) {
+    if (kDebugMode) {
+      print('✏️ Room name changed: ${data['oldName']} -> ${data['newName']}');
+    }
+    
+    // Call registered handlers
+    if (_eventHandlers.containsKey('room-name-changed')) {
+      for (final handler in _eventHandlers['room-name-changed']!) {
+        try {
+          handler(data);
+        } catch (e) {
+          if (kDebugMode) {
+            print('❌ Error in room-name-changed handler: $e');
+          }
+        }
+      }
+    }
+    
+    // Broadcast to data stream
+    _dataController.add({
+      'type': 'room-name-changed',
+      'data': data,
+      'timestamp': DateTime.now()
+    });
+  });
+
+  // 🔥 BARU: Room building changed handler
+  _socket!.on('room-building-changed', (data) {
+    if (kDebugMode) {
+      print('🏢 Room building changed: ${data['roomId']}');
+    }
+    
+    // Call registered handlers
+    if (_eventHandlers.containsKey('room-building-changed')) {
+      for (final handler in _eventHandlers['room-building-changed']!) {
+        try {
+          handler(data);
+        } catch (e) {
+          if (kDebugMode) {
+            print('❌ Error in room-building-changed handler: $e');
+          }
+        }
+      }
+    }
+  });
+
+  // Global notification handler
+  _socket!.on('notification', (data) {
+    if (kDebugMode) {
+      print('🔔 Notification received: ${data['message']}');
+    }
+    
+    if (_eventHandlers.containsKey('notification')) {
+      for (final handler in _eventHandlers['notification']!) {
+        try {
+          handler(data);
+        } catch (e) {
+          if (kDebugMode) {
+            print('❌ Error in notification handler: $e');
+          }
+        }
+      }
+    }
+  });
   }
 
   // Handle connection error

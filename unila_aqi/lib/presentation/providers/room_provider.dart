@@ -151,20 +151,40 @@ class RoomProvider with ChangeNotifier {
   try {
     final roomId = data['roomId'];
     final roomData = data['data'];
-    final source = data['source'] ?? 'unknown'; // 'iot' atau 'simulation'
- 
-    print('🔄 Processing ${source.toUpperCase()} update for room: $roomId');
- 
+    final source = data['source'] ?? 'unknown';
+    final action = data['action']; // 🔥 BARU: Tambah handling untuk action
+
+    print('🔄 Processing ${source.toUpperCase()} update for room: $roomId (action: ${action})');
+
+    // Jika ada action 'updated' dan ada oldData, cek apakah nama berubah
+    if (action == 'updated' && data['oldData'] != null) {
+      final oldData = data['oldData'];
+      final newName = roomData['name'];
+      final oldName = oldData['name'];
+      
+      if (newName != oldName) {
+        print('🔄 Detected name change in update: $oldName -> $newName');
+        // Panggil handleRoomNameChanged untuk update nama
+        handleRoomNameChanged({
+          'roomId': roomId,
+          'newName': newName,
+          'oldName': oldName,
+          'buildingName': roomData['buildingName']
+        });
+        return; // Keluar karena sudah dihandle oleh handleRoomNameChanged
+      }
+    }
+
     // Find room index
     final roomIndex = _rooms.indexWhere((room) => room.id == roomId);
- 
+
     if (roomIndex != -1) {
       // Create updated room data
       final updatedRoom = Room(
         id: _rooms[roomIndex].id,
-        name: _rooms[roomIndex].name,
+        name: roomData['name'] ?? _rooms[roomIndex].name, // 🔥 BARU: Ambil nama dari data baru
         buildingId: _rooms[roomIndex].buildingId,
-        buildingName: _rooms[roomIndex].buildingName,
+        buildingName: roomData['buildingName'] ?? _rooms[roomIndex].buildingName, // 🔥 BARU: Ambil buildingName dari data baru
         dataSource: _rooms[roomIndex].dataSource,
         iotDeviceId: _rooms[roomIndex].iotDeviceId,
         isActive: _rooms[roomIndex].isActive,
@@ -180,19 +200,19 @@ class RoomProvider with ChangeNotifier {
         createdAt: _rooms[roomIndex].createdAt,
         updatedAt: DateTime.parse(roomData['updatedAt']),
       );
- 
+
       // Update room in list
       _rooms[roomIndex] = updatedRoom;
- 
+
       // Update last update time
       _lastUpdate = DateTime.now();
- 
+
       // Reapply filters
       _applyFilters();
- 
+
       // Notify listeners
       notifyListeners();
- 
+
       print('✅ Room ${_rooms[roomIndex].name} updated via ${source.toUpperCase()}: AQI ${updatedRoom.currentAQI}');
     }
   } catch (e) {
@@ -216,6 +236,11 @@ class RoomProvider with ChangeNotifier {
         handleBuildingNameChanged(data);
         break;
         
+      case 'room-name-changed':
+        // 🔥 BARU: Handle room name change
+        handleRoomNameChanged(data);
+        break;
+        
       default:
         print('ℹ️ Unknown dashboard update type: $type');
     }
@@ -224,6 +249,9 @@ class RoomProvider with ChangeNotifier {
   }
 }
 
+
+
+// 🔥 BARU: Handle room name change
 void handleRoomNameChanged(Map<String, dynamic> data) {
   try {
     final roomId = data['roomId'];

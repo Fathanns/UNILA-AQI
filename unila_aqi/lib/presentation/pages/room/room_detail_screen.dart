@@ -30,8 +30,8 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
   List<SensorDataPoint> _historicalData = [];
   bool _isLoadingHistory = false;
   String _selectedChartRange = '24h';
-  Timer? _autoRefreshTimer;
-  int _autoRefreshCountdown = 5;
+  // Timer? _autoRefreshTimer;
+  // int _autoRefreshCountdown = 5;
   bool _isRefreshing = false;
   bool _isMounted = false;
   bool _socketConnected = false;
@@ -54,10 +54,75 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
   WidgetsBinding.instance.addPostFrameCallback((_) {
     _joinRoomForUpdates();
     _setupRealtimeListener();
-    _setupBuildingUpdateListener(); // Tambahkan ini
+    _setupBuildingUpdateListener();
+    _setupRoomNameUpdateListener();
     _loadHistoricalData();
-    _startAutoRefresh();
+    // _startAutoRefresh();
     _checkSocketConnection();
+  });
+}
+
+void _setupRoomNameUpdateListener() {
+  // Listen for room name updates
+  _socketService.on('room-name-updated', (data) {
+    if (_isMounted && data['roomId'] == widget.room.id) {
+      final newName = data['newName'];
+      final oldName = data['oldName'];
+      
+      print('🔄 Room name updated for this room: $oldName -> $newName');
+      
+      // Update room data dengan nama baru
+      setState(() {
+        _currentRoomData = Room(
+          id: _currentRoomData.id,
+          name: newName, // Update nama ruangan
+          buildingId: _currentRoomData.buildingId,
+          buildingName: _currentRoomData.buildingName,
+          dataSource: _currentRoomData.dataSource,
+          iotDeviceId: _currentRoomData.iotDeviceId,
+          isActive: _currentRoomData.isActive,
+          currentAQI: _currentRoomData.currentAQI,
+          currentData: _currentRoomData.currentData,
+          createdAt: _currentRoomData.createdAt,
+          updatedAt: DateTime.now(),
+        );
+      });
+      
+      // Show notification
+      _showNotification('Nama ruangan diperbarui: $oldName -> $newName', 'info');
+    }
+  });
+  
+  // Listen for room-updated events (general updates)
+  _socketService.on('room-updated', (data) {
+    if (_isMounted && data['room']['id'] == widget.room.id) {
+      if (data['action'] == 'updated' && data['oldData']) {
+        final newName = data['room']['name'];
+        final oldName = data['oldData']['name'];
+        
+        if (newName != oldName) {
+          print('🔄 Detected room name change in room-updated event');
+          
+          setState(() {
+            _currentRoomData = Room(
+              id: _currentRoomData.id,
+              name: newName,
+              buildingId: _currentRoomData.buildingId,
+              buildingName: _currentRoomData.buildingName,
+              dataSource: _currentRoomData.dataSource,
+              iotDeviceId: _currentRoomData.iotDeviceId,
+              isActive: _currentRoomData.isActive,
+              currentAQI: _currentRoomData.currentAQI,
+              currentData: _currentRoomData.currentData,
+              createdAt: _currentRoomData.createdAt,
+              updatedAt: DateTime.now(),
+            );
+          });
+          
+          _showNotification('Nama ruangan diperbarui: $oldName -> $newName', 'info');
+        }
+      }
+    }
   });
 }
 
@@ -116,44 +181,50 @@ void _setupBuildingUpdateListener() {
   }
 
   void _handleRoomUpdate(dynamic data) {
-    try {
-      final roomData = data['data'];
-      DateTime.parse(data['timestamp']);
-      
-      setState(() {
-        _currentRoomData = Room(
-          id: _currentRoomData.id,
-          name: _currentRoomData.name,
-          buildingId: _currentRoomData.buildingId,
-          buildingName: _currentRoomData.buildingName,
-          dataSource: _currentRoomData.dataSource,
-          iotDeviceId: _currentRoomData.iotDeviceId,
-          isActive: _currentRoomData.isActive,
-          currentAQI: roomData['currentAQI'],
-          currentData: RoomData(
-            pm25: roomData['currentData']['pm25'].toDouble(),
-            pm10: roomData['currentData']['pm10'].toDouble(),
-            co2: roomData['currentData']['co2'].toDouble(),
-            temperature: roomData['currentData']['temperature'].toDouble(),
-            humidity: roomData['currentData']['humidity'].toDouble(),
-            updatedAt: DateTime.parse(roomData['currentData']['updatedAt']),
-          ),
-          createdAt: _currentRoomData.createdAt,
-          updatedAt: DateTime.parse(roomData['updatedAt']),
-        );
-      });
+  try {
+    final roomData = data['data'];
+    
+    // 🔥 BARU: Check if name has changed
+    final oldName = _currentRoomData.name;
+    final newName = roomData['name'] ?? _currentRoomData.name;
+    final nameChanged = oldName != newName;
+    
+    setState(() {
+      _currentRoomData = Room(
+        id: _currentRoomData.id,
+        name: newName, // 🔥 BARU: Gunakan nama baru jika ada
+        buildingId: _currentRoomData.buildingId,
+        buildingName: _currentRoomData.buildingName,
+        dataSource: _currentRoomData.dataSource,
+        iotDeviceId: _currentRoomData.iotDeviceId,
+        isActive: _currentRoomData.isActive,
+        currentAQI: roomData['currentAQI'],
+        currentData: RoomData(
+          pm25: roomData['currentData']['pm25'].toDouble(),
+          pm10: roomData['currentData']['pm10'].toDouble(),
+          co2: roomData['currentData']['co2'].toDouble(),
+          temperature: roomData['currentData']['temperature'].toDouble(),
+          humidity: roomData['currentData']['humidity'].toDouble(),
+          updatedAt: DateTime.parse(roomData['currentData']['updatedAt']),
+        ),
+        createdAt: _currentRoomData.createdAt,
+        updatedAt: DateTime.parse(roomData['updatedAt']),
+      );
+    });
 
-      // Add to historical data for chart
-      _addToHistoricalData(_currentRoomData);
+    // Add to historical data for chart
+    _addToHistoricalData(_currentRoomData);
 
-      // Show update notification
-      // _showUpdateNotification(_currentRoomData);
-
-      print('🔄 Real-time update: Room ${_currentRoomData.name} - AQI ${_currentRoomData.currentAQI}');
-    } catch (e) {
-      print('❌ Error handling room update: $e');
+    // Show update notification
+    if (nameChanged) {
+      _showNotification('Nama ruangan diperbarui: $oldName -> $newName', 'info');
     }
+
+    print('🔄 Real-time update: Room ${_currentRoomData.name} - AQI ${_currentRoomData.currentAQI}');
+  } catch (e) {
+    print('❌ Error handling room update: $e');
   }
+}
 
   void _addToHistoricalData(Room room) {
     // Limit historical data to 50 points
@@ -316,36 +387,38 @@ Future<void> _loadHistoricalData() async {
   // Remove event listeners
   _socketService.off('room-update');
   _socketService.off('notification');
-  _socketService.off('room-building-updated'); // Tambahkan ini
+  _socketService.off('room-building-updated');
+  _socketService.off('room-name-updated'); // 🔥 BARU: Hapus listener nama ruangan
+  _socketService.off('room-updated'); // 🔥 BARU: Hapus listener umum
   
   // Cancel subscription
   _roomUpdateSubscription?.cancel();
   
-  _autoRefreshTimer?.cancel();
+  // _autoRefreshTimer?.cancel();
   super.dispose();
 }
 
-  void _startAutoRefresh() {
-    _autoRefreshTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (!_isMounted) {
-        timer.cancel();
-        return;
-      }
+  // void _startAutoRefresh() {
+  //   _autoRefreshTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+  //     if (!_isMounted) {
+  //       timer.cancel();
+  //       return;
+  //     }
       
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!_isMounted) return;
+  //     WidgetsBinding.instance.addPostFrameCallback((_) {
+  //       if (!_isMounted) return;
         
-        setState(() {
-          if (_autoRefreshCountdown <= 0) {
-            _autoRefreshCountdown = 5;
-            _refreshData();
-          } else {
-            _autoRefreshCountdown--;
-          }
-        });
-      });
-    });
-  }
+  //       setState(() {
+  //         if (_autoRefreshCountdown <= 0) {
+  //           _autoRefreshCountdown = 5;
+  //           _refreshData();
+  //         } else {
+  //           _autoRefreshCountdown--;
+  //         }
+  //       });
+  //     });
+  //   });
+  // }
 
   Future<void> _refreshData() async {
     if (!_isMounted) return;
@@ -1277,57 +1350,57 @@ if (chartMaxY <= chartMinY) {
               SizedBox(height: 24),
 
               // Footer with auto-refresh status
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: AppColors.surface,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Column(
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Row(
-                          children: [
-                            Container(
-                              width: 8,
-                              height: 8,
-                              decoration: BoxDecoration(
-                                color: _socketConnected ? Colors.green : Colors.grey,
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                            SizedBox(width: 8),
-                            Text(
-                              _socketConnected ? 'Real-time aktif' : 'Manual refresh',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: _socketConnected ? Colors.green : Colors.grey,
-                              ),
-                            ),
-                          ],
-                        ),
-                        Text(
-                          'Auto refresh: ${_autoRefreshCountdown}s',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey,
-                          ),
-                        ),
-                      ],
-                    ),
-                    SizedBox(height: 8),
-                    LinearProgressIndicator(
-                      value: _autoRefreshCountdown / 5,
-                      backgroundColor: Colors.grey.withOpacity(0.2),
-                      valueColor: AlwaysStoppedAnimation<Color>(
-                        _socketConnected ? Colors.green : Colors.blue,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+              // Container(
+              //   padding: const EdgeInsets.all(12),
+              //   decoration: BoxDecoration(
+              //     color: AppColors.surface,
+              //     borderRadius: BorderRadius.circular(8),
+              //   ),
+              //   child: Column(
+              //     children: [
+              //       Row(
+              //         mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              //         children: [
+              //           Row(
+              //             children: [
+              //               Container(
+              //                 width: 8,
+              //                 height: 8,
+              //                 decoration: BoxDecoration(
+              //                   color: _socketConnected ? Colors.green : Colors.grey,
+              //                   shape: BoxShape.circle,
+              //                 ),
+              //               ),
+              //               SizedBox(width: 8),
+              //               Text(
+              //                 _socketConnected ? 'Real-time aktif' : 'Manual refresh',
+              //                 style: TextStyle(
+              //                   fontSize: 12,
+              //                   color: _socketConnected ? Colors.green : Colors.grey,
+              //                 ),
+              //               ),
+              //             ],
+              //           ),
+              //           Text(
+              //             'Auto refresh: ${_autoRefreshCountdown}s',
+              //             style: TextStyle(
+              //               fontSize: 12,
+              //               color: Colors.grey,
+              //             ),
+              //           ),
+              //         ],
+              //       ),
+              //       SizedBox(height: 8),
+              //       LinearProgressIndicator(
+              //         value: _autoRefreshCountdown / 5,
+              //         backgroundColor: Colors.grey.withOpacity(0.2),
+              //         valueColor: AlwaysStoppedAnimation<Color>(
+              //           _socketConnected ? Colors.green : Colors.blue,
+              //         ),
+              //       ),
+              //     ],
+              //   ),
+              // ),
 
               SizedBox(height: 16),
             ],

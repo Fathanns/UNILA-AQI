@@ -62,23 +62,107 @@ io.on('connection', (socket) => {
   socket.on('join-room', (roomId) => {
     socket.join(roomId);
     console.log(`📡 Socket ${socket.id} joined room: ${roomId}`);
+    
+    // Send welcome message to this room
+    socket.emit('room-joined', {
+      roomId: roomId,
+      message: `Connected to room ${roomId}`,
+      timestamp: new Date()
+    });
   });
   
-  // Leave room
+    // Leave room
   socket.on('leave-room', (roomId) => {
     socket.leave(roomId);
     console.log(`📡 Socket ${socket.id} left room: ${roomId}`);
   });
+
+  // Subscribe to dashboard updates
+  socket.on('subscribe-dashboard', () => {
+    socket.join('dashboard');
+    console.log(`📊 Socket ${socket.id} subscribed to dashboard updates`);
+    
+    socket.emit('dashboard-subscribed', {
+      message: 'Subscribed to dashboard updates',
+      timestamp: new Date()
+    });
+  });
   
+  // Unsubscribe from dashboard
+  socket.on('unsubscribe-dashboard', () => {
+    socket.leave('dashboard');
+    console.log(`📊 Socket ${socket.id} unsubscribed from dashboard`);
+  });
+
+    // Subscribe to room updates
+   socket.on('subscribe-room-updates', (roomId) => {
+    socket.join(`room-updates-${roomId}`);
+    console.log(`📡 Socket ${socket.id} subscribed to room ${roomId} updates`);
+  });
+
+    // Request manual refre
+    socket.on('request-refresh', (data) => {
+    const roomId = data?.roomId;
+    console.log(`🔄 Socket ${socket.id} requested refresh${roomId ? ` for room ${roomId}` : ''}`);
+    
+    if (roomId) {
+      // Trigger refresh for specific room
+      socket.to(roomId).emit('room-refresh-requested', {
+        requestedBy: socket.id,
+        timestamp: new Date()
+      });
+    } else {
+      // Trigger general refresh
+      simulationService.updateAllRooms();
+      iotService.pollAllIoTDevices();
+      
+      // Broadcast refresh started
+      io.emit('refresh-started', {
+        requestedBy: socket.id,
+        timestamp: new Date()
+      });
+    }
+    
+    socket.emit('refresh-acknowledged', {
+      message: 'Refresh request received',
+      timestamp: new Date()
+    });
+  });
+
   // Handle disconnection
-  socket.on('disconnect', () => {
-    console.log(`🔌 Client disconnected: ${socket.id}`);
+  socket.on('disconnect', (reason) => {
+    console.log(`🔌 Client disconnected: ${socket.id} (reason: ${reason})`);
+    
+    // Notify dashboard about disconnection
+    socket.to('dashboard').emit('client-disconnected', {
+      socketId: socket.id,
+      timestamp: new Date(),
+      reason: reason
+    });
   });
   
   // Ping for connection testing
-  socket.on('ping', () => {
-    socket.emit('pong', { timestamp: new Date() });
+    socket.on('ping', (data) => {
+    const clientTime = data?.timestamp;
+    socket.emit('pong', {
+      serverTime: new Date(),
+      clientTime: clientTime,
+      latency: clientTime ? Date.now() - new Date(clientTime).getTime() : null
+    });
   });
+
+     // Send connection confirmation
+  socket.emit('connected', {
+    socketId: socket.id,
+    message: 'Connected to UNILA AQI WebSocket server',
+    timestamp: new Date(),
+    serverInfo: {
+      name: 'UNILA AQI Backend',
+      version: '1.0.0',
+      features: ['real-time-updates', 'room-monitoring', 'dashboard-updates']
+    }
+  });
+
 });
 
 // Make io accessible to other modules
