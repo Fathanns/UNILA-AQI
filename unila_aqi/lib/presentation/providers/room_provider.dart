@@ -23,8 +23,8 @@ class RoomProvider with ChangeNotifier {
   bool _isRefreshing = false;
  
   // Timer for periodic refresh
-  Timer? _refreshTimer;
-  final Duration _refreshInterval = Duration(seconds: 60); // Refresh every 60 seconds
+  // Timer? _refreshTimer;
+  // final Duration _refreshInterval = Duration(seconds: 60); // Refresh every 60 seconds
   DateTime _lastUpdate = DateTime.now();
  
   // Stream subscriptions
@@ -69,11 +69,11 @@ class RoomProvider with ChangeNotifier {
       // Setup connection listener
       _socketSubscription = _socketService.connectionStream.listen((connected) {
         _socketConnected = connected;
-        if (connected) {
-          _startPeriodicRefresh();
-        } else {
-          _stopPeriodicRefresh();
-        }
+        // if (connected) {
+        //   _startPeriodicRefresh();
+        // } else {
+        //   _stopPeriodicRefresh();
+        // }
         notifyListeners();
       });
  
@@ -92,44 +92,44 @@ class RoomProvider with ChangeNotifier {
  
       if (_socketConnected) {
         print('✅ Socket.io initialized and connected');
-        _startPeriodicRefresh();
+        // _startPeriodicRefresh();
       }
  
       notifyListeners();
     } catch (e) {
       print('❌ Error initializing socket: $e');
       _socketConnected = false;
-      _startPeriodicRefresh(); // Start timer even without socket
+      // _startPeriodicRefresh(); // Start timer even without socket
     }
   }
  
   // Start periodic refresh timer
-  void _startPeriodicRefresh() {
-    if (_refreshTimer != null && _refreshTimer!.isActive) {
-      _refreshTimer!.cancel();
-    }
+  // void _startPeriodicRefresh() {
+  //   if (_refreshTimer != null && _refreshTimer!.isActive) {
+  //     _refreshTimer!.cancel();
+  //   }
  
-    _refreshTimer = Timer.periodic(_refreshInterval, (timer) {
-      if (_socketConnected) {
-        // Use socket for real-time updates
-        _socketService.requestRefresh();
-      } else {
-        // Fallback to API refresh
-        _refreshData();
-      }
-    });
+  //   _refreshTimer = Timer.periodic(_refreshInterval, (timer) {
+  //     if (_socketConnected) {
+  //       // Use socket for real-time updates
+  //       _socketService.requestRefresh();
+  //     } else {
+  //       // Fallback to API refresh
+  //       _refreshData();
+  //     }
+  //   });
  
-    print('🔄 Started periodic refresh every ${_refreshInterval.inSeconds}s');
-  }
+  //   print('🔄 Started periodic refresh every ${_refreshInterval.inSeconds}s');
+  // }
  
   // Stop periodic refresh timer
-  void _stopPeriodicRefresh() {
-    if (_refreshTimer != null) {
-      _refreshTimer!.cancel();
-      _refreshTimer = null;
-      print('⏹️ Stopped periodic refresh');
-    }
-  }
+  // void _stopPeriodicRefresh() {
+  //   if (_refreshTimer != null) {
+  //     _refreshTimer!.cancel();
+  //     _refreshTimer = null;
+  //     print('⏹️ Stopped periodic refresh');
+  //   }
+  // }
  
   // Handle socket data stream
   void _handleSocketData(Map<String, dynamic> data) {
@@ -569,7 +569,7 @@ void handleRoomNameChanged(Map<String, dynamic> data) {
   @override
   void dispose() {
     // Stop refresh timer
-    _stopPeriodicRefresh();
+    // _stopPeriodicRefresh();
  
     // Cancel subscriptions
     _socketSubscription?.cancel();

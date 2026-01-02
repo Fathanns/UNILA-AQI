@@ -11,7 +11,7 @@ class IoTService {
     this.task = null;
     this.io = null;
     this.deviceLastData = new Map();
-    this.pollingInterval = 30000; // 30 detik untuk IoT
+    this.pollingInterval = 10000; // 60 detik untuk IoT
   }
 
   /**
@@ -26,8 +26,8 @@ class IoTService {
     this.io = io;
     console.log(`🚀 Starting IoT Service (polling every ${this.pollingInterval/1000}s)...`);
 
-    // Schedule task to run every 30 seconds
-    this.task = cron.schedule(`*/${this.pollingInterval/1000} * * * * *`, async () => {
+    // Schedule task to run every 10 seconds
+    this.task = cron.schedule('*/10 * * * * *', async () => {
       await this.pollAllIoTDevices();
     });
 
@@ -78,6 +78,7 @@ class IoTService {
       
       const successfulPolls = results.filter(r => r.status === 'fulfilled' && r.value).length;
       console.log(`✅ IoT polling completed: ${successfulPolls}/${devices.length} successful`);
+      console.log(`✅ Updated at ${new Date().toLocaleTimeString()}`);
       
     } catch (error) {
       console.error('❌ Error in pollAllIoTDevices:', error.message);

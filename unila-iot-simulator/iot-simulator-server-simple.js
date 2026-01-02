@@ -1,17 +1,19 @@
 const http = require('http');
 const url = require('url');
 
-// In-memory storage dengan update per menit
+// In-memory storage dengan update per 30 detik
 const registeredDevices = new Map();
 const deviceStates = new Map(); // State untuk setiap device
-const minuteDataCache = new Map(); // Cache data per menit
+const secondDataCache = new Map(); // Cache data per 30 detik
 
-// Helper: Generate data berdasarkan timestamp menit
-function generateMinuteBasedData(deviceId) {
+// Helper: Generate data berdasarkan timestamp 30 detik
+function generate30SecondBasedData(deviceId) {
   const now = new Date();
-  const currentMinute = Math.floor(now.getTime() / (60 * 1000)); // Unix minute
+  const currentSecond = Math.floor(now.getTime() / 1000);
+  const current30SecondBlock = Math.floor(currentSecond / 30); // Block 30 detik
   const hour = now.getHours();
   const minute = now.getMinutes();
+  const second = now.getSeconds();
   const dayOfWeek = now.getDay(); // 0 = Minggu, 6 = Sabtu
   
   // Jika device belum punya state, inisialisasi
@@ -28,8 +30,8 @@ function generateMinuteBasedData(deviceId) {
       roomType: hash % 4, // 0: Kelas, 1: Lab, 2: Perpustakaan, 3: Aula
       trendPM25: (hash % 3) - 1, // -1: turun, 0: stabil, 1: naik
       trendCO2: (hash % 3) - 1,
-      lastMinute: currentMinute - 1,
-      minuteCounter: 0
+      last30SecondBlock: current30SecondBlock - 1,
+      updateCounter: 0
     });
     
     console.log(`📊 Initialized device ${deviceId}:`, {
@@ -40,10 +42,10 @@ function generateMinuteBasedData(deviceId) {
   
   const state = deviceStates.get(deviceId);
   
-  // Cek jika masih di menit yang sama (cache)
-  if (minuteDataCache.has(deviceId)) {
-    const cached = minuteDataCache.get(deviceId);
-    if (cached.minute === currentMinute) {
+  // Cek jika masih di 30 detik block yang sama (cache)
+  if (secondDataCache.has(deviceId)) {
+    const cached = secondDataCache.get(deviceId);
+    if (cached.block30 === current30SecondBlock) {
       return cached.data;
     }
   }
@@ -88,13 +90,13 @@ function generateMinuteBasedData(deviceId) {
       break;
   }
   
-  // Update trends setiap beberapa menit
-  if (currentMinute > state.lastMinute) {
-    state.minuteCounter++;
-    state.lastMinute = currentMinute;
+  // Update trends setiap beberapa update (setiap ~2.5 menit)
+  if (current30SecondBlock > state.last30SecondBlock) {
+    state.updateCounter++;
+    state.last30SecondBlock = current30SecondBlock;
     
-    // Setiap 5 menit, sedikit adjust trend
-    if (state.minuteCounter % 5 === 0) {
+    // Setiap 5 update (150 detik / 2.5 menit), sedikit adjust trend
+    if (state.updateCounter % 5 === 0) {
       // Small random adjustment to trend
       state.trendPM25 += (Math.random() - 0.5) * 0.2;
       state.trendCO2 += (Math.random() - 0.5) * 0.1;
@@ -104,48 +106,48 @@ function generateMinuteBasedData(deviceId) {
       state.trendCO2 = Math.max(-1, Math.min(1, state.trendCO2));
     }
     
-    // Simulate events occasionally (every 30 minutes)
-    if (state.minuteCounter % 30 === 0 && Math.random() < 0.3) {
-      console.log(`⚠️ Simulating event for ${deviceId} at minute ${state.minuteCounter}`);
+    // Simulate events occasionally (every ~10 menit)
+    if (state.updateCounter % 20 === 0 && Math.random() < 0.3) {
+      console.log(`⚠️ Simulating event for ${deviceId} at update ${state.updateCounter}`);
       // Temporary spike
       timeFactor *= 1.8;
     }
   }
   
   // Calculate current values with trends
-  const minuteOffset = state.minuteCounter;
+  const updateOffset = state.updateCounter;
   
-  // PM2.5 dengan trend dan variasi menit
-  const pm25Trend = state.trendPM25 * (minuteOffset * 0.01);
-  const pm25MinuteVariation = Math.sin(minuteOffset * 0.1) * 2; // Sinusoidal variation
+  // PM2.5 dengan trend dan variasi
+  const pm25Trend = state.trendPM25 * (updateOffset * 0.005);
+  const pm30SecondVariation = Math.sin(updateOffset * 0.2) * 2; // Variasi sinusoidal
   const pm25Noise = (Math.random() - 0.5) * 0.5; // Small noise
   
   const pm25 = state.basePM25 * timeFactor * roomFactor * 
-               (1 + pm25Trend + pm25MinuteVariation * 0.1 + pm25Noise);
+               (1 + pm25Trend + pm30SecondVariation * 0.1 + pm25Noise);
   
   // PM10 biasanya 1.8-2.2x PM2.5
-  const pm10 = pm25 * (1.9 + Math.sin(minuteOffset * 0.05) * 0.3);
+  const pm10 = pm25 * (1.9 + Math.sin(updateOffset * 0.1) * 0.3);
   
   // CO2 dengan trend sendiri
-  const co2Trend = state.trendCO2 * (minuteOffset * 0.005);
-  const co2MinuteVariation = Math.cos(minuteOffset * 0.08) * 50;
+  const co2Trend = state.trendCO2 * (updateOffset * 0.0025);
+  const co230SecondVariation = Math.cos(updateOffset * 0.16) * 50;
   const co2 = state.baseCO2 * timeFactor * roomFactor * 
-              (1 + co2Trend) + co2MinuteVariation;
+              (1 + co2Trend) + co230SecondVariation;
   
   // Temperature - gradual changes throughout day
   const tempBase = state.baseTemp;
   const tempDailyVariation = Math.sin(hour * 0.2618 + minute * 0.00436) * 3; // ±3°C daily cycle
-  const tempMinuteVariation = Math.sin(minuteOffset * 0.02) * 0.5; // Small minute variation
+  const temp30SecondVariation = Math.sin(updateOffset * 0.04) * 0.5; // Small variation per 30s
   
-  const temperature = tempBase + tempDailyVariation + tempMinuteVariation;
+  const temperature = tempBase + tempDailyVariation + temp30SecondVariation;
   
   // Humidity - inverse of temperature
   const humidityBase = state.baseHumidity;
   const humidityDailyVariation = Math.cos(hour * 0.2618 + minute * 0.00436) * 10; // ±10%
-  const humidityMinuteVariation = Math.cos(minuteOffset * 0.03) * 2;
+  const humidity30SecondVariation = Math.cos(updateOffset * 0.06) * 2;
   
   const humidity = Math.max(30, Math.min(85, 
-    humidityBase + humidityDailyVariation + humidityMinuteVariation));
+    humidityBase + humidityDailyVariation + humidity30SecondVariation));
   
   // Calculate AQI
   let aqi;
@@ -175,8 +177,9 @@ function generateMinuteBasedData(deviceId) {
   const sensorData = {
     deviceId,
     timestamp: now.toISOString(),
-    minute: currentMinute,
-    minuteCounter: state.minuteCounter,
+    block30: current30SecondBlock,
+    secondsInBlock: second % 30,
+    updateCounter: state.updateCounter,
     aqi,
     pm25: parseFloat(pm25.toFixed(1)),
     pm10: parseFloat(pm10.toFixed(1)),
@@ -193,41 +196,42 @@ function generateMinuteBasedData(deviceId) {
       time: parseFloat(timeFactor.toFixed(2)),
       room: parseFloat(roomFactor.toFixed(2)),
       hour: hour,
-      minute: minute
+      minute: minute,
+      second: second
     }
   };
   
-  // Cache untuk menit ini
-  minuteDataCache.set(deviceId, {
-    minute: currentMinute,
+  // Cache untuk 30 detik block ini
+  secondDataCache.set(deviceId, {
+    block30: current30SecondBlock,
     data: sensorData,
     timestamp: now
   });
   
-  // Log perubahan jika menit baru
-  if (minuteDataCache.size > 0) {
-    const prevCache = Array.from(minuteDataCache.values())
+  // Log perubahan jika block baru
+  if (secondDataCache.size > 0) {
+    const prevCache = Array.from(secondDataCache.values())
       .find(cache => cache.deviceId === deviceId);
     
-    if (prevCache && prevCache.minute !== currentMinute) {
-      console.log(`🔄 ${deviceId}: Menit ${currentMinute} - AQI: ${aqi}, PM2.5: ${sensorData.pm25}`);
+    if (prevCache && prevCache.block30 !== current30SecondBlock) {
+      console.log(`🔄 ${deviceId}: Block ${current30SecondBlock} (${now.getHours()}:${minute.toString().padStart(2, '0')}:${second.toString().padStart(2, '0')}) - AQI: ${aqi}, PM2.5: ${sensorData.pm25}`);
     }
   }
   
   return sensorData;
 }
 
-// Clean old cache entries setiap 5 menit
+// Clean old cache entries setiap 60 detik
 setInterval(() => {
   const now = Date.now();
-  const currentMinute = Math.floor(now / (60 * 1000));
+  const currentBlock = Math.floor(now / (30 * 1000));
   
-  for (const [deviceId, cache] of minuteDataCache.entries()) {
-    if (cache.minute < currentMinute - 2) { // Hapus cache > 2 menit
-      minuteDataCache.delete(deviceId);
+  for (const [deviceId, cache] of secondDataCache.entries()) {
+    if (cache.block30 < currentBlock - 2) { // Hapus cache > 60 detik
+      secondDataCache.delete(deviceId);
     }
   }
-}, 30000); // Check setiap 30 detik
+}, 60000); // Check setiap 60 detik
 
 // Helper functions
 function setCorsHeaders(res) {
@@ -284,20 +288,25 @@ const server = http.createServer((req, res) => {
     }
     
     try {
-      // 1. Health check dengan info menit
+      // 1. Health check dengan info 30 detik
       if (pathname === '/health' && method === 'GET') {
-        const currentMinute = Math.floor(Date.now() / (60 * 1000));
+        const now = new Date();
+        const currentSecond = Math.floor(Date.now() / 1000);
+        const current30SecondBlock = Math.floor(currentSecond / 30);
+        const nextChangeInSeconds = 30 - (now.getSeconds() % 30);
         
         sendJson(res, 200, {
           status: 'ok',
-          service: 'UNILA AQI IoT Simulator - MINUTE UPDATES',
+          service: 'UNILA AQI IoT Simulator - 30 SECOND UPDATES',
           version: '3.0.0',
-          currentMinute: currentMinute,
-          currentTime: new Date().toISOString(),
+          currentTime: now.toISOString(),
+          current30SecondBlock: current30SecondBlock,
+          secondsInCurrentBlock: now.getSeconds() % 30,
+          nextUpdateIn: nextChangeInSeconds,
           devices: registeredDevices.size,
-          cacheSize: minuteDataCache.size,
+          cacheSize: secondDataCache.size,
           features: [
-            'Minute-based updates',
+            '30-second updates',
             'Predictable patterns',
             'Trend simulation',
             'Room type variations',
@@ -332,7 +341,7 @@ const server = http.createServer((req, res) => {
           registeredAt: new Date(),
           lastSeen: new Date(),
           status: 'active',
-          updatePattern: 'minute-based'
+          updatePattern: '30-second-based'
         });
         
         console.log(`✅ Device registered: ${deviceId} (${['Kelas', 'Lab', 'Perpustakaan', 'Aula'][roomTypeNum]})`);
@@ -341,12 +350,12 @@ const server = http.createServer((req, res) => {
           success: true,
           message: 'Device registered successfully',
           device: registeredDevices.get(deviceId),
-          note: 'Data will update every minute based on time patterns'
+          note: 'Data will update every 30 seconds based on time patterns'
         });
         return;
       }
       
-      // 3. MAIN ENDPOINT: Get sensor data dengan update per menit
+      // 3. MAIN ENDPOINT: Get sensor data dengan update per 30 detik
       if (pathname.startsWith('/data/') && method === 'GET') {
         const deviceId = pathname.split('/')[2];
         
@@ -370,7 +379,7 @@ const server = http.createServer((req, res) => {
             registeredAt: new Date(),
             lastSeen: new Date(),
             status: 'active',
-            updatePattern: 'minute-based-auto'
+            updatePattern: '30-second-based-auto'
           });
           
           console.log(`✅ Auto-registered: ${deviceId} (${['Kelas', 'Lab', 'Perpustakaan', 'Aula'][roomType]})`);
@@ -381,20 +390,26 @@ const server = http.createServer((req, res) => {
           registeredDevices.set(deviceId, device);
         }
         
-        // Generate data berdasarkan menit
-        const sensorData = generateMinuteBasedData(deviceId);
+        // Generate data berdasarkan 30 detik
+        const sensorData = generate30SecondBasedData(deviceId);
+        
+        // Hitung waktu sampai update berikutnya
+        const now = new Date();
+        const secondsRemaining = 30 - (now.getSeconds() % 30);
         
         // Response
         const response = {
           success: true,
-          message: 'Sensor data (updates every minute)',
+          message: 'Sensor data (updates every 30 seconds)',
           device: registeredDevices.get(deviceId),
           data: sensorData,
           metadata: {
-            source: 'UNILA AQI IoT Simulator - MINUTE UPDATES',
-            updateFrequency: 'Every minute',
-            currentMinute: sensorData.minute,
-            cacheInfo: 'Data changes at minute boundaries',
+            source: 'UNILA AQI IoT Simulator - 30 SECOND UPDATES',
+            updateFrequency: 'Every 30 seconds',
+            currentBlock: sensorData.block30,
+            secondsInCurrentBlock: sensorData.secondsInBlock,
+            nextUpdateInSeconds: secondsRemaining,
+            cacheInfo: 'Data changes at 30-second boundaries',
             units: {
               pm25: 'μg/m³',
               pm10: 'μg/m³',
@@ -431,10 +446,12 @@ const server = http.createServer((req, res) => {
         const now = new Date();
         const lastSeen = new Date(deviceInfo.lastSeen);
         const secondsSinceLastSeen = (now - lastSeen) / 1000;
-        const currentMinute = Math.floor(now.getTime() / (60 * 1000));
+        const currentSecond = Math.floor(now.getTime() / 1000);
+        const current30SecondBlock = Math.floor(currentSecond / 30);
+        const secondsRemaining = 30 - (now.getSeconds() % 30);
         
         const state = deviceStates.get(deviceId);
-        const cache = minuteDataCache.get(deviceId);
+        const cache = secondDataCache.get(deviceId);
         
         sendJson(res, 200, {
           success: true,
@@ -443,13 +460,14 @@ const server = http.createServer((req, res) => {
             online: secondsSinceLastSeen < 120,
             lastSeen: deviceInfo.lastSeen,
             secondsSinceLastSeen: Math.round(secondsSinceLastSeen),
-            currentMinute: currentMinute,
-            nextMinuteChange: 60 - now.getSeconds(),
+            current30SecondBlock: current30SecondBlock,
+            secondsInCurrentBlock: now.getSeconds() % 30,
+            nextUpdateInSeconds: secondsRemaining,
             hasCachedData: !!cache,
-            cachedMinute: cache ? cache.minute : null,
+            cachedBlock: cache ? cache.block30 : null,
             stateInfo: state ? {
               roomType: ['Kelas', 'Laboratorium', 'Perpustakaan', 'Aula'][state.roomType],
-              minuteCounter: state.minuteCounter,
+              updateCounter: state.updateCounter,
               trends: { pm25: state.trendPM25, co2: state.trendCO2 }
             } : 'Not initialized'
           }
@@ -469,12 +487,12 @@ const server = http.createServer((req, res) => {
         }
         
         // Clear cache untuk device ini
-        minuteDataCache.delete(deviceId);
+        secondDataCache.delete(deviceId);
         
-        // Jika ada state, reset minute counter untuk paksa update
+        // Jika ada state, reset block untuk paksa update
         if (deviceStates.has(deviceId)) {
           const state = deviceStates.get(deviceId);
-          state.lastMinute = -1; // Force new minute
+          state.last30SecondBlock = -1; // Force new block
         }
         
         console.log(`🔄 Force update triggered for ${deviceId}`);
@@ -483,7 +501,7 @@ const server = http.createServer((req, res) => {
           success: true,
           message: 'Force update triggered',
           deviceId,
-          note: 'Next request will generate new minute-based data'
+          note: 'Next request will generate new 30-second-based data'
         });
         return;
       }
@@ -511,8 +529,8 @@ const server = http.createServer((req, res) => {
             roomType: 0,
             trendPM25: 0,
             trendCO2: 0,
-            lastMinute: -1,
-            minuteCounter: 0
+            last30SecondBlock: -1,
+            updateCounter: 0
           });
         }
         
@@ -532,7 +550,7 @@ const server = http.createServer((req, res) => {
         }
         
         // Clear cache
-        minuteDataCache.delete(deviceId);
+        secondDataCache.delete(deviceId);
         
         console.log(`🎯 Custom base set for ${deviceId}:`, {
           pm25: state.basePM25,
@@ -556,10 +574,10 @@ const server = http.createServer((req, res) => {
         return;
       }
       
-      // 7. Get minute history (last N minutes)
+      // 7. Get history (last N 30-second blocks)
       if (pathname.startsWith('/history/') && method === 'GET') {
         const deviceId = pathname.split('/')[2];
-        const minutes = parseInt(parsedUrl.query.minutes) || 10;
+        const blocks = parseInt(parsedUrl.query.blocks) || 20; // Default 20 blocks = 10 menit
         
         if (!deviceId) {
           return sendJson(res, 400, {
@@ -570,26 +588,28 @@ const server = http.createServer((req, res) => {
         
         // Simulasi data historis
         const now = new Date();
-        const currentMinute = Math.floor(now.getTime() / (60 * 1000));
+        const currentSecond = Math.floor(now.getTime() / 1000);
+        const currentBlock = Math.floor(currentSecond / 30);
         const history = [];
         
         // Jika device punya state, generate historical data
         if (deviceStates.has(deviceId)) {
           const state = deviceStates.get(deviceId);
           
-          for (let i = minutes; i >= 0; i--) {
-            const historyMinute = currentMinute - i;
-            const historyTime = new Date(now.getTime() - (i * 60 * 1000));
+          for (let i = blocks; i >= 0; i--) {
+            const historyBlock = currentBlock - i;
+            const historyTime = new Date(now.getTime() - (i * 30 * 1000));
             
-            // Gunakan algoritma yang sama tapi dengan offset menit
-            const minuteOffset = state.minuteCounter - i;
+            // Gunakan algoritma yang sama tapi dengan offset
+            const updateOffset = state.updateCounter - i;
             const hour = historyTime.getHours();
+            const minute = historyTime.getMinutes();
             
             // Calculate historical values (simplified)
             let timeFactor = 1.0;
             if (hour >= 7 && hour <= 18) timeFactor = 1.2;
             
-            const pm25 = state.basePM25 * timeFactor * (1 + Math.sin(minuteOffset * 0.1) * 0.2);
+            const pm25 = state.basePM25 * timeFactor * (1 + Math.sin(updateOffset * 0.2) * 0.2);
             const pm10 = pm25 * 2;
             const co2 = state.baseCO2 * timeFactor;
             
@@ -604,13 +624,13 @@ const server = http.createServer((req, res) => {
             
             history.push({
               timestamp: historyTime.toISOString(),
-              minute: historyMinute,
+              block: historyBlock,
               aqi: Math.min(500, aqi),
               pm25: parseFloat(pm25.toFixed(1)),
               pm10: parseFloat(pm10.toFixed(1)),
               co2: Math.round(co2),
-              temperature: state.baseTemp + Math.sin(hour * 0.2618) * 3,
-              humidity: state.baseHumidity + Math.cos(hour * 0.2618) * 10
+              temperature: state.baseTemp + Math.sin(hour * 0.2618 + minute * 0.00436) * 3,
+              humidity: state.baseHumidity + Math.cos(hour * 0.2618 + minute * 0.00436) * 10
             });
           }
         }
@@ -618,25 +638,27 @@ const server = http.createServer((req, res) => {
         sendJson(res, 200, {
           success: true,
           deviceId,
-          period: `${minutes} minutes`,
-          currentMinute: currentMinute,
+          period: `${blocks * 30} seconds (${blocks} blocks)`,
+          currentBlock: currentBlock,
           count: history.length,
           data: history
         });
         return;
       }
       
-      // 8. List all devices dengan info menit
+      // 8. List all devices dengan info 30 detik
       if (pathname === '/devices' && method === 'GET') {
         const devices = Array.from(registeredDevices.values());
         const now = new Date();
-        const currentMinute = Math.floor(now.getTime() / (60 * 1000));
+        const currentSecond = Math.floor(now.getTime() / 1000);
+        const currentBlock = Math.floor(currentSecond / 30);
+        const secondsRemaining = 30 - (now.getSeconds() % 30);
         
         const devicesWithInfo = devices.map(device => {
           const lastSeen = new Date(device.lastSeen);
           const secondsSinceLastSeen = (now - lastSeen) / 1000;
           const state = deviceStates.get(device.deviceId);
-          const cache = minuteDataCache.get(device.deviceId);
+          const cache = secondDataCache.get(device.deviceId);
           
           return {
             ...device,
@@ -644,17 +666,20 @@ const server = http.createServer((req, res) => {
             status: secondsSinceLastSeen < 120 ? 'online' : 'offline',
             secondsSinceLastSeen: Math.round(secondsSinceLastSeen),
             hasState: !!state,
-            minuteCounter: state ? state.minuteCounter : 0,
+            updateCounter: state ? state.updateCounter : 0,
             cachedData: !!cache,
-            cachedAtMinute: cache ? cache.minute : null,
-            currentMinute: currentMinute
+            cachedAtBlock: cache ? cache.block30 : null,
+            currentBlock: currentBlock,
+            nextUpdateIn: secondsRemaining
           };
         });
         
         sendJson(res, 200, {
           success: true,
-          currentMinute: currentMinute,
+          currentBlock: currentBlock,
           currentTime: now.toISOString(),
+          secondsInCurrentBlock: now.getSeconds() % 30,
+          nextUpdateInSeconds: secondsRemaining,
           totalDevices: devices.length,
           onlineDevices: devicesWithInfo.filter(d => d.status === 'online').length,
           devices: devicesWithInfo
@@ -685,31 +710,43 @@ const PORT = process.env.IOT_PORT || 3002;
 const HOST = process.env.IOT_HOST || 'localhost';
 
 server.listen(PORT, HOST, () => {
-  console.log('🚀 UNILA AQI IoT Simulator - MINUTE UPDATES');
+  console.log('🚀 UNILA AQI IoT Simulator - 30 SECOND UPDATES');
   console.log(`📍 URL: http://${HOST}:${PORT}`);
   console.log(`📡 Health Check: http://${HOST}:${PORT}/health`);
   
   console.log('\n⏰ FEATURE HIGHLIGHTS:');
-  console.log('   ✅ Data BERUBAH SETIAP 1 MENIT');
+  console.log('   ✅ Data BERUBAH SETIAP 30 DETIK');
   console.log('   ✅ Pola berdasarkan waktu (jam, hari)');
   console.log('   ✅ Trend gradual (naik/turun perlahan)');
-  console.log('   ✅ Cache per menit');
+  console.log('   ✅ Cache per 30 detik');
   console.log('   ✅ Room type variations');
   console.log('   ✅ Simulasi event (lonjakan periodik)');
   
   console.log('\n📋 Available Endpoints:');
-  console.log(`  GET  /health                    - Health check with minute info`);
-  console.log(`  POST /register                 - Register device with room type`);
-  console.log(`  GET  /data/:deviceId           - MAIN - Data updates per minute`);
-  console.log(`  GET  /status/:deviceId         - Status dengan countdown menit`);
-  console.log(`  POST /force-update/:deviceId   - Force new minute data`);
+  console.log(`  GET  /health                    - Health check dengan info 30 detik`);
+  console.log(`  POST /register                 - Register device dengan room type`);
+  console.log(`  GET  /data/:deviceId           - MAIN - Data updates setiap 30 detik`);
+  console.log(`  GET  /status/:deviceId         - Status dengan countdown 30 detik`);
+  console.log(`  POST /force-update/:deviceId   - Force new 30-second data`);
   console.log(`  POST /set-base/:deviceId       - Set custom base values`);
-  console.log(`  GET  /history/:deviceId        - Historical minute data`);
+  console.log(`  GET  /history/:deviceId        - Historical 30-second data`);
   console.log(`  GET  /devices                  - List semua devices`);
   
   console.log('\n💡 Contoh untuk Aplikasi AQI:');
   console.log(`  Endpoint: http://${HOST}:${PORT}/data/kelas-h101`);
-  console.log(`  Data akan berubah setiap pergantian menit`);
+  console.log(`  Data akan berubah setiap 30 detik (pada detik ke-0 dan ke-30)`);
   console.log(`  Pattern: lebih tinggi jam 7-18, lebih rendah malam`);
   console.log(`  Weekend: 40% lebih rendah dari weekday`);
+  
+  // Log countdown setiap 30 detik
+  setInterval(() => {
+    const now = new Date();
+    const seconds = now.getSeconds();
+    const block30 = Math.floor(seconds / 30);
+    const secondsRemaining = 30 - (seconds % 30);
+    
+    if (seconds % 30 === 0) {
+      console.log(`🔄 30-second update boundary reached at ${now.getHours()}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`);
+    }
+  }, 1000);
 });
