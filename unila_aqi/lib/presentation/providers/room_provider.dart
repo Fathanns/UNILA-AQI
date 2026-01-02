@@ -24,7 +24,7 @@ class RoomProvider with ChangeNotifier {
  
   // Timer for periodic refresh
   Timer? _refreshTimer;
-  final Duration _refreshInterval = Duration(seconds: 15); // Refresh every 15 seconds
+  final Duration _refreshInterval = Duration(seconds: 60); // Refresh every 60 seconds
   DateTime _lastUpdate = DateTime.now();
  
   // Stream subscriptions

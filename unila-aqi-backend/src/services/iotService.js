@@ -4,15 +4,14 @@ const Room = require('../models/Room');
 const IoTDevice = require('../models/IoTDevice');
 const SensorData = require('../models/SensorData');
 const { getAQICategory } = require('../utils/aqiCalculator');
-const { generateSensorData } = require('../utils/dataGenerator');
 
 class IoTService {
   constructor() {
     this.isRunning = false;
     this.task = null;
     this.io = null;
-    this.activePolls = new Map(); // Store active polling for each device
-    this.pollingInterval = 15000; // Reduce to 15 seconds for faster updates
+    this.deviceLastData = new Map();
+    this.pollingInterval = 30000; // 30 detik untuk IoT
   }
 
   /**
@@ -25,9 +24,9 @@ class IoTService {
     }
 
     this.io = io;
-    console.log(`🚀 Starting IoT Service with Socket.io (polling every ${this.pollingInterval/1000}s)...`);
+    console.log(`🚀 Starting IoT Service (polling every ${this.pollingInterval/1000}s)...`);
 
-    // Schedule task to run every 15 seconds instead of 30
+    // Schedule task to run every 30 seconds
     this.task = cron.schedule(`*/${this.pollingInterval/1000} * * * * *`, async () => {
       await this.pollAllIoTDevices();
     });
@@ -48,13 +47,10 @@ class IoTService {
       this.isRunning = false;
       console.log('⏹️ IoT Service stopped');
     }
-    
-    // Clear all active polls
-    this.activePolls.clear();
   }
 
   /**
-   * Poll all IoT devices and update rooms - OPTIMIZED VERSION
+   * Poll all IoT devices
    */
   async pollAllIoTDevices() {
     try {
@@ -70,7 +66,7 @@ class IoTService {
 
       console.log(`🔄 Polling ${devices.length} IoT devices...`);
 
-      // Use Promise.all for parallel polling
+      // Poll devices in parallel
       const pollPromises = devices.map(device => 
         this.pollDevice(device).catch(error => {
           console.error(`❌ Error polling device ${device.name}:`, error.message);
@@ -89,102 +85,60 @@ class IoTService {
   }
 
   /**
-   * Poll single IoT device - OPTIMIZED with faster response
+   * Poll single IoT device
    */
   async pollDevice(device) {
-    // Check if already polling this device
-    if (this.activePolls.has(device._id.toString())) {
-      console.log(`⏳ Device ${device.name} is already being polled, skipping...`);
-      return null;
-    }
-
-    // Mark as polling
-    this.activePolls.set(device._id.toString(), true);
-
     try {
       console.log(`📡 Polling device: ${device.name} (${device.apiEndpoint})`);
-
-      // Fetch data from IoT endpoint with shorter timeout
-      const response = await axios.get(device.apiEndpoint, {
-        timeout: 3000, // Reduced timeout to 3 seconds
-        headers: {
-          'Cache-Control': 'no-cache',
-          'Pragma': 'no-cache'
-        }
-      });
-
-      if (response.data && response.data.success === true) {
+      const response = await axios.get(device.apiEndpoint, { timeout: 5000 });
+      
+      if (response.data?.success === true) {
         const iotData = response.data.data;
         
-        // Validate data structure
+        // Validate IoT data structure
         if (!this.isValidIoTData(iotData)) {
           throw new Error('Invalid IoT data structure');
         }
-
+        
+        // Check if data has changed
+        const lastData = this.deviceLastData.get(device._id.toString());
+        const hasChanged = this._hasDataChanged(lastData, iotData);
+        
+        // Save last data
+        this.deviceLastData.set(device._id.toString(), iotData);
+        
         // Update device status
         device.status = 'online';
         device.lastUpdate = new Date();
-        device.updatedAt = new Date();
         await device.save();
-
-        console.log(`✅ Device ${device.name} response:`, {
-          aqi: iotData.aqi,
-          pm25: iotData.pm25,
-          temperature: iotData.temperature,
-          timestamp: new Date().toLocaleTimeString()
-        });
-
-        // Find rooms using this device
-        const rooms = await Room.find({ 
-          iotDeviceId: device._id.toString(),
-          isActive: true 
-        });
-
-        if (rooms.length === 0) {
-          console.log(`⚠️ No active rooms using device ${device.name}`);
-        } else {
-          // Update each room in parallel
-          const updatePromises = rooms.map(room => 
-            this.updateRoomFromIoT(room, iotData, device.name)
-          );
+        
+        // Broadcast if data changed
+        if (hasChanged || !lastData) {
+          console.log(`🔄 Data changed for device ${device.name}, broadcasting...`);
           
-          await Promise.all(updatePromises);
-          console.log(`✅ Updated ${rooms.length} rooms from ${device.name}`);
+          // Find rooms using this device
+          const rooms = await Room.find({ 
+            iotDeviceId: device._id.toString(),
+            isActive: true 
+          });
+          
+          // Update and broadcast each room
+          for (const room of rooms) {
+            await this.updateRoomFromIoT(room, iotData, device.name);
+          }
+        } else {
+          console.log(`ℹ️ No data change for device ${device.name}, skipping broadcast`);
         }
-
-        return { success: true, device: device.name, data: iotData };
-
-      } else {
-        throw new Error('Invalid response format');
+        
+        return { success: true, changed: hasChanged };
       }
-
     } catch (error) {
-      console.error(`❌ Error polling device ${device.name}:`, error.message);
-      
-      // Update device status
-      device.status = error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT' ? 'offline' : 'error';
-      device.updatedAt = new Date();
+      // Handle error
+      device.status = error.code === 'ECONNABORTED' ? 'offline' : 'error';
       await device.save();
       
-      // Use simulation data as fallback for rooms using this device
-      const rooms = await Room.find({ 
-        iotDeviceId: device._id.toString(),
-        isActive: true 
-      });
-      
-      if (rooms.length > 0) {
-        const fallbackPromises = rooms.map(room => 
-          this.updateRoomWithFallbackData(room)
-        );
-        
-        await Promise.allSettled(fallbackPromises);
-        console.log(`⚠️ Used fallback data for ${rooms.length} rooms from ${device.name}`);
-      }
-      
-      return { success: false, device: device.name, error: error.message };
-    } finally {
-      // Remove from active polls
-      this.activePolls.delete(device._id.toString());
+      console.error(`❌ Error polling device ${device.name}:`, error.message);
+      return { success: false, error: error.message };
     }
   }
 
@@ -202,71 +156,57 @@ class IoTService {
   }
 
   /**
-   * Update room with fallback simulation data
+   * Check if data has changed significantly
    */
-  async updateRoomWithFallbackData(room) {
-    try {
-      const roomType = this.getRoomType(room.name);
-      const sensorData = generateSensorData(roomType);
-      const aqiInfo = getAQICategory(sensorData.aqi);
-
-      // Update room's current data
-      room.currentAQI = sensorData.aqi;
-      room.currentData = {
-        pm25: sensorData.pm25,
-        pm10: sensorData.pm10,
-        co2: sensorData.co2,
-        temperature: sensorData.temperature,
-        humidity: sensorData.humidity,
-        updatedAt: new Date()
-      };
-      room.updatedAt = new Date();
-
-      await room.save();
-
-      // Save historical data
-      const historicalData = new SensorData({
-        roomId: room._id,
-        roomName: room.name,
-        buildingName: room.buildingName,
-        aqi: sensorData.aqi,
-        pm25: sensorData.pm25,
-        pm10: sensorData.pm10,
-        co2: sensorData.co2,
-        temperature: sensorData.temperature,
-        humidity: sensorData.humidity,
-        category: sensorData.category,
-        timestamp: new Date()
-      });
-
-      await historicalData.save();
-
-      // Broadcast update via Socket.io
-      this.broadcastRoomUpdate(room, sensorData, 'fallback');
-
-      console.log(`✅ Updated room ${room.name} with fallback data: AQI ${sensorData.aqi}`);
-
-    } catch (error) {
-      console.error(`❌ Error updating room ${room.name} with fallback:`, error.message);
-    }
+  _hasDataChanged(oldData, newData) {
+    if (!oldData || !newData) return true;
+    
+    const thresholds = {
+      aqi: 5,
+      pm25: 2.0,
+      pm10: 5.0,
+      co2: 50,
+      temperature: 0.5,
+      humidity: 3.0
+    };
+    
+    return (
+      Math.abs(newData.aqi - (oldData.aqi || 0)) > thresholds.aqi ||
+      Math.abs(newData.pm25 - (oldData.pm25 || 0)) > thresholds.pm25 ||
+      Math.abs(newData.pm10 - (oldData.pm10 || 0)) > thresholds.pm10 ||
+      Math.abs(newData.co2 - (oldData.co2 || 0)) > thresholds.co2 ||
+      Math.abs(newData.temperature - (oldData.temperature || 0)) > thresholds.temperature ||
+      Math.abs(newData.humidity - (oldData.humidity || 0)) > thresholds.humidity
+    );
   }
 
   /**
-   * Update room data from IoT response
+   * Update room from IoT data
    */
   async updateRoomFromIoT(room, iotData, deviceName) {
     try {
-      // Validate required fields
-      if (!this.isValidIoTData(iotData)) {
-        console.warn(`⚠️ Incomplete data from ${deviceName} for room ${room.name}`);
-        await this.updateRoomWithFallbackData(room);
+      // Check if room data has changed
+      const currentData = room.currentData;
+      const hasRoomDataChanged = this._hasDataChanged(
+        {
+          aqi: room.currentAQI,
+          pm25: currentData.pm25,
+          pm10: currentData.pm10,
+          co2: currentData.co2,
+          temperature: currentData.temperature,
+          humidity: currentData.humidity
+        },
+        iotData
+      );
+      
+      if (!hasRoomDataChanged) {
+        console.log(`ℹ️ Room ${room.name} data unchanged, skipping update`);
         return;
       }
-
-      // Get AQI category
+      
+      // Update room data
       const aqiInfo = getAQICategory(iotData.aqi);
-
-      // Update room's current data
+      
       room.currentAQI = iotData.aqi;
       room.currentData = {
         pm25: iotData.pm25,
@@ -277,34 +217,28 @@ class IoTService {
         updatedAt: new Date()
       };
       room.updatedAt = new Date();
-
+      
       await room.save();
-
+      
       // Save historical data
       const historicalData = new SensorData({
         roomId: room._id,
         roomName: room.name,
         buildingName: room.buildingName,
-        aqi: iotData.aqi,
-        pm25: iotData.pm25,
-        pm10: iotData.pm10,
-        co2: iotData.co2,
-        temperature: iotData.temperature,
-        humidity: iotData.humidity,
+        ...iotData,
         category: aqiInfo.category,
         timestamp: new Date()
       });
-
+      
       await historicalData.save();
-
-      // Broadcast update via Socket.io
+      
+      // Broadcast via WebSocket
       this.broadcastRoomUpdate(room, iotData, 'iot', deviceName);
-
-      console.log(`✅ Updated room ${room.name} from IoT: AQI ${iotData.aqi}`);
-
+      
+      console.log(`✅ Updated & broadcasted IoT room ${room.name}: AQI ${iotData.aqi}`);
+      
     } catch (error) {
-      console.error(`❌ Error updating room ${room.name}:`, error.message);
-      await this.updateRoomWithFallbackData(room);
+      console.error(`❌ Error updating IoT room ${room.name}:`, error.message);
     }
   }
 
@@ -337,51 +271,12 @@ class IoTService {
         timestamp: new Date()
       });
 
-      console.log(`📢 Broadcast update for room ${room.name}: AQI ${room.currentAQI} (${source})`);
+      console.log(`📢 Broadcast IoT update for room ${room.name}: AQI ${room.currentAQI}`);
     }
   }
 
   /**
-   * Determine room type based on name
-   */
-  getRoomType(roomName) {
-    const name = roomName.toLowerCase();
-    
-    if (name.includes('lab') || name.includes('praktikum')) {
-      return 'laboratory';
-    } else if (name.includes('kelas') || name.includes('ruang') || name.includes('r.') || name.includes('gd.')) {
-      return 'classroom';
-    } else if (name.includes('perpustakaan') || name.includes('library')) {
-      return 'library';
-    } else if (name.includes('aula') || name.includes('auditorium') || name.includes('hall')) {
-      return 'crowded';
-    }
-    
-    return 'normal';
-  }
-
-  /**
-   * Manually trigger polling for a specific device
-   */
-  async pollDeviceById(deviceId) {
-    try {
-      const device = await IoTDevice.findById(deviceId);
-      if (device) {
-        const result = await this.pollDevice(device);
-        return { 
-          success: true, 
-          message: 'Device polled successfully',
-          result
-        };
-      }
-      return { success: false, message: 'Device not found' };
-    } catch (error) {
-      throw new Error(`Error polling device: ${error.message}`);
-    }
-  }
-
-  /**
-   * Force immediate poll of all devices (for manual refresh)
+   * Manually trigger polling
    */
   async forcePollAll() {
     console.log('🔄 Force polling all IoT devices...');
@@ -398,7 +293,6 @@ class IoTService {
       lastUpdate: new Date(),
       nextUpdate: new Date(Date.now() + this.pollingInterval),
       socketConnected: this.io !== null,
-      activePolls: Array.from(this.activePolls.keys()),
       pollingInterval: this.pollingInterval
     };
   }

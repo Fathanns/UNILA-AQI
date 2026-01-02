@@ -215,11 +215,13 @@ mongoose.connect(process.env.MONGODB_URI)
       console.log(`📊 Database already has ${buildingCount} buildings, skipping sample seeding`);
     }
     
-    // Start simulation service with socket.io instance
-    simulationService.start(io);
-    iotService.start(io);
+    // Start services with socket.io instance
+    simulationService.start(io);  // GANTI: gunakan simulationService
+    iotService.start(io);        // GANTI: gunakan iotService yang sudah diperbaiki
 
     console.log('✅ All services started');
+    console.log('   - Simulation Service: ACTIVE (1 minute intervals)');
+    console.log('   - IoT Service: ACTIVE (30 second intervals)');
   })
   .catch((err) => {
     console.error('❌ MongoDB connection error:', err.message);
@@ -300,15 +302,19 @@ app.get('/api/simple-test', (req, res) => {
 app.post('/api/force-refresh', async (req, res) => {
   try {
     // Force simulation service to update
-    simulationService.updateAllRooms();
+    simulationService.forceUpdate();  // GANTI
     
     // Force IoT service to poll
     iotService.forcePollAll();
     
     res.json({
       success: true,
-      message: 'Force refresh initiated',
-      timestamp: new Date()
+      message: 'Force refresh initiated for both services',
+      timestamp: new Date(),
+      services: {
+        simulation: 'Forced update started',
+        iot: 'Forced polling started'
+      }
     });
   } catch (error) {
     res.status(500).json({
