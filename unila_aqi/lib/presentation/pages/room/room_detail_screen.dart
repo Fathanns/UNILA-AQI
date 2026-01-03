@@ -1033,20 +1033,20 @@ if (chartMaxY <= chartMinY) {
         centerTitle: true,
         actions: [
           // Real-time connection indicator
-          IconButton(
-            icon: Icon(
-              _socketConnected ? Icons.wifi : Icons.wifi_off,
-              color: _socketConnected ? Colors.green : Colors.grey,
-            ),
-            onPressed: () {
-              if (!_socketConnected) {
-                _reconnectSocket();
-              } else {
-                _socketService.ping();
-              }
-            },
-            tooltip: _socketConnected ? 'Real-time connected' : 'Real-time disconnected',
-          ),
+          // IconButton(
+          //   icon: Icon(
+          //     _socketConnected ? Icons.wifi : Icons.wifi_off,
+          //     color: _socketConnected ? Colors.green : Colors.grey,
+          //   ),
+          //   onPressed: () {
+          //     if (!_socketConnected) {
+          //       _reconnectSocket();
+          //     } else {
+          //       _socketService.ping();
+          //     }
+          //   },
+          //   tooltip: _socketConnected ? 'Real-time connected' : 'Real-time disconnected',
+          // ),
           IconButton(
             icon: _isRefreshing
                 ? SizedBox(
@@ -1058,37 +1058,37 @@ if (chartMaxY <= chartMinY) {
             onPressed: _refreshData,
             tooltip: 'Refresh manual',
           ),
-          PopupMenuButton(
-            itemBuilder: (context) => [
-              PopupMenuItem(
-                child: Row(
-                  children: [
-                    Icon(Icons.info, size: 16),
-                    SizedBox(width: 8),
-                    Text('Tentang ruangan'),
-                  ],
-                ),
-              ),
-              PopupMenuItem(
-                child: Row(
-                  children: [
-                    Icon(Icons.history, size: 16),
-                    SizedBox(width: 8),
-                    Text('Riwayat lengkap'),
-                  ],
-                ),
-              ),
-              PopupMenuItem(
-                child: Row(
-                  children: [
-                    Icon(Icons.share, size: 16),
-                    SizedBox(width: 8),
-                    Text('Bagikan data'),
-                  ],
-                ),
-              ),
-            ],
-          ),
+          // PopupMenuButton(
+          //   itemBuilder: (context) => [
+          //     PopupMenuItem(
+          //       child: Row(
+          //         children: [
+          //           Icon(Icons.info, size: 16),
+          //           SizedBox(width: 8),
+          //           Text('Tentang ruangan'),
+          //         ],
+          //       ),
+          //     ),
+          //     PopupMenuItem(
+          //       child: Row(
+          //         children: [
+          //           Icon(Icons.history, size: 16),
+          //           SizedBox(width: 8),
+          //           Text('Riwayat lengkap'),
+          //         ],
+          //       ),
+          //     ),
+          //     PopupMenuItem(
+          //       child: Row(
+          //         children: [
+          //           Icon(Icons.share, size: 16),
+          //           SizedBox(width: 8),
+          //           Text('Bagikan data'),
+          //         ],
+          //       ),
+          //     ),
+          //   ],
+          // ),
         ],
       ),
       body: SingleChildScrollView(

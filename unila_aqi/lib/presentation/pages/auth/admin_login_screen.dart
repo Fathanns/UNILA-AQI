@@ -74,18 +74,33 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
             children: [
               // Logo
               Container(
-                width: 80,
-                height: 80,
-                decoration: const BoxDecoration(
-                  color: AppColors.primary,
-                  shape: BoxShape.circle,
+              width: 120,
+              height: 120,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: AppColors.background,
+                  width: 2,
                 ),
-                child: const Icon(
-                  Icons.air,
-                  size: 40,
-                  color: Colors.white,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.white,
+                    blurRadius: 8,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(8.0), // Padding untuk memberi ruang
+                child: Image.asset(
+                  'assets/images/logo_unila.png',
+                  width: 104, // 120 - (8*2) = 104
+                  height: 104,
+                  fit: BoxFit.contain, // Gunakan contain agar tidak terpotong
                 ),
               ),
+            ),
               const SizedBox(height: 16),
               // Title
               Text(

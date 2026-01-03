@@ -140,12 +140,12 @@ class SimulationService {
     
     // Define thresholds for significant change
     const thresholds = {
-      aqi: 5,
-      pm25: 2.0,
-      pm10: 5.0,
-      co2: 50,
+      aqi: 1,
+      pm25: 1.0,
+      pm10: 1.0,
+      co2: 1,
       temperature: 0.5,
-      humidity: 3.0
+      humidity: 1.0
     };
     
     return (

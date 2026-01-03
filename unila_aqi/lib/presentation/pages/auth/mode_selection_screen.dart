@@ -15,7 +15,6 @@ class ModeSelectionScreen extends StatelessWidget {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              // Logo
               // Logo dengan Asset Image
             Container(
               width: 150,
