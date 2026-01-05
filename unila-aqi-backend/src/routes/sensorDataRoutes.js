@@ -8,93 +8,25 @@ const { authMiddleware } = require('../middleware/authMiddleware');
 router.get('/:roomId', authMiddleware, async (req, res) => {
   try {
     const { roomId } = req.params;
-    const { range = '24h', limit = 100 } = req.query;
     
-    let dateFilter = {};
+    // Ambil data 24 jam terakhir
     const now = new Date();
+    const dateFilter = { timestamp: { $gte: new Date(now - 24 * 60 * 60 * 1000) } };
     
-    // Set date range
-    switch (range) {
-      case '24h':
-        dateFilter = { timestamp: { $gte: new Date(now - 24 * 60 * 60 * 1000) } };
-        break;
-      case '7d':
-        dateFilter = { timestamp: { $gte: new Date(now - 7 * 24 * 60 * 60 * 1000) } };
-        break;
-      case '30d':
-        dateFilter = { timestamp: { $gte: new Date(now - 30 * 24 * 60 * 60 * 1000) } };
-        break;
-      default:
-        dateFilter = { timestamp: { $gte: new Date(now - 24 * 60 * 60 * 1000) } };
-    }
+    // Ambil SEMUA data 24 jam (tanpa limit)
+    const sensorData = await SensorData.find({
+      roomId: roomId,
+      ...dateFilter
+    })
+    .sort({ timestamp: 1 });
+    // .limit(parseInt(limit)); // HAPUS LIMIT INI
     
-    let sensorData;
-    
-    // Untuk rentang waktu panjang, gunakan data sampling
-    if (range === '30d') {
-      // Aggregasi data untuk 30 hari (rata-rata per hari)
-      sensorData = await SensorData.aggregate([
-        {
-          $match: {
-            roomId: mongoose.Types.ObjectId(roomId),
-            ...dateFilter
-          }
-        },
-        {
-          $group: {
-            _id: {
-              year: { $year: "$timestamp" },
-              month: { $month: "$timestamp" },
-              day: { $dayOfMonth: "$timestamp" },
-              hour: { $hour: "$timestamp" }
-            },
-            aqi: { $avg: "$aqi" },
-            pm25: { $avg: "$pm25" },
-            pm10: { $avg: "$pm10" },
-            co2: { $avg: "$co2" },
-            temperature: { $avg: "$temperature" },
-            humidity: { $avg: "$humidity" },
-            category: { $first: "$category" },
-            timestamp: { $first: "$timestamp" }
-          }
-        },
-        { $sort: { "timestamp": 1 } },
-        { $limit: parseInt(limit) }
-      ]);
-      
-      // Format hasil aggregasi
-      sensorData = sensorData.map(item => ({
-        ...item,
-        id: item._id,
-        timestamp: item.timestamp
-      }));
-    } else {
-      // Untuk rentang pendek, ambil data asli
-      sensorData = await SensorData.find({
-        roomId: roomId,
-        ...dateFilter
-      })
-      .sort({ timestamp: 1 })
-      .limit(parseInt(limit));
-    }
-    
-    // Jika tidak ada data, return empty array
-    if (!sensorData || sensorData.length === 0) {
-      return res.json({
-        success: true,
-        data: [],
-        count: 0,
-        range: range,
-        message: 'No historical data available'
-      });
-    }
-    
+    // Jika data terlalu banyak, lakukan sampling di frontend
     res.json({
       success: true,
       data: sensorData,
       count: sensorData.length,
-      range: range,
-      aggregation: range === '30d' ? 'daily_average' : 'raw'
+      message: '24 hours data loaded'
     });
   } catch (error) {
     console.error('Error fetching sensor data:', error);

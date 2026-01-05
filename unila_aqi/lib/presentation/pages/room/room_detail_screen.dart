@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:math';
-
+ 
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:unila_aqi/core/utils/date_formatter.dart';
@@ -10,26 +10,25 @@ import '../../../core/utils/helpers.dart';
 import '../../../core/constants/colors.dart';
 import '../../../core/services/api_service.dart';
 import '../../../core/services/socket_service.dart';
-
+ 
 class RoomDetailScreen extends StatefulWidget {
   final Room room;
-  
+ 
   const RoomDetailScreen({
     super.key,
     required this.room,
   });
-
+ 
   @override
   State<RoomDetailScreen> createState() => _RoomDetailScreenState();
 }
-
+ 
 class _RoomDetailScreenState extends State<RoomDetailScreen> {
   final ApiService _apiService = ApiService();
   final SocketService _socketService = SocketService();
-  
+ 
   List<SensorDataPoint> _historicalData = [];
   bool _isLoadingHistory = false;
-  String _selectedChartRange = '24h';
   // Timer? _autoRefreshTimer;
   // int _autoRefreshCountdown = 5;
   bool _isRefreshing = false;
@@ -37,17 +36,16 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
   bool _socketConnected = false;
   late Room _currentRoomData;
   StreamSubscription? _roomUpdateSubscription;
-  
+ 
   // Chart control
   int _selectedChartType = 0; // 0: AQI, 1: PM2.5, 2: Temperature
   bool _showChartGrid = true;
-
-  List<SensorDataPoint> _processChartData(List<SensorData> rawData, String range) {
+ 
+  List<SensorDataPoint> _processChartData(List<SensorData> rawData) {
   if (rawData.isEmpty) return [];
   
   List<SensorDataPoint> processedData = [];
   
-  // Konversi ke SensorDataPoint
   for (var data in rawData) {
     processedData.add(SensorDataPoint(
       timestamp: data.timestamp,
@@ -60,34 +58,37 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
     ));
   }
   
-  // Untuk data banyak, lakukan sampling
-  if (processedData.length > 50 && range == '30d') {
-    return _sampleData(processedData, 50);
-  } else if (processedData.length > 100) {
-    return _sampleData(processedData, 100);
+  // Sampling otomatis berdasarkan jumlah data
+  if (processedData.length > 200) {
+    // Untuk 24 jam dengan interval 1 menit = 1440 points
+    // Sampling menjadi 200 points (setiap ~7 menit)
+    return _sampleData(processedData, 200);
   }
   
   return processedData;
 }
-
+ 
 List<SensorDataPoint> _sampleData(List<SensorDataPoint> data, int targetCount) {
   if (data.length <= targetCount) return data;
   
   List<SensorDataPoint> sampled = [];
-  final step = (data.length / targetCount).ceil();
+  final step = (data.length / targetCount).floor();
   
   for (int i = 0; i < data.length; i += step) {
     sampled.add(data[i]);
   }
   
-  // Pastikan data terakhir selalu ada
+  // Pastikan data pertama dan terakhir selalu ada
+  if (sampled.first.timestamp != data.first.timestamp) {
+    sampled.insert(0, data.first);
+  }
   if (sampled.last.timestamp != data.last.timestamp) {
     sampled.add(data.last);
   }
   
   return sampled;
 }
-
+ 
   @override
   void initState() {
   super.initState();
@@ -100,21 +101,20 @@ List<SensorDataPoint> _sampleData(List<SensorDataPoint> data, int targetCount) {
     _setupRealtimeListener();
     _setupBuildingUpdateListener();
     _setupRoomNameUpdateListener();
-    _loadHistoricalData();
-    // _startAutoRefresh();
+    _loadHistoricalData(); // Tidak perlu parameter
     _checkSocketConnection();
   });
 }
-
+ 
 void _setupRoomNameUpdateListener() {
   // Listen for room name updates
   _socketService.on('room-name-updated', (data) {
     if (_isMounted && data['roomId'] == widget.room.id) {
       final newName = data['newName'];
       final oldName = data['oldName'];
-      
+ 
       print('🔄 Room name updated for this room: $oldName -> $newName');
-      
+ 
       // Update room data dengan nama baru
       setState(() {
         _currentRoomData = Room(
@@ -131,22 +131,22 @@ void _setupRoomNameUpdateListener() {
           updatedAt: DateTime.now(),
         );
       });
-      
+ 
       // Show notification
       _showNotification('Nama ruangan diperbarui: $oldName -> $newName', 'info');
     }
   });
-  
+ 
   // Listen for room-updated events (general updates)
   _socketService.on('room-updated', (data) {
     if (_isMounted && data['room']['id'] == widget.room.id) {
       if (data['action'] == 'updated' && data['oldData']) {
         final newName = data['room']['name'];
         final oldName = data['oldData']['name'];
-        
+ 
         if (newName != oldName) {
           print('🔄 Detected room name change in room-updated event');
-          
+ 
           setState(() {
             _currentRoomData = Room(
               id: _currentRoomData.id,
@@ -162,22 +162,22 @@ void _setupRoomNameUpdateListener() {
               updatedAt: DateTime.now(),
             );
           });
-          
+ 
           _showNotification('Nama ruangan diperbarui: $oldName -> $newName', 'info');
         }
       }
     }
   });
 }
-
+ 
 void _setupBuildingUpdateListener() {
   // Listen for building name updates specific to this room
   _socketService.on('room-building-updated', (data) {
     if (_isMounted && data['buildingId'] == widget.room.buildingId) {
       final newBuildingName = data['newBuildingName'];
-      
+ 
       print('🏢 Building name updated for this room: $newBuildingName');
-      
+ 
       // Update room data with new building name
       setState(() {
         _currentRoomData = Room(
@@ -194,17 +194,17 @@ void _setupBuildingUpdateListener() {
           updatedAt: _currentRoomData.updatedAt,
         );
       });
-      
+ 
       // Show notification
       _showNotification('Nama gedung diperbarui: $newBuildingName', 'info');
     }
   });
 }
-
+ 
   void _joinRoomForUpdates() {
     _socketService.joinRoom(widget.room.id);
   }
-
+ 
   void _setupRealtimeListener() {
     // Listen for room updates from SocketService
     _socketService.on('room-update', (data) {
@@ -212,27 +212,27 @@ void _setupBuildingUpdateListener() {
         _handleRoomUpdate(data);
       }
     });
-
+ 
     // Listen for notifications
     _socketService.on('notification', (data) {
       if (_isMounted) {
         _showNotification(data['message'], data['type'] ?? 'info');
       }
     });
-
+ 
     // Update connection status
     _socketConnected = _socketService.isConnected;
   }
-
+ 
   void _handleRoomUpdate(dynamic data) {
   try {
     final roomData = data['data'];
-    
+ 
     // 🔥 BARU: Check if name has changed
     final oldName = _currentRoomData.name;
     final newName = roomData['name'] ?? _currentRoomData.name;
     final nameChanged = oldName != newName;
-    
+ 
     setState(() {
       _currentRoomData = Room(
         id: _currentRoomData.id,
@@ -255,27 +255,27 @@ void _setupBuildingUpdateListener() {
         updatedAt: DateTime.parse(roomData['updatedAt']),
       );
     });
-
+ 
     // Add to historical data for chart
     _addToHistoricalData(_currentRoomData);
-
+ 
     // Show update notification
     if (nameChanged) {
       _showNotification('Nama ruangan diperbarui: $oldName -> $newName', 'info');
     }
-
+ 
     print('🔄 Real-time update: Room ${_currentRoomData.name} - AQI ${_currentRoomData.currentAQI}');
   } catch (e) {
     print('❌ Error handling room update: $e');
   }
 }
-
+ 
   void _addToHistoricalData(Room room) {
     // Limit historical data to 50 points
     if (_historicalData.length >= 50) {
       _historicalData.removeAt(0);
     }
-    
+ 
     _historicalData.add(SensorDataPoint(
       timestamp: room.updatedAt,
       aqi: room.currentAQI,
@@ -286,7 +286,7 @@ void _setupBuildingUpdateListener() {
       humidity: room.currentData.humidity,
     ));
   }
-
+ 
   // void _showUpdateNotification(Room updatedRoom) {
   //   ScaffoldMessenger.of(context).showSnackBar(
   //     SnackBar(
@@ -321,11 +321,11 @@ void _setupBuildingUpdateListener() {
   //     ),
   //   );
   // }
-
+ 
   void _showNotification(String message, String type) {
     Color backgroundColor;
     IconData icon;
-    
+ 
     switch (type) {
       case 'warning':
         backgroundColor = Colors.orange;
@@ -343,7 +343,7 @@ void _setupBuildingUpdateListener() {
         backgroundColor = Colors.blue;
         icon = Icons.info;
     }
-    
+ 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Row(
@@ -358,12 +358,12 @@ void _setupBuildingUpdateListener() {
       ),
     );
   }
-
+ 
   void _checkSocketConnection() {
     setState(() {
       _socketConnected = _socketService.isConnected;
     });
-    
+ 
     if (!_socketConnected && _isMounted) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _showNotification('Koneksi real-time terputus. Mencoba reconnect...', 'warning');
@@ -371,7 +371,7 @@ void _setupBuildingUpdateListener() {
       });
     }
   }
-
+ 
   Future<void> _reconnectSocket() async {
     try {
       await _socketService.connect();
@@ -387,17 +387,15 @@ void _setupBuildingUpdateListener() {
       print('❌ Failed to reconnect: $e');
     }
   }
-
+ 
 Future<void> _loadHistoricalData() async {
   if (!_isMounted) return;
   
   setState(() => _isLoadingHistory = true);
   
   try {
-    final response = await _apiService.getSensorData(
-      widget.room.id,
-      range: _selectedChartRange,
-    );
+    // Hanya panggil tanpa parameter range
+    final response = await _apiService.getSensorData(widget.room.id);
     
     if (_isMounted && response['success'] == true) {
       final List<dynamic> data = response['data'];
@@ -406,7 +404,7 @@ Future<void> _loadHistoricalData() async {
       final sensorDataList = data.map((json) => SensorData.fromJson(json)).toList();
       
       // Process for chart display
-      _historicalData = _processChartData(sensorDataList, _selectedChartRange);
+      _historicalData = _processChartData(sensorDataList);
       
       // Jika tidak ada data historis, tambah data current sebagai fallback
       if (_historicalData.isEmpty) {
@@ -453,38 +451,38 @@ Future<void> _loadHistoricalData() async {
     }
   }
 }
-
+ 
   @override
   void dispose() {
   _isMounted = false;
-  
+ 
   // Leave room
   _socketService.leaveRoom(widget.room.id);
-  
+ 
   // Remove event listeners
   _socketService.off('room-update');
   _socketService.off('notification');
   _socketService.off('room-building-updated');
   _socketService.off('room-name-updated'); // 🔥 BARU: Hapus listener nama ruangan
   _socketService.off('room-updated'); // 🔥 BARU: Hapus listener umum
-  
+ 
   // Cancel subscription
   _roomUpdateSubscription?.cancel();
-  
+ 
   // _autoRefreshTimer?.cancel();
   super.dispose();
 }
-
+ 
   // void _startAutoRefresh() {
   //   _autoRefreshTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
   //     if (!_isMounted) {
   //       timer.cancel();
   //       return;
   //     }
-      
+ 
   //     WidgetsBinding.instance.addPostFrameCallback((_) {
   //       if (!_isMounted) return;
-        
+ 
   //       setState(() {
   //         if (_autoRefreshCountdown <= 0) {
   //           _autoRefreshCountdown = 5;
@@ -496,18 +494,18 @@ Future<void> _loadHistoricalData() async {
   //     });
   //   });
   // }
-
+ 
   Future<void> _refreshData() async {
     if (!_isMounted) return;
-    
+ 
     setState(() => _isRefreshing = true);
     await _loadHistoricalData();
-    
+ 
     if (_isMounted) {
       setState(() => _isRefreshing = false);
     }
   }
-
+ 
   Widget _buildParameterCard(String label, String value, String status, Color color) {
     return Container(
       padding: const EdgeInsets.all(12),
@@ -562,12 +560,12 @@ Future<void> _loadHistoricalData() async {
       ),
     );
   }
-
+ 
   Widget _buildHealthRecommendations() {
   final aqi = _currentRoomData.currentAQI;
   final aqiColor = Helpers.getAQIColor(aqi);
   final recommendations = Helpers.getDetailedRecommendations(_currentRoomData);
-  
+ 
   return Container(
     padding: const EdgeInsets.all(16),
     decoration: BoxDecoration(
@@ -597,11 +595,11 @@ Future<void> _loadHistoricalData() async {
           ],
         ),
         const SizedBox(height: 12),
-        
+ 
         // Parameter Status
         _buildParameterStatus(),
         const SizedBox(height: 12),
-        
+ 
         // Recommendations List
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -611,10 +609,10 @@ Future<void> _loadHistoricalData() async {
     ),
   );
 }
-
+ 
 Widget _buildParameterStatus() {
   final data = _currentRoomData.currentData;
-  
+ 
   return Wrap(
     spacing: 8,
     runSpacing: 8,
@@ -632,7 +630,7 @@ Widget _buildParameterStatus() {
     ],
   );
 }
-
+ 
 Widget _buildStatusChip(String text, Color color) {
   return Container(
     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -651,7 +649,7 @@ Widget _buildStatusChip(String text, Color color) {
     ),
   );
 }
-
+ 
 Widget _buildRecommendationItem(String text) {
   return Padding(
     padding: const EdgeInsets.only(bottom: 8),
@@ -674,7 +672,7 @@ Widget _buildRecommendationItem(String text) {
     ),
   );
 }
-
+ 
   Widget _buildAQIChart() {
   if (_isLoadingHistory) {
     return SizedBox(
@@ -792,12 +790,13 @@ Widget _buildRecommendationItem(String text) {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Text(
-              'GRAFIK DATA:',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
+  'GRAFIK DATA 24 JAM TERAKHIR:',
+  style: TextStyle(
+    fontSize: 14,
+    fontWeight: FontWeight.w600,
+  ),
+),
+SizedBox(height: 8),
             Row(
               children: [
                 // Chart type selector
@@ -857,27 +856,12 @@ Widget _buildRecommendationItem(String text) {
         
         const SizedBox(height: 16),
         
-        // Time range selector
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(
-            children: ['24h', '7d', '30d'].map((range) {
-              return Padding(
-                padding: const EdgeInsets.only(right: 8),
-                child: ChoiceChip(
-                  label: Text(range),
-                  selected: _selectedChartRange == range,
-                  onSelected: (selected) {
-                    if (selected) {
-                      setState(() {
-                        _selectedChartRange = range;
-                        _loadHistoricalData();
-                      });
-                    }
-                  },
-                ),
-              );
-            }).toList(),
+        // Chart Description (Hapus time range selector)
+        Text(
+          'Menampilkan data 24 jam terakhir',
+          style: TextStyle(
+            fontSize: 12,
+            color: Colors.grey,
           ),
         ),
         
@@ -909,7 +893,7 @@ Widget _buildRecommendationItem(String text) {
                       return Padding(
                         padding: const EdgeInsets.only(top: 8),
                         child: Text(
-                          DateFormatter.formatChartTime(time, _selectedChartRange),
+                          DateFormatter.formatChartTime(time), // Hapus parameter range
                           style: TextStyle(
                             fontSize: 10,
                             color: Colors.grey,
@@ -924,10 +908,8 @@ Widget _buildRecommendationItem(String text) {
                     showTitles: true,
                     interval: (chartMaxY - chartMinY) / 5,
                     getTitlesWidget: (value, meta) {
-                      // HAPUS label 'AQI' dari sumbu Y
-                      // Hanya tampilkan angka saja
                       return Text(
-                        value.toInt().toString(), // Hanya angka
+                        value.toInt().toString(),
                         style: TextStyle(
                           fontSize: 10,
                           color: Colors.grey,
@@ -982,7 +964,7 @@ Widget _buildRecommendationItem(String text) {
         
         const SizedBox(height: 8),
         
-        // Chart legend dengan unit yang sesuai
+        // Chart legend
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
@@ -994,7 +976,7 @@ Widget _buildRecommendationItem(String text) {
                 color: _getChartColor(),
               ),
             ),
-            if (unit.isNotEmpty) // Hanya tampilkan unit jika ada
+            if (unit.isNotEmpty)
               Text(
                 unit,
                 style: TextStyle(
@@ -1003,7 +985,7 @@ Widget _buildRecommendationItem(String text) {
                 ),
               ),
             Text(
-              '${spots.length} data points',
+              '${spots.length}/${_historicalData.length} points',
               style: TextStyle(
                 fontSize: 10,
                 color: Colors.grey,
@@ -1015,7 +997,7 @@ Widget _buildRecommendationItem(String text) {
     ),
   );
 }
-
+ 
   Color _getChartColor() {
     switch (_selectedChartType) {
       case 0: return Helpers.getAQIColor(_currentRoomData.currentAQI);
@@ -1024,7 +1006,7 @@ Widget _buildRecommendationItem(String text) {
       default: return AppColors.primary;
     }
   }
-
+ 
  String _getChartTitle() {
   switch (_selectedChartType) {
     case 0: return 'Air Quality Index'; // Tetap full title di sini
@@ -1033,11 +1015,11 @@ Widget _buildRecommendationItem(String text) {
     default: return 'Chart';
   }
 }
-
+ 
   Widget _buildLastUpdateInfo() {
   // Ganti dengan:
   final lastUpdateFormatted = Helpers.formatLastUpdateWithDate(_currentRoomData.currentData.updatedAt);
-  
+ 
   return Container(
     padding: const EdgeInsets.all(12),
     decoration: BoxDecoration(
@@ -1104,12 +1086,12 @@ Widget _buildRecommendationItem(String text) {
     ),
   );
 }
-
+ 
   @override
   Widget build(BuildContext context) {
     final aqiColor = Helpers.getAQIColor(_currentRoomData.currentAQI);
     final aqiLabel = Helpers.getAQILabel(_currentRoomData.currentAQI);
-
+ 
     return Scaffold(
       appBar: AppBar(
         leading: IconButton(
@@ -1228,7 +1210,7 @@ Widget _buildRecommendationItem(String text) {
                     ],
                   ),
                 ),
-
+ 
               // Room header with AQI
               Container(
                 padding: const EdgeInsets.all(16),
@@ -1272,9 +1254,9 @@ Widget _buildRecommendationItem(String text) {
                         ],
                       ),
                     ),
-                    
+ 
                     SizedBox(width: 16),
-                    
+ 
                     // Room info
                     Expanded(
                       child: Column(
@@ -1314,7 +1296,7 @@ Widget _buildRecommendationItem(String text) {
                         ],
                       ),
                     ),
-                    
+ 
                     // Data source indicator
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -1351,14 +1333,14 @@ Widget _buildRecommendationItem(String text) {
                   ],
                 ),
               ),
-
+ 
               SizedBox(height: 24),
-
+ 
               // Last update info
               _buildLastUpdateInfo(),
-
+ 
               SizedBox(height: 24),
-
+ 
               // Parameter Cards
               const Text(
                 'PARAMETER KUALITAS UDARA:',
@@ -1368,7 +1350,7 @@ Widget _buildRecommendationItem(String text) {
                 ),
               ),
               const SizedBox(height: 12),
-              
+ 
               // First Row: PM2.5, PM10, CO2
               GridView.count(
                 shrinkWrap: true,
@@ -1399,7 +1381,7 @@ Widget _buildRecommendationItem(String text) {
                 ],
               ),
               const SizedBox(height: 12),
-              
+ 
               // Second Row: Temperature, Humidity
               GridView.count(
                 shrinkWrap: true,
@@ -1423,19 +1405,19 @@ Widget _buildRecommendationItem(String text) {
                   ),
                 ],
               ),
-
+ 
               SizedBox(height: 24),
-
+ 
               // AQI Chart
               _buildAQIChart(),
-
+ 
               SizedBox(height: 24),
-
+ 
               // Health Recommendations
               _buildHealthRecommendations(),
-
+ 
               SizedBox(height: 24),
-
+ 
               // Footer with auto-refresh status
               // Container(
               //   padding: const EdgeInsets.all(12),
@@ -1488,7 +1470,7 @@ Widget _buildRecommendationItem(String text) {
               //     ],
               //   ),
               // ),
-
+ 
               SizedBox(height: 16),
             ],
           ),

@@ -206,12 +206,12 @@ class ApiService {
   }
 
   // REAL: Get sensor data for room
-  Future<dynamic> getSensorData(String roomId, {String range = '24h'}) async {
+  Future<dynamic> getSensorData(String roomId) async {  // Hapus parameter range
   try {
     final headers = await _getHeaders();
     
     final response = await http.get(
-      Uri.parse('$baseUrl/sensor-data/$roomId?range=$range'),
+      Uri.parse('$baseUrl/sensor-data/$roomId'),  // Hapus query parameter range
       headers: headers,
     );
     
@@ -220,7 +220,7 @@ class ApiService {
     } else if (response.statusCode == 401) {
       // Coba tanpa token
       final publicResponse = await http.get(
-        Uri.parse('$baseUrl/sensor-data/$roomId?range=$range'),
+        Uri.parse('$baseUrl/sensor-data/$roomId'),
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
