@@ -59,49 +59,50 @@ class RoomProvider with ChangeNotifier {
  
   // Initialize socket connection and start periodic refresh
   Future<void> initSocket() async {
-    try {
-      // Get auth token
-      final token = await _storageService.getString('auth_token');
- 
-      // Connect to WebSocket
-      await _socketService.connect(token: token);
- 
-      // Setup connection listener
-      _socketSubscription = _socketService.connectionStream.listen((connected) {
-        _socketConnected = connected;
-        // if (connected) {
-        //   _startPeriodicRefresh();
-        // } else {
-        //   _stopPeriodicRefresh();
-        // }
-        notifyListeners();
-      });
- 
-      // Setup data listener
-      _dataSubscription = _socketService.dataStream.listen(_handleSocketData);
- 
-      // Setup room update listener
-      _socketService.on('room-update', _handleRoomUpdate);
- 
-      // Setup dashboard update listener
-      _socketService.on('dashboard-update', _handleDashboardUpdate);
- 
-      // Update connection status
-      _socketConnected = _socketService.isConnected;
-      await _storageService.setSocketConnected(_socketConnected);
- 
-      if (_socketConnected) {
-        print('✅ Socket.io initialized and connected');
-        // _startPeriodicRefresh();
-      }
- 
+  try {
+    // Get auth token
+    final token = await _storageService.getString('auth_token');
+    
+    // Connect to WebSocket
+    await _socketService.connect(token: token);
+    
+    // Setup connection listener
+    _socketSubscription = _socketService.connectionStream.listen((connected) {
+      _socketConnected = connected;
       notifyListeners();
-    } catch (e) {
-      print('❌ Error initializing socket: $e');
-      _socketConnected = false;
-      // _startPeriodicRefresh(); // Start timer even without socket
+    });
+    
+    // Setup data listener
+    _dataSubscription = _socketService.dataStream.listen(_handleSocketData);
+    
+    // Setup listeners
+    _setupSocketListeners();
+    
+    // Update status
+    _socketConnected = _socketService.isConnected;
+    await _storageService.setSocketConnected(_socketConnected);
+    
+    if (_socketConnected) {
+      print('✅ Socket.io initialized and connected');
     }
+    
+    notifyListeners();
+  } catch (e) {
+    print('❌ Error initializing socket: $e');
+    _socketConnected = false;
   }
+}
+
+void _setupSocketListeners() {
+  _socketService.on('room-update', _handleRoomUpdate);
+  _socketService.on('dashboard-update', _handleDashboardUpdate);
+  _socketService.on('room-name-changed', (data) {
+    handleRoomNameChanged(data);
+  });
+  _socketService.on('room-building-changed', (data) {
+    handleBuildingNameChanged(data);
+  });
+}
  
   // Start periodic refresh timer
   // void _startPeriodicRefresh() {

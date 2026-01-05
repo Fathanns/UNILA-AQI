@@ -42,7 +42,51 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
   int _selectedChartType = 0; // 0: AQI, 1: PM2.5, 2: Temperature
   bool _showChartGrid = true;
 
+  List<SensorDataPoint> _processChartData(List<SensorData> rawData, String range) {
+  if (rawData.isEmpty) return [];
   
+  List<SensorDataPoint> processedData = [];
+  
+  // Konversi ke SensorDataPoint
+  for (var data in rawData) {
+    processedData.add(SensorDataPoint(
+      timestamp: data.timestamp,
+      aqi: data.aqi,
+      pm25: data.pm25,
+      pm10: data.pm10,
+      co2: data.co2,
+      temperature: data.temperature,
+      humidity: data.humidity,
+    ));
+  }
+  
+  // Untuk data banyak, lakukan sampling
+  if (processedData.length > 50 && range == '30d') {
+    return _sampleData(processedData, 50);
+  } else if (processedData.length > 100) {
+    return _sampleData(processedData, 100);
+  }
+  
+  return processedData;
+}
+
+List<SensorDataPoint> _sampleData(List<SensorDataPoint> data, int targetCount) {
+  if (data.length <= targetCount) return data;
+  
+  List<SensorDataPoint> sampled = [];
+  final step = (data.length / targetCount).ceil();
+  
+  for (int i = 0; i < data.length; i += step) {
+    sampled.add(data[i]);
+  }
+  
+  // Pastikan data terakhir selalu ada
+  if (sampled.last.timestamp != data.last.timestamp) {
+    sampled.add(data.last);
+  }
+  
+  return sampled;
+}
 
   @override
   void initState() {
@@ -357,19 +401,52 @@ Future<void> _loadHistoricalData() async {
     
     if (_isMounted && response['success'] == true) {
       final List<dynamic> data = response['data'];
-      _historicalData = data.map((json) => SensorDataPoint(
-        timestamp: DateTime.parse(json['timestamp']),
-        aqi: json['aqi']?.toInt() ?? 0,
-        pm25: (json['pm25'] ?? 0).toDouble(),
-        pm10: (json['pm10'] ?? 0).toDouble(),
-        co2: (json['co2'] ?? 450).toDouble(),
-        temperature: (json['temperature'] ?? 25).toDouble(),
-        humidity: (json['humidity'] ?? 50).toDouble(),
-      )).toList();
+      
+      // Convert to SensorData objects
+      final sensorDataList = data.map((json) => SensorData.fromJson(json)).toList();
+      
+      // Process for chart display
+      _historicalData = _processChartData(sensorDataList, _selectedChartRange);
+      
+      // Jika tidak ada data historis, tambah data current sebagai fallback
+      if (_historicalData.isEmpty) {
+        _historicalData.add(SensorDataPoint(
+          timestamp: _currentRoomData.updatedAt,
+          aqi: _currentRoomData.currentAQI,
+          pm25: _currentRoomData.currentData.pm25,
+          pm10: _currentRoomData.currentData.pm10,
+          co2: _currentRoomData.currentData.co2,
+          temperature: _currentRoomData.currentData.temperature,
+          humidity: _currentRoomData.currentData.humidity,
+        ));
+      }
+    } else {
+      // Fallback jika API error
+      _historicalData.add(SensorDataPoint(
+        timestamp: _currentRoomData.updatedAt,
+        aqi: _currentRoomData.currentAQI,
+        pm25: _currentRoomData.currentData.pm25,
+        pm10: _currentRoomData.currentData.pm10,
+        co2: _currentRoomData.currentData.co2,
+        temperature: _currentRoomData.currentData.temperature,
+        humidity: _currentRoomData.currentData.humidity,
+      ));
     }
   } catch (e) {
     print('Error loading historical data: $e');
-    _showNotification('Gagal memuat data historis', 'error');
+    
+    // Fallback ke data current
+    _historicalData.add(SensorDataPoint(
+      timestamp: _currentRoomData.updatedAt,
+      aqi: _currentRoomData.currentAQI,
+      pm25: _currentRoomData.currentData.pm25,
+      pm10: _currentRoomData.currentData.pm10,
+      co2: _currentRoomData.currentData.co2,
+      temperature: _currentRoomData.currentData.temperature,
+      humidity: _currentRoomData.currentData.humidity,
+    ));
+    
+    _showNotification('Gagal memuat data historis, menampilkan data saat ini', 'warning');
   } finally {
     if (_isMounted) {
       setState(() => _isLoadingHistory = false);
@@ -599,335 +676,345 @@ Widget _buildRecommendationItem(String text) {
 }
 
   Widget _buildAQIChart() {
-    if (_isLoadingHistory) {
-      return SizedBox(
-        height: 250,
-        child: Center(
-          child: CircularProgressIndicator(),
-        ),
-      );
-    }
-    
-    if (_historicalData.isEmpty) {
-      return Container(
-        height: 250,
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: AppColors.cardBackground,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.timeline, size: 48, color: Colors.grey),
-              SizedBox(height: 16),
-              Text(
-                'Tidak ada data historis tersedia',
-                style: TextStyle(color: Colors.grey),
-              ),
-              SizedBox(height: 8),
-              Text(
-                'Data akan muncul saat sensor mengirim pembacaan',
-                style: TextStyle(color: Colors.grey, fontSize: 12),
-                textAlign: TextAlign.center,
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-    
-    // Prepare chart data based on selected type
-    List<FlSpot> spots = [];
-    double minY = 0;
-    double maxY = 100;
-    String unit = '';
-
-    switch (_selectedChartType) {
-      case 0: // AQI
-        spots = _historicalData.asMap().entries.map((entry) {
-          final index = entry.key.toDouble();
-          final data = entry.value;
-          return FlSpot(index, data.aqi.toDouble());
-        }).toList();
-        minY = 0;
-        maxY = 500;
-        unit = 'AQI';
-        break;
-        
-      case 1: // PM2.5
-        spots = _historicalData.asMap().entries.map((entry) {
-          final index = entry.key.toDouble();
-          final data = entry.value;
-          return FlSpot(index, data.pm25);
-        }).toList();
-        minY = 0;
-        maxY = 250;
-        unit = 'μg/m³';
-        break;
-        
-      case 2: // Temperature
-        spots = _historicalData.asMap().entries.map((entry) {
-          final index = entry.key.toDouble();
-          final data = entry.value;
-          return FlSpot(index, data.temperature);
-        }).toList();
-        minY = 15;
-        maxY = 35;
-        unit = '°C';
-        break;
-    }
-
-    // Calculate min/max with padding
-    final values = spots.map((spot) => spot.y).toList();
-double chartMinY;
-double chartMaxY;
-
-if (values.isNotEmpty) {
-  // Konversi ke double dan gunakan .toDouble()
-  final minValue = values.reduce((a, b) => a < b ? a : b).toDouble();
-  final maxValue = values.reduce((a, b) => a > b ? a : b).toDouble();
+  if (_isLoadingHistory) {
+    return SizedBox(
+      height: 250,
+      child: Center(
+        child: CircularProgressIndicator(),
+      ),
+    );
+  }
   
-  chartMinY = (minValue * 0.9).clamp(minY, double.infinity);
-  chartMaxY = (maxValue * 1.1).clamp(0, maxY);
-} else {
-  chartMinY = minY;
-  chartMaxY = maxY * 0.5;
-}
-
-// Pastikan chartMaxY lebih besar dari chartMinY
-if (chartMaxY <= chartMinY) {
-  chartMaxY = chartMinY + 1.0;
-}
-
+  if (_historicalData.isEmpty) {
     return Container(
+      height: 250,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: AppColors.cardBackground,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.border),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'GRAFIK DATA:',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              Row(
-                children: [
-                  // Chart type selector
-                  PopupMenuButton<int>(
-                    icon: Icon(Icons.timeline, size: 20),
-                    onSelected: (value) {
-                      setState(() => _selectedChartType = value);
-                    },
-                    itemBuilder: (context) => [
-                      PopupMenuItem(
-                        value: 0,
-                        child: Row(
-                          children: [
-                            Icon(Icons.air, size: 16),
-                            SizedBox(width: 8),
-                            Text('AQI'),
-                          ],
-                        ),
-                      ),
-                      PopupMenuItem(
-                        value: 1,
-                        child: Row(
-                          children: [
-                            Icon(Icons.grain, size: 16),
-                            SizedBox(width: 8),
-                            Text('PM2.5'),
-                          ],
-                        ),
-                      ),
-                      PopupMenuItem(
-                        value: 2,
-                        child: Row(
-                          children: [
-                            Icon(Icons.thermostat, size: 16),
-                            SizedBox(width: 8),
-                            Text('Suhu'),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                  SizedBox(width: 8),
-                  // Grid toggle
-                  IconButton(
-                    icon: Icon(
-                      _showChartGrid ? Icons.grid_on : Icons.grid_off,
-                      size: 20,
-                    ),
-                    onPressed: () {
-                      setState(() => _showChartGrid = !_showChartGrid);
-                    },
-                  ),
-                ],
-              ),
-            ],
-          ),
-          
-          const SizedBox(height: 16),
-          
-          // Time range selector
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: ['24h', '7d', '30d'].map((range) {
-                return Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: ChoiceChip(
-                    label: Text(range),
-                    selected: _selectedChartRange == range,
-                    onSelected: (selected) {
-                      if (selected) {
-                        setState(() {
-                          _selectedChartRange = range;
-                          _loadHistoricalData();
-                        });
-                      }
-                    },
-                  ),
-                );
-              }).toList(),
+      child: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.timeline, size: 48, color: Colors.grey),
+            SizedBox(height: 16),
+            Text(
+              'Tidak ada data historis tersedia',
+              style: TextStyle(color: Colors.grey),
             ),
-          ),
-          
-          const SizedBox(height: 16),
-          
-          SizedBox(
-            height: 200,
-            child: LineChart(
-              LineChartData(
-                gridData: FlGridData(
-                  show: _showChartGrid,
-                  drawVerticalLine: false,
-                  horizontalInterval: (chartMaxY - chartMinY) / 5,
-                  getDrawingHorizontalLine: (value) {
-                    return FlLine(
-                      color: Colors.grey.withOpacity(0.1),
-                      strokeWidth: 1,
-                    );
+            SizedBox(height: 8),
+            Text(
+              'Data akan muncul saat sensor mengirim pembacaan',
+              style: TextStyle(color: Colors.grey, fontSize: 12),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+  
+  // Prepare chart data based on selected type
+  List<FlSpot> spots = [];
+  double minY = 0;
+  double maxY = 100;
+  String unit = '';
+
+  switch (_selectedChartType) {
+    case 0: // AQI
+      spots = _historicalData.asMap().entries.map((entry) {
+        final index = entry.key.toDouble();
+        final data = entry.value;
+        return FlSpot(index, data.aqi.toDouble());
+      }).toList();
+      minY = 0;
+      maxY = 500;
+      unit = ''; // HAPUS 'AQI' dari sini
+      break;
+      
+    case 1: // PM2.5
+      spots = _historicalData.asMap().entries.map((entry) {
+        final index = entry.key.toDouble();
+        final data = entry.value;
+        return FlSpot(index, data.pm25);
+      }).toList();
+      minY = 0;
+      maxY = 250;
+      unit = 'μg/m³';
+      break;
+      
+    case 2: // Temperature
+      spots = _historicalData.asMap().entries.map((entry) {
+        final index = entry.key.toDouble();
+        final data = entry.value;
+        return FlSpot(index, data.temperature);
+      }).toList();
+      minY = 15;
+      maxY = 35;
+      unit = '°C';
+      break;
+  }
+
+  // Calculate min/max with padding
+  final values = spots.map((spot) => spot.y).toList();
+  double chartMinY;
+  double chartMaxY;
+
+  if (values.isNotEmpty) {
+    final minValue = values.reduce((a, b) => a < b ? a : b).toDouble();
+    final maxValue = values.reduce((a, b) => a > b ? a : b).toDouble();
+    
+    // Add 10% padding
+    chartMinY = (minValue * 0.9).clamp(minY, double.infinity);
+    chartMaxY = (maxValue * 1.1).clamp(0, maxY);
+  } else {
+    chartMinY = minY;
+    chartMaxY = maxY * 0.5;
+  }
+
+  // Pastikan chartMaxY lebih besar dari chartMinY
+  if (chartMaxY <= chartMinY) {
+    chartMaxY = chartMinY + 1.0;
+  }
+
+  return Container(
+    padding: const EdgeInsets.all(16),
+    decoration: BoxDecoration(
+      color: AppColors.cardBackground,
+      borderRadius: BorderRadius.circular(12),
+      border: Border.all(color: AppColors.border),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              'GRAFIK DATA:',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            Row(
+              children: [
+                // Chart type selector
+                PopupMenuButton<int>(
+                  icon: Icon(Icons.timeline, size: 20),
+                  onSelected: (value) {
+                    setState(() => _selectedChartType = value);
+                  },
+                  itemBuilder: (context) => [
+                    PopupMenuItem(
+                      value: 0,
+                      child: Row(
+                        children: [
+                          Icon(Icons.air, size: 16),
+                          SizedBox(width: 8),
+                          Text('AQI'),
+                        ],
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: 1,
+                      child: Row(
+                        children: [
+                          Icon(Icons.grain, size: 16),
+                          SizedBox(width: 8),
+                          Text('PM2.5'),
+                        ],
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: 2,
+                      child: Row(
+                        children: [
+                          Icon(Icons.thermostat, size: 16),
+                          SizedBox(width: 8),
+                          Text('Suhu'),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                SizedBox(width: 8),
+                // Grid toggle
+                IconButton(
+                  icon: Icon(
+                    _showChartGrid ? Icons.grid_on : Icons.grid_off,
+                    size: 20,
+                  ),
+                  onPressed: () {
+                    setState(() => _showChartGrid = !_showChartGrid);
                   },
                 ),
-                titlesData: FlTitlesData(
-                  bottomTitles: AxisTitles(
-                    sideTitles: SideTitles(
-                      showTitles: true,
-                      interval: max(1, _historicalData.length / 5),
-                      getTitlesWidget: (value, meta) {
-                        if (value.toInt() >= _historicalData.length) return const Text('');
-                        final time = _historicalData[value.toInt()].timestamp;
-                        return Padding(
-                          padding: const EdgeInsets.only(top: 8),
-                          child: Text(
-                            DateFormatter.formatChartTime(time, _selectedChartRange),
-                            style: TextStyle(
-                              fontSize: 10,
-                              color: Colors.grey,
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                  leftTitles: AxisTitles(
-                    sideTitles: SideTitles(
-                      showTitles: true,
-                      interval: (chartMaxY - chartMinY) / 5,
-                      getTitlesWidget: (value, meta) {
-                        return Text(
-                          '${value.toInt()}$unit',
+              ],
+            ),
+          ],
+        ),
+        
+        const SizedBox(height: 16),
+        
+        // Time range selector
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: ['24h', '7d', '30d'].map((range) {
+              return Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: ChoiceChip(
+                  label: Text(range),
+                  selected: _selectedChartRange == range,
+                  onSelected: (selected) {
+                    if (selected) {
+                      setState(() {
+                        _selectedChartRange = range;
+                        _loadHistoricalData();
+                      });
+                    }
+                  },
+                ),
+              );
+            }).toList(),
+          ),
+        ),
+        
+        const SizedBox(height: 16),
+        
+        SizedBox(
+          height: 200,
+          child: LineChart(
+            LineChartData(
+              gridData: FlGridData(
+                show: _showChartGrid,
+                drawVerticalLine: false,
+                horizontalInterval: (chartMaxY - chartMinY) / 5,
+                getDrawingHorizontalLine: (value) {
+                  return FlLine(
+                    color: Colors.grey.withOpacity(0.1),
+                    strokeWidth: 1,
+                  );
+                },
+              ),
+              titlesData: FlTitlesData(
+                bottomTitles: AxisTitles(
+                  sideTitles: SideTitles(
+                    showTitles: true,
+                    interval: max(1, _historicalData.length / 5),
+                    getTitlesWidget: (value, meta) {
+                      if (value.toInt() >= _historicalData.length) return const SizedBox.shrink();
+                      final time = _historicalData[value.toInt()].timestamp;
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Text(
+                          DateFormatter.formatChartTime(time, _selectedChartRange),
                           style: TextStyle(
                             fontSize: 10,
                             color: Colors.grey,
                           ),
-                        );
-                      },
-                    ),
+                        ),
+                      );
+                    },
                   ),
-                  topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                  rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
                 ),
-                borderData: FlBorderData(show: false),
-                minX: 0,
-                maxX: _historicalData.isNotEmpty ? (_historicalData.length - 1).toDouble() : 1,
-                minY: chartMinY,
-                maxY: chartMaxY,
-                lineBarsData: [
-                  LineChartBarData(
-                    spots: spots,
-                    isCurved: true,
-                    color: _getChartColor(),
-                    barWidth: 3,
-                    isStrokeCapRound: true,
-                    dotData: FlDotData(
-                      show: true,
-                      getDotPainter: (spot, percent, barData, index) {
-                        return FlDotCirclePainter(
-                          radius: 3,
-                          color: _getChartColor(),
-                          strokeWidth: 1,
-                          strokeColor: Colors.white,
-                        );
-                      },
-                    ),
-                    belowBarData: BarAreaData(
-                      show: true,
-                      color: _getChartColor().withOpacity(0.1),
-                    ),
-                    gradient: LinearGradient(
-                      colors: [
-                        _getChartColor(),
-                        _getChartColor().withOpacity(0.5),
-                      ],
-                      begin: Alignment.bottomCenter,
-                      end: Alignment.topCenter,
-                    ),
+                leftTitles: AxisTitles(
+                  sideTitles: SideTitles(
+                    showTitles: true,
+                    interval: (chartMaxY - chartMinY) / 5,
+                    getTitlesWidget: (value, meta) {
+                      // HAPUS label 'AQI' dari sumbu Y
+                      // Hanya tampilkan angka saja
+                      return Text(
+                        value.toInt().toString(), // Hanya angka
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: Colors.grey,
+                        ),
+                      );
+                    },
                   ),
-                ],
+                ),
+                topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
               ),
+              borderData: FlBorderData(show: false),
+              minX: 0,
+              maxX: _historicalData.isNotEmpty ? (_historicalData.length - 1).toDouble() : 1,
+              minY: chartMinY,
+              maxY: chartMaxY,
+              lineBarsData: [
+                LineChartBarData(
+                  spots: spots,
+                  isCurved: true,
+                  color: _getChartColor(),
+                  barWidth: 3,
+                  isStrokeCapRound: true,
+                  dotData: FlDotData(
+                    show: true,
+                    getDotPainter: (spot, percent, barData, index) {
+                      return FlDotCirclePainter(
+                        radius: 3,
+                        color: _getChartColor(),
+                        strokeWidth: 1,
+                        strokeColor: Colors.white,
+                      );
+                    },
+                  ),
+                  belowBarData: BarAreaData(
+                    show: true,
+                    color: _getChartColor().withOpacity(0.1),
+                  ),
+                  gradient: LinearGradient(
+                    colors: [
+                      _getChartColor(),
+                      _getChartColor().withOpacity(0.5),
+                    ],
+                    begin: Alignment.bottomCenter,
+                    end: Alignment.topCenter,
+                  ),
+                ),
+              ],
             ),
           ),
-          
-          const SizedBox(height: 8),
-          
-          // Chart legend
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                _getChartTitle(),
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w500,
-                  color: _getChartColor(),
-                ),
+        ),
+        
+        const SizedBox(height: 8),
+        
+        // Chart legend dengan unit yang sesuai
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              _getChartTitle(),
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                color: _getChartColor(),
               ),
+            ),
+            if (unit.isNotEmpty) // Hanya tampilkan unit jika ada
               Text(
-                '${spots.length} data points',
+                unit,
                 style: TextStyle(
                   fontSize: 10,
                   color: Colors.grey,
                 ),
               ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
+            Text(
+              '${spots.length} data points',
+              style: TextStyle(
+                fontSize: 10,
+                color: Colors.grey,
+              ),
+            ),
+          ],
+        ),
+      ],
+    ),
+  );
+}
 
   Color _getChartColor() {
     switch (_selectedChartType) {
@@ -938,14 +1025,14 @@ if (chartMaxY <= chartMinY) {
     }
   }
 
-  String _getChartTitle() {
-    switch (_selectedChartType) {
-      case 0: return 'Air Quality Index (AQI)';
-      case 1: return 'PM2.5 Concentration';
-      case 2: return 'Temperature';
-      default: return 'Chart';
-    }
+ String _getChartTitle() {
+  switch (_selectedChartType) {
+    case 0: return 'Air Quality Index'; // Tetap full title di sini
+    case 1: return 'PM2.5 Concentration';
+    case 2: return 'Temperature';
+    default: return 'Chart';
   }
+}
 
   Widget _buildLastUpdateInfo() {
   // Ganti dengan:
