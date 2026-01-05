@@ -206,37 +206,30 @@ class ApiService {
   }
 
   // REAL: Get sensor data for room
-  Future<dynamic> getSensorData(String roomId) async {  // Hapus parameter range
+  Future<dynamic> getSensorData(String roomId) async {
   try {
     final headers = await _getHeaders();
     
     final response = await http.get(
-      Uri.parse('$baseUrl/sensor-data/$roomId'),  // Hapus query parameter range
+      Uri.parse('$baseUrl/sensor-data/$roomId'),
       headers: headers,
     );
     
     if (response.statusCode == 200) {
       return jsonDecode(response.body);
-    } else if (response.statusCode == 401) {
-      // Coba tanpa token
-      final publicResponse = await http.get(
-        Uri.parse('$baseUrl/sensor-data/$roomId'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-      );
-      
-      if (publicResponse.statusCode == 200) {
-        return jsonDecode(publicResponse.body);
-      }
-      
-      throw Exception('Failed to fetch sensor data: ${publicResponse.statusCode}');
     } else {
-      throw Exception('Failed to fetch sensor data: ${response.statusCode}');
+      // Return data kosong jika gagal
+      return {
+        'success': false,
+        'data': []
+      };
     }
   } catch (e) {
-    throw Exception('Network error: $e');
+    return {
+      'success': false,
+      'data': [],
+      'error': e.toString()
+    };
   }
 }
 

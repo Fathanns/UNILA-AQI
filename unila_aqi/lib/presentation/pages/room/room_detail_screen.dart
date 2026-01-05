@@ -1,10 +1,6 @@
 import 'dart:async';
-import 'dart:math';
  
 import 'package:flutter/material.dart';
-import 'package:fl_chart/fl_chart.dart';
-import 'package:unila_aqi/core/utils/date_formatter.dart';
-import 'package:unila_aqi/data/models/sensor_data.dart';
 import '../../../data/models/room.dart';
 import '../../../core/utils/helpers.dart';
 import '../../../core/constants/colors.dart';
@@ -27,67 +23,15 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
   final ApiService _apiService = ApiService();
   final SocketService _socketService = SocketService();
  
-  List<SensorDataPoint> _historicalData = [];
-  bool _isLoadingHistory = false;
   // Timer? _autoRefreshTimer;
   // int _autoRefreshCountdown = 5;
   bool _isRefreshing = false;
   bool _isMounted = false;
   bool _socketConnected = false;
   late Room _currentRoomData;
-  StreamSubscription? _roomUpdateSubscription;
  
-  // Chart control
-  int _selectedChartType = 0; // 0: AQI, 1: PM2.5, 2: Temperature
-  bool _showChartGrid = true;
+
  
-  List<SensorDataPoint> _processChartData(List<SensorData> rawData) {
-  if (rawData.isEmpty) return [];
-  
-  List<SensorDataPoint> processedData = [];
-  
-  for (var data in rawData) {
-    processedData.add(SensorDataPoint(
-      timestamp: data.timestamp,
-      aqi: data.aqi,
-      pm25: data.pm25,
-      pm10: data.pm10,
-      co2: data.co2,
-      temperature: data.temperature,
-      humidity: data.humidity,
-    ));
-  }
-  
-  // Sampling otomatis berdasarkan jumlah data
-  if (processedData.length > 200) {
-    // Untuk 24 jam dengan interval 1 menit = 1440 points
-    // Sampling menjadi 200 points (setiap ~7 menit)
-    return _sampleData(processedData, 200);
-  }
-  
-  return processedData;
-}
- 
-List<SensorDataPoint> _sampleData(List<SensorDataPoint> data, int targetCount) {
-  if (data.length <= targetCount) return data;
-  
-  List<SensorDataPoint> sampled = [];
-  final step = (data.length / targetCount).floor();
-  
-  for (int i = 0; i < data.length; i += step) {
-    sampled.add(data[i]);
-  }
-  
-  // Pastikan data pertama dan terakhir selalu ada
-  if (sampled.first.timestamp != data.first.timestamp) {
-    sampled.insert(0, data.first);
-  }
-  if (sampled.last.timestamp != data.last.timestamp) {
-    sampled.add(data.last);
-  }
-  
-  return sampled;
-}
  
   @override
   void initState() {
@@ -256,8 +200,6 @@ void _setupBuildingUpdateListener() {
       );
     });
  
-    // Add to historical data for chart
-    _addToHistoricalData(_currentRoomData);
  
     // Show update notification
     if (nameChanged) {
@@ -270,22 +212,7 @@ void _setupBuildingUpdateListener() {
   }
 }
  
-  void _addToHistoricalData(Room room) {
-    // Limit historical data to 50 points
-    if (_historicalData.length >= 50) {
-      _historicalData.removeAt(0);
-    }
- 
-    _historicalData.add(SensorDataPoint(
-      timestamp: room.updatedAt,
-      aqi: room.currentAQI,
-      pm25: room.currentData.pm25,
-      pm10: room.currentData.pm10,
-      co2: room.currentData.co2,
-      temperature: room.currentData.temperature,
-      humidity: room.currentData.humidity,
-    ));
-  }
+  
  
   // void _showUpdateNotification(Room updatedRoom) {
   //   ScaffoldMessenger.of(context).showSnackBar(
@@ -391,86 +318,21 @@ void _setupBuildingUpdateListener() {
 Future<void> _loadHistoricalData() async {
   if (!_isMounted) return;
   
-  setState(() => _isLoadingHistory = true);
   
   try {
-    // Hanya panggil tanpa parameter range
+    // Hanya ambil data saat ini, tidak perlu data historis
     final response = await _apiService.getSensorData(widget.room.id);
     
     if (_isMounted && response['success'] == true) {
-      final List<dynamic> data = response['data'];
-      
-      // Convert to SensorData objects
-      final sensorDataList = data.map((json) => SensorData.fromJson(json)).toList();
-      
-      // Process for chart display
-      _historicalData = _processChartData(sensorDataList);
-      
-      // Jika tidak ada data historis, tambah data current sebagai fallback
-      if (_historicalData.isEmpty) {
-        _historicalData.add(SensorDataPoint(
-          timestamp: _currentRoomData.updatedAt,
-          aqi: _currentRoomData.currentAQI,
-          pm25: _currentRoomData.currentData.pm25,
-          pm10: _currentRoomData.currentData.pm10,
-          co2: _currentRoomData.currentData.co2,
-          temperature: _currentRoomData.currentData.temperature,
-          humidity: _currentRoomData.currentData.humidity,
-        ));
-      }
-    } else {
-      // Fallback jika API error
-      _historicalData.add(SensorDataPoint(
-        timestamp: _currentRoomData.updatedAt,
-        aqi: _currentRoomData.currentAQI,
-        pm25: _currentRoomData.currentData.pm25,
-        pm10: _currentRoomData.currentData.pm10,
-        co2: _currentRoomData.currentData.co2,
-        temperature: _currentRoomData.currentData.temperature,
-        humidity: _currentRoomData.currentData.humidity,
-      ));
+      // Tidak perlu menyimpan data historis untuk chart
+      print('✅ Loaded current sensor data');
     }
   } catch (e) {
-    print('Error loading historical data: $e');
-    
-    // Fallback ke data current
-    _historicalData.add(SensorDataPoint(
-      timestamp: _currentRoomData.updatedAt,
-      aqi: _currentRoomData.currentAQI,
-      pm25: _currentRoomData.currentData.pm25,
-      pm10: _currentRoomData.currentData.pm10,
-      co2: _currentRoomData.currentData.co2,
-      temperature: _currentRoomData.currentData.temperature,
-      humidity: _currentRoomData.currentData.humidity,
-    ));
-    
-    _showNotification('Gagal memuat data historis, menampilkan data saat ini', 'warning');
+    print('Error loading sensor data: $e');
   } finally {
     if (_isMounted) {
-      setState(() => _isLoadingHistory = false);
     }
   }
-}
- 
-  @override
-  void dispose() {
-  _isMounted = false;
- 
-  // Leave room
-  _socketService.leaveRoom(widget.room.id);
- 
-  // Remove event listeners
-  _socketService.off('room-update');
-  _socketService.off('notification');
-  _socketService.off('room-building-updated');
-  _socketService.off('room-name-updated'); // 🔥 BARU: Hapus listener nama ruangan
-  _socketService.off('room-updated'); // 🔥 BARU: Hapus listener umum
- 
-  // Cancel subscription
-  _roomUpdateSubscription?.cancel();
- 
-  // _autoRefreshTimer?.cancel();
-  super.dispose();
 }
  
   // void _startAutoRefresh() {
@@ -673,348 +535,11 @@ Widget _buildRecommendationItem(String text) {
   );
 }
  
-  Widget _buildAQIChart() {
-  if (_isLoadingHistory) {
-    return SizedBox(
-      height: 250,
-      child: Center(
-        child: CircularProgressIndicator(),
-      ),
-    );
-  }
   
-  if (_historicalData.isEmpty) {
-    return Container(
-      height: 250,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.cardBackground,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.timeline, size: 48, color: Colors.grey),
-            SizedBox(height: 16),
-            Text(
-              'Tidak ada data historis tersedia',
-              style: TextStyle(color: Colors.grey),
-            ),
-            SizedBox(height: 8),
-            Text(
-              'Data akan muncul saat sensor mengirim pembacaan',
-              style: TextStyle(color: Colors.grey, fontSize: 12),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+ 
   
-  // Prepare chart data based on selected type
-  List<FlSpot> spots = [];
-  double minY = 0;
-  double maxY = 100;
-  String unit = '';
-
-  switch (_selectedChartType) {
-    case 0: // AQI
-      spots = _historicalData.asMap().entries.map((entry) {
-        final index = entry.key.toDouble();
-        final data = entry.value;
-        return FlSpot(index, data.aqi.toDouble());
-      }).toList();
-      minY = 0;
-      maxY = 500;
-      unit = ''; // HAPUS 'AQI' dari sini
-      break;
-      
-    case 1: // PM2.5
-      spots = _historicalData.asMap().entries.map((entry) {
-        final index = entry.key.toDouble();
-        final data = entry.value;
-        return FlSpot(index, data.pm25);
-      }).toList();
-      minY = 0;
-      maxY = 250;
-      unit = 'μg/m³';
-      break;
-      
-    case 2: // Temperature
-      spots = _historicalData.asMap().entries.map((entry) {
-        final index = entry.key.toDouble();
-        final data = entry.value;
-        return FlSpot(index, data.temperature);
-      }).toList();
-      minY = 15;
-      maxY = 35;
-      unit = '°C';
-      break;
-  }
-
-  // Calculate min/max with padding
-  final values = spots.map((spot) => spot.y).toList();
-  double chartMinY;
-  double chartMaxY;
-
-  if (values.isNotEmpty) {
-    final minValue = values.reduce((a, b) => a < b ? a : b).toDouble();
-    final maxValue = values.reduce((a, b) => a > b ? a : b).toDouble();
-    
-    // Add 10% padding
-    chartMinY = (minValue * 0.9).clamp(minY, double.infinity);
-    chartMaxY = (maxValue * 1.1).clamp(0, maxY);
-  } else {
-    chartMinY = minY;
-    chartMaxY = maxY * 0.5;
-  }
-
-  // Pastikan chartMaxY lebih besar dari chartMinY
-  if (chartMaxY <= chartMinY) {
-    chartMaxY = chartMinY + 1.0;
-  }
-
-  return Container(
-    padding: const EdgeInsets.all(16),
-    decoration: BoxDecoration(
-      color: AppColors.cardBackground,
-      borderRadius: BorderRadius.circular(12),
-      border: Border.all(color: AppColors.border),
-    ),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-  'GRAFIK DATA 24 JAM TERAKHIR:',
-  style: TextStyle(
-    fontSize: 14,
-    fontWeight: FontWeight.w600,
-  ),
-),
-SizedBox(height: 8),
-            Row(
-              children: [
-                // Chart type selector
-                PopupMenuButton<int>(
-                  icon: Icon(Icons.timeline, size: 20),
-                  onSelected: (value) {
-                    setState(() => _selectedChartType = value);
-                  },
-                  itemBuilder: (context) => [
-                    PopupMenuItem(
-                      value: 0,
-                      child: Row(
-                        children: [
-                          Icon(Icons.air, size: 16),
-                          SizedBox(width: 8),
-                          Text('AQI'),
-                        ],
-                      ),
-                    ),
-                    PopupMenuItem(
-                      value: 1,
-                      child: Row(
-                        children: [
-                          Icon(Icons.grain, size: 16),
-                          SizedBox(width: 8),
-                          Text('PM2.5'),
-                        ],
-                      ),
-                    ),
-                    PopupMenuItem(
-                      value: 2,
-                      child: Row(
-                        children: [
-                          Icon(Icons.thermostat, size: 16),
-                          SizedBox(width: 8),
-                          Text('Suhu'),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                SizedBox(width: 8),
-                // Grid toggle
-                IconButton(
-                  icon: Icon(
-                    _showChartGrid ? Icons.grid_on : Icons.grid_off,
-                    size: 20,
-                  ),
-                  onPressed: () {
-                    setState(() => _showChartGrid = !_showChartGrid);
-                  },
-                ),
-              ],
-            ),
-          ],
-        ),
-        
-        const SizedBox(height: 16),
-        
-        // Chart Description (Hapus time range selector)
-        Text(
-          'Menampilkan data 24 jam terakhir',
-          style: TextStyle(
-            fontSize: 12,
-            color: Colors.grey,
-          ),
-        ),
-        
-        const SizedBox(height: 16),
-        
-        SizedBox(
-          height: 200,
-          child: LineChart(
-            LineChartData(
-              gridData: FlGridData(
-                show: _showChartGrid,
-                drawVerticalLine: false,
-                horizontalInterval: (chartMaxY - chartMinY) / 5,
-                getDrawingHorizontalLine: (value) {
-                  return FlLine(
-                    color: Colors.grey.withOpacity(0.1),
-                    strokeWidth: 1,
-                  );
-                },
-              ),
-              titlesData: FlTitlesData(
-                bottomTitles: AxisTitles(
-                  sideTitles: SideTitles(
-                    showTitles: true,
-                    interval: max(1, _historicalData.length / 5),
-                    getTitlesWidget: (value, meta) {
-                      if (value.toInt() >= _historicalData.length) return const SizedBox.shrink();
-                      final time = _historicalData[value.toInt()].timestamp;
-                      return Padding(
-                        padding: const EdgeInsets.only(top: 8),
-                        child: Text(
-                          DateFormatter.formatChartTime(time), // Hapus parameter range
-                          style: TextStyle(
-                            fontSize: 10,
-                            color: Colors.grey,
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ),
-                leftTitles: AxisTitles(
-                  sideTitles: SideTitles(
-                    showTitles: true,
-                    interval: (chartMaxY - chartMinY) / 5,
-                    getTitlesWidget: (value, meta) {
-                      return Text(
-                        value.toInt().toString(),
-                        style: TextStyle(
-                          fontSize: 10,
-                          color: Colors.grey,
-                        ),
-                      );
-                    },
-                  ),
-                ),
-                topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-              ),
-              borderData: FlBorderData(show: false),
-              minX: 0,
-              maxX: _historicalData.isNotEmpty ? (_historicalData.length - 1).toDouble() : 1,
-              minY: chartMinY,
-              maxY: chartMaxY,
-              lineBarsData: [
-                LineChartBarData(
-                  spots: spots,
-                  isCurved: true,
-                  color: _getChartColor(),
-                  barWidth: 3,
-                  isStrokeCapRound: true,
-                  dotData: FlDotData(
-                    show: true,
-                    getDotPainter: (spot, percent, barData, index) {
-                      return FlDotCirclePainter(
-                        radius: 3,
-                        color: _getChartColor(),
-                        strokeWidth: 1,
-                        strokeColor: Colors.white,
-                      );
-                    },
-                  ),
-                  belowBarData: BarAreaData(
-                    show: true,
-                    color: _getChartColor().withOpacity(0.1),
-                  ),
-                  gradient: LinearGradient(
-                    colors: [
-                      _getChartColor(),
-                      _getChartColor().withOpacity(0.5),
-                    ],
-                    begin: Alignment.bottomCenter,
-                    end: Alignment.topCenter,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-        
-        const SizedBox(height: 8),
-        
-        // Chart legend
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              _getChartTitle(),
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
-                color: _getChartColor(),
-              ),
-            ),
-            if (unit.isNotEmpty)
-              Text(
-                unit,
-                style: TextStyle(
-                  fontSize: 10,
-                  color: Colors.grey,
-                ),
-              ),
-            Text(
-              '${spots.length}/${_historicalData.length} points',
-              style: TextStyle(
-                fontSize: 10,
-                color: Colors.grey,
-              ),
-            ),
-          ],
-        ),
-      ],
-    ),
-  );
-}
  
-  Color _getChartColor() {
-    switch (_selectedChartType) {
-      case 0: return Helpers.getAQIColor(_currentRoomData.currentAQI);
-      case 1: return Colors.blue;
-      case 2: return Colors.orange;
-      default: return AppColors.primary;
-    }
-  }
  
- String _getChartTitle() {
-  switch (_selectedChartType) {
-    case 0: return 'Air Quality Index'; // Tetap full title di sini
-    case 1: return 'PM2.5 Concentration';
-    case 2: return 'Temperature';
-    default: return 'Chart';
-  }
-}
  
   Widget _buildLastUpdateInfo() {
   // Ganti dengan:
@@ -1334,12 +859,12 @@ SizedBox(height: 8),
                 ),
               ),
  
-              SizedBox(height: 24),
+              
  
               // Last update info
               _buildLastUpdateInfo(),
  
-              SizedBox(height: 24),
+              
  
               // Parameter Cards
               const Text(
@@ -1408,15 +933,12 @@ SizedBox(height: 8),
  
               SizedBox(height: 24),
  
-              // AQI Chart
-              _buildAQIChart(),
- 
+              
               SizedBox(height: 24),
  
               // Health Recommendations
               _buildHealthRecommendations(),
  
-              SizedBox(height: 24),
  
               // Footer with auto-refresh status
               // Container(

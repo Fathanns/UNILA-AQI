@@ -62,34 +62,3 @@ class SensorData {
   }
 }
 
-class SensorDataPoint {
-  final DateTime timestamp;
-  final int aqi;
-  final double pm25;
-  final double pm10;
-  final double co2;
-  final double temperature;
-  final double humidity;
-
-  SensorDataPoint({
-    required this.timestamp,
-    required this.aqi,
-    required this.pm25,
-    required this.pm10,
-    required this.co2,
-    required this.temperature,
-    required this.humidity,
-  });
-
-  factory SensorDataPoint.fromSensorData(SensorData data) {
-    return SensorDataPoint(
-      timestamp: data.timestamp,
-      aqi: data.aqi,
-      pm25: data.pm25,
-      pm10: data.pm10,
-      co2: data.co2,
-      temperature: data.temperature,
-      humidity: data.humidity,
-    );
-  }
-}
