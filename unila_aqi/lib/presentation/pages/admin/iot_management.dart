@@ -278,9 +278,9 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
   }
   
   Widget _buildDeviceCard(IoTDevice device) {
-    final timeAgo = device.lastUpdate != null 
-        ? Helpers.formatTimeAgo(device.lastUpdate!)
-        : 'Belum pernah update';
+    // final timeAgo = device.lastUpdate != null 
+        // ? Helpers.formatTimeAgo(device.lastUpdate!)
+        // : 'Belum pernah update';
     
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
@@ -373,13 +373,13 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
                     color: Colors.grey,
                   ),
                   const SizedBox(width: 4),
-                  Text(
-                    'Update: $timeAgo',
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey,
-                    ),
-                  ),
+                  // Text(
+                  //   'Update: $timeAgo',
+                  //   style: const TextStyle(
+                  //     fontSize: 12,
+                  //     color: Colors.grey,
+                  //   ),
+                  // ),
                 ],
               ),
             ),

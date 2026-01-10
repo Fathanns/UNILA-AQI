@@ -263,6 +263,30 @@ class ApiService {
 Future<dynamic> forceRefresh() async {
   return await post('force-refresh', {});
 }
+
+Future<dynamic> getHistoricalData24h(String roomId) async {
+  return await get('sensor-data/$roomId/historical/24h');
+}
+
+// Get historical data for 30 days  
+Future<dynamic> getHistoricalData30d(String roomId) async {
+  return await get('sensor-data/$roomId/historical/30d');
+}
+
+Future<dynamic> seedHistoricalData(String roomId, {int days = 30, int hours = 24}) async {
+  return await post('seed/historical-data/$roomId', {
+    'days': days,
+    'hours': hours,
+  });
+}
+
+// Seed historical data for all rooms
+Future<dynamic> seedHistoricalDataAll({int days = 30, int hours = 24}) async {
+  return await post('seed/historical-data-all', {
+    'days': days,
+    'hours': hours,
+  });
+}
   // Dispose
   void dispose() {
     _client.close();

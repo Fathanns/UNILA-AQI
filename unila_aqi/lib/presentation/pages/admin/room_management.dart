@@ -341,7 +341,7 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
   
   Widget _buildRoomCard(Room room) {
     final aqiColor = Helpers.getAQIColor(room.currentAQI);
-    final timeAgo = Helpers.formatTimeAgo(room.currentData.updatedAt);
+    // final timeAgo = Helpers.formatTimeAgo(room.currentData.updatedAt);
     
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
@@ -417,13 +417,13 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
             const SizedBox(height: 12),
             
             // Last Update
-            Text(
-              'Update: $timeAgo',
-              style: const TextStyle(
-                fontSize: 12,
-                color: Colors.grey,
-              ),
-            ),
+            // Text(
+            //   'Update: $timeAgo',
+            //   style: const TextStyle(
+            //     fontSize: 12,
+            //     color: Colors.grey,
+            //   ),
+            // ),
             
             const SizedBox(height: 16),
             
