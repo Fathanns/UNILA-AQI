@@ -31,23 +31,4 @@ class DateFormatter {
       return format(date);
     }
   }
-
- static String formatChartTime(DateTime date) {
-  final localDate = date.toLocal();
-  
-  // Tentukan format berdasarkan rentang waktu
-  final now = DateTime.now().toLocal();
-  final difference = now.difference(localDate);
-  
-  if (difference.inHours < 24) {
-    // Kurang dari 24 jam: tampilkan jam:menit
-    return DateFormat('HH:mm').format(localDate);
-  } else if (difference.inDays < 2) {
-    // 24-48 jam: tampilkan "Kemarin HH:mm"
-    return 'Kemarin ${DateFormat('HH:mm').format(localDate)}';
-  } else {
-    // Lebih dari 48 jam: tampilkan tanggal
-    return DateFormat('dd/MM HH:mm').format(localDate);
-  }
-}
 }

@@ -36,15 +36,7 @@ class AppColors {
   static const Color warning = Color(0xFFFFC107);
   static const Color error = Color(0xFFDC3545);
   static const Color info = Color(0xFF17A2B8);
-  
-  // Chart Colors
-  static const List<Color> chartColors = [
-    Color(0xFF4285F4),
-    Color(0xFF34A853),
-    Color(0xFFFBBC05),
-    Color(0xFFEA4335),
-    Color(0xFF8F3F97),
-  ];
+
   
   // Gradient Colors
   static const LinearGradient primaryGradient = LinearGradient(

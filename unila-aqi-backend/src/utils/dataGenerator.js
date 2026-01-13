@@ -68,40 +68,6 @@ const generateSensorData = (roomType = 'normal') => {
   };
 };
 
-/**
- * Generate trend data (for historical charts)
- */
-const generateTrendData = (hours = 24, baseData) => {
-  const dataPoints = [];
-  const now = new Date();
-
-  for (let i = hours - 1; i >= 0; i--) {
-    const timestamp = new Date(now.getTime() - (i * 60 * 60 * 1000));
-    
-    // Add some variation to base data
-    const variation = 1 + (Math.sin(i * 0.5) * 0.3) + (Math.random() * 0.2 - 0.1);
-    
-    const pm25 = Math.max(0, baseData.pm25 * variation);
-    const { aqi, category } = calculateAQIFromPM25(pm25);
-
-    dataPoints.push({
-      timestamp,
-      pm25: parseFloat(pm25.toFixed(1)),
-      pm10: parseFloat((baseData.pm10 * variation).toFixed(1)),
-      co2: Math.round(baseData.co2 * variation),
-      temperature: parseFloat((baseData.temperature + (Math.sin(i) * 1.5)).toFixed(1)),
-      humidity: Math.max(30, Math.min(80, baseData.humidity + (Math.cos(i * 0.3) * 5))),
-      aqi,
-      category
-    });
-  }
-
-  return dataPoints;
-};
-
-/**
- * Simulate device failure or anomaly
- */
 const simulateAnomaly = (normalData) => {
   const anomalyType = Math.random();
   

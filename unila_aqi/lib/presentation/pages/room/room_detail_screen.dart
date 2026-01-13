@@ -5,7 +5,6 @@ import 'package:unila_aqi/core/services/api_service.dart';
 import 'package:unila_aqi/core/services/socket_service.dart';
 import 'package:unila_aqi/core/utils/helpers.dart';
 import 'package:unila_aqi/data/models/room.dart';
-import 'package:unila_aqi/presentation/widgets/aqi_history_chart.dart';
 
 
 class RoomDetailScreen extends StatefulWidget {
@@ -821,11 +820,6 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
 
                 // Health Recommendations
                 _buildHealthRecommendations(),
-
-                SizedBox(height: 24),
-
-                // 🔥 BARU: AQI History Chart
-                AQIHistoryChart(roomId: widget.room.id),
 
                 SizedBox(height: 32),
               ],
