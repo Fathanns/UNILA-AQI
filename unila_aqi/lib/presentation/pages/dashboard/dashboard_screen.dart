@@ -12,6 +12,7 @@ import '../../../presentation/widgets/common/building_section.dart';
 import '../../../presentation/pages/room/room_detail_screen.dart';
 import '../../../core/utils/helpers.dart';
 import '../../../core/constants/colors.dart';
+import '../../pages/info/aqi_info_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   final bool isAdminMode;
@@ -158,29 +159,7 @@ void dispose() {
     }
   }
 }
-  
-  // void _startAutoRefresh() {
-  //   _autoRefreshTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-  //     if (!_isMounted) {
-  //       timer.cancel();
-  //       return;
-  //     }
-      
-  //     // Use WidgetsBinding to schedule after build
-  //     WidgetsBinding.instance.addPostFrameCallback((_) {
-  //       if (!_isMounted) return;
-        
-  //       setState(() {
-  //         if (_autoRefreshCountdown <= 0) {
-  //           _autoRefreshCountdown = 10;
-  //           _refreshData();
-  //         } else {
-  //           _autoRefreshCountdown--;
-  //         }
-  //       });
-  //     });
-  //   });
-  // }
+
   
   Future<void> _refreshData() async {
     if (!_isMounted) return;
@@ -192,31 +171,6 @@ void dispose() {
       _refreshController.refreshCompleted();
     }
   }
-
-//   Future<void> _forceRefresh() async {
-//   if (!_isMounted) return;
-  
-//   setState(() {
-//     _autoRefreshCountdown = 0; // Trigger immediate refresh
-//   });
-  
-//   await _refreshData();
-  
-//   // Show confirmation
-//   ScaffoldMessenger.of(context).showSnackBar(
-//     SnackBar(
-//       content: Row(
-//         children: [
-//           Icon(Icons.refresh, color: Colors.white, size: 20),
-//           SizedBox(width: 8),
-//           Text('Data diperbarui secara manual'),
-//         ],
-//       ),
-//       backgroundColor: Colors.green,
-//       duration: Duration(seconds: 2),
-//     ),
-//   );
-// }
   
   void _handleRoomTap(Room room) {
     Navigator.push(
@@ -238,6 +192,15 @@ void dispose() {
       (route) => false,
     );
   }
+
+   void _handleHelpTap() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const AQIInfoScreen(),
+      ),
+    );
+  }
   
   @override
   Widget build(BuildContext context) {
@@ -253,11 +216,7 @@ void dispose() {
     onPressed: _refreshData,
     tooltip: 'Refresh',
   ),
-  // IconButton(
-  //   icon: Icon(Icons.update),
-  //   onPressed: _forceRefresh,
-  //   tooltip: 'Force Refresh',
-  // ),
+
   Builder(
     builder: (context) => IconButton(
       icon: Icon(Icons.menu),
@@ -282,6 +241,7 @@ void dispose() {
         onProfileTap: () {
           Helpers.showSnackBar(context, 'Profile management coming soon!');
         },
+        onHelpTap: _handleHelpTap,
         onLogoutTap: _handleLogout,
       ),
       body: SmartRefresher(
@@ -446,21 +406,7 @@ void dispose() {
                   childCount: roomProvider.roomsByBuilding.length,
                 ),
               ),
-            // Auto Refresh Indicator
-            // SliverToBoxAdapter(
-            //   child: Container(
-            //     padding: const EdgeInsets.all(16),
-            //     child: Center(
-            //       child: Text(
-            //         'Auto refresh: ${_autoRefreshCountdown}s',
-            //         style: const TextStyle(
-            //           fontSize: 12,
-            //           color: Colors.grey,
-            //         ),
-            //       ),
-            //     ),
-            //   ),
-            // ),
+        
           ],
         ),
       ),

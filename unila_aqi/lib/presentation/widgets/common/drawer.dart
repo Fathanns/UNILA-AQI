@@ -11,6 +11,8 @@ class AppDrawer extends StatelessWidget {
   final VoidCallback? onDevicesTap;
   final VoidCallback? onProfileTap;
   final VoidCallback? onLogoutTap;
+  final VoidCallback? onHelpTap; 
+  
   
   const AppDrawer({
     super.key,
@@ -21,6 +23,7 @@ class AppDrawer extends StatelessWidget {
     this.onDevicesTap,
     this.onProfileTap,
     this.onLogoutTap,
+    this.onHelpTap,
   });
 
   @override
@@ -144,7 +147,7 @@ class AppDrawer extends StatelessWidget {
           Expanded(
             child: ListView(
               padding: EdgeInsets.zero,
-              children: [
+               children: [
                 _buildMenuItem(
                   icon: Icons.dashboard,
                   label: 'DASHBOARD',
@@ -173,9 +176,18 @@ class AppDrawer extends StatelessWidget {
                     onTap: onProfileTap,
                   ),
                 ],
+                // ✅ TAMBAH: Menu Help untuk semua user
+                const Divider(indent: 16, endIndent: 16),
+                _buildMenuItem(
+                  icon: Icons.help_outline,
+                  label: 'BANTUAN & INFORMASI',
+                  onTap: onHelpTap,
+                ),
               ],
+              
             ),
           ),
+
           // Logout Button
           Container(
             padding: const EdgeInsets.all(16),
