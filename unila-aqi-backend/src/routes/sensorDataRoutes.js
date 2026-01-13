@@ -37,7 +37,6 @@ router.get('/:roomId', authMiddleware, async (req, res) => {
     })
     .sort({ timestamp: 1 });
     
-    // Jika data terlalu banyak, lakukan sampling di frontend
     res.json({
       success: true,
       data: sensorData,
@@ -54,5 +53,149 @@ router.get('/:roomId', authMiddleware, async (req, res) => {
   }
 });
 
+// NEW: GET sensor data by date untuk grafik history
+router.get('/:roomId/history', authMiddleware, async (req, res) => {
+  try {
+    const { roomId } = req.params;
+    const { date, interval = 30 } = req.query; // interval dalam menit
+    
+    // Validasi roomId
+    if (!mongoose.Types.ObjectId.isValid(roomId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid room ID format'
+      });
+    }
+    
+    // Parse tanggal
+    let startDate, endDate;
+    if (date) {
+      // Jika ada tanggal spesifik
+      const selectedDate = new Date(date);
+      startDate = new Date(selectedDate.setHours(0, 0, 0, 0));
+      endDate = new Date(selectedDate.setHours(23, 59, 59, 999));
+    } else {
+      // Default: hari ini
+      const today = new Date();
+      startDate = new Date(today.setHours(0, 0, 0, 0));
+      endDate = new Date(today.setHours(23, 59, 59, 999));
+    }
+    
+    console.log(`📊 Fetching history data for room ${roomId} from ${startDate} to ${endDate}`);
+    
+    // Aggregation pipeline untuk data per interval
+    const aggregationPipeline = [
+      {
+        $match: {
+          roomId: toObjectId(roomId),
+          timestamp: { $gte: startDate, $lte: endDate }
+        }
+      },
+      {
+        $addFields: {
+          // Buat interval waktu (misal: 30 menit)
+          timeInterval: {
+            $subtract: [
+              { $minute: "$timestamp" },
+              { $mod: [{ $minute: "$timestamp" }, parseInt(interval)] }
+            ]
+          }
+        }
+      },
+      {
+        $group: {
+          _id: {
+            hour: { $hour: "$timestamp" },
+            interval: "$timeInterval"
+          },
+          // Ambil data terakhir di setiap interval
+          timestamp: { $last: "$timestamp" },
+          aqi: { $last: "$aqi" },
+          pm25: { $last: "$pm25" },
+          pm10: { $last: "$pm10" },
+          co2: { $last: "$co2" },
+          temperature: { $last: "$temperature" },
+          humidity: { $last: "$humidity" },
+          category: { $last: "$category" },
+          // Juga simpan data mentah untuk tooltip
+          rawData: { $push: "$$ROOT" }
+        }
+      },
+      {
+        $sort: { "timestamp": 1 }
+      },
+      {
+        $project: {
+          _id: 0,
+          timestamp: 1,
+          hour: "$_id.hour",
+          interval: "$_id.interval",
+          timeLabel: {
+            $concat: [
+              { $toString: "$_id.hour" },
+              ":",
+              { 
+                $cond: {
+                  if: { $lt: ["$_id.interval", 10] },
+                  then: "0",
+                  else: ""
+                }
+              },
+              { $toString: "$_id.interval" }
+            ]
+          },
+          aqi: 1,
+          pm25: 1,
+          pm10: 1,
+          co2: 1,
+          temperature: 1,
+          humidity: 1,
+          category: 1,
+          rawData: 1
+        }
+      }
+    ];
+    
+    const aggregatedData = await SensorData.aggregate(aggregationPipeline);
+    
+    // Jika tidak ada data, coba ambil data mentah
+    if (aggregatedData.length === 0) {
+      const rawData = await SensorData.find({
+        roomId: toObjectId(roomId),
+        timestamp: { $gte: startDate, $lte: endDate }
+      })
+      .sort({ timestamp: 1 });
+      
+      return res.json({
+        success: true,
+        data: rawData.map(item => ({
+          ...item.toObject(),
+          timeLabel: `${item.timestamp.getHours()}:${item.timestamp.getMinutes().toString().padStart(2, '0')}`
+        })),
+        aggregated: false,
+        count: rawData.length,
+        message: 'Raw data loaded'
+      });
+    }
+    
+    res.json({
+      success: true,
+      data: aggregatedData,
+      aggregated: true,
+      count: aggregatedData.length,
+      startDate,
+      endDate,
+      message: 'Aggregated history data loaded'
+    });
+    
+  } catch (error) {
+    console.error('Error fetching history data:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching history data',
+      error: error.message
+    });
+  }
+});
 
 module.exports = router;

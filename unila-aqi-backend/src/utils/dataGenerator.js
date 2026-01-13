@@ -104,6 +104,5 @@ const simulateAnomaly = (normalData) => {
 
 module.exports = {
   generateSensorData,
-  generateTrendData,
   simulateAnomaly
 };

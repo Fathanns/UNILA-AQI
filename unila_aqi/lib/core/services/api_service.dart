@@ -264,6 +264,26 @@ Future<dynamic> forceRefresh() async {
   return await post('force-refresh', {});
 }
 
+// REAL: Get sensor history data untuk grafik
+Future<dynamic> getSensorHistory(String roomId, String date) async {
+  try {
+    final headers = await _getHeaders();
+    
+    final response = await http.get(
+      Uri.parse('$baseUrl/sensor-data/$roomId/history?date=$date'),
+      headers: headers,
+    );
+    
+    return _handleResponse(response);
+  } catch (e) {
+    return {
+      'success': false,
+      'data': [],
+      'error': e.toString()
+    };
+  }
+}
+
   // Dispose
   void dispose() {
     _client.close();

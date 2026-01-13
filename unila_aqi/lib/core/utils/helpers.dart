@@ -306,7 +306,15 @@ static Map<String, dynamic> formatUpdateWithStatus(DateTime dateTime) {
       return '{}';
     }
   }
-
+  
+static String getAQICategory(int aqi) {
+  if (aqi <= 50) return 'baik';
+  if (aqi <= 100) return 'sedang';
+  if (aqi <= 150) return 'tidak_sehat';
+  if (aqi <= 200) return 'sangat_tidak_sehat';
+  if (aqi <= 300) return 'berbahaya';
+  return 'error';
+}
   // Network Helpers
   static String formatBytes(int bytes) {
     if (bytes < 1024) return '$bytes B';
@@ -329,6 +337,7 @@ static Map<String, dynamic> formatUpdateWithStatus(DateTime dateTime) {
   static List<String> getDetailedRecommendations(Room room) {
   final recommendations = <String>[];
   final data = room.currentData;
+
   
   // AQI based recommendations
   final aqi = room.currentAQI;
@@ -368,8 +377,10 @@ static Map<String, dynamic> formatUpdateWithStatus(DateTime dateTime) {
     recommendations.add('Kelembaban rendah: Gunakan humidifier');
   }
 
-  
+
   
   return recommendations;
+
+  
 }
 }

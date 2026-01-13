@@ -1,11 +1,11 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:unila_aqi/core/constants/colors.dart';
-import 'package:unila_aqi/core/services/api_service.dart';
+// import 'package:unila_aqi/core/services/api_service.dart';
 import 'package:unila_aqi/core/services/socket_service.dart';
 import 'package:unila_aqi/core/utils/helpers.dart';
 import 'package:unila_aqi/data/models/room.dart';
-
+import 'package:unila_aqi/presentation/widgets/chart/history_chart.dart';
 
 class RoomDetailScreen extends StatefulWidget {
   final Room room;
@@ -20,7 +20,7 @@ class RoomDetailScreen extends StatefulWidget {
 }
 
 class _RoomDetailScreenState extends State<RoomDetailScreen> {
-  final ApiService _apiService = ApiService();
+  // final ApiService _apiService = ApiService();
   final SocketService _socketService = SocketService();
 
   bool _isRefreshing = false;
@@ -40,7 +40,6 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
       _setupRealtimeListener();
       _setupBuildingUpdateListener();
       _setupRoomNameUpdateListener();
-      _loadHistoricalData(); // Tidak perlu parameter
       _checkSocketConnection();
     });
   }
@@ -272,30 +271,13 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
     }
   }
 
-  Future<void> _loadHistoricalData() async {
-    if (!_isMounted) return;
-
-    try {
-      // Hanya ambil data saat ini, tidak perlu data historis
-      final response = await _apiService.getSensorData(widget.room.id);
-
-      if (_isMounted && response['success'] == true) {
-        // Tidak perlu menyimpan data historis untuk chart
-        print('✅ Loaded current sensor data');
-      }
-    } catch (e) {
-      print('Error loading sensor data: $e');
-    } finally {
-      if (_isMounted) {
-      }
-    }
-  }
-
   Future<void> _refreshData() async {
     if (!_isMounted) return;
 
     setState(() => _isRefreshing = true);
-    await _loadHistoricalData();
+    
+    // In a real app, you would refresh the current data
+    await Future.delayed(Duration(seconds: 1)); // Simulate network delay
 
     if (_isMounted) {
       setState(() => _isRefreshing = false);
@@ -536,6 +518,30 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildLegendItem(String label, Color color) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 12,
+          height: 12,
+          decoration: BoxDecoration(
+            color: color,
+            shape: BoxShape.circle,
+          ),
+        ),
+        const SizedBox(width: 4),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            color: Colors.grey.shade700,
+          ),
+        ),
+      ],
     );
   }
 
@@ -821,7 +827,105 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
                 // Health Recommendations
                 _buildHealthRecommendations(),
 
-                SizedBox(height: 32),
+                SizedBox(height: 24),
+
+                // History Chart Section
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.05),
+                        blurRadius: 10,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(
+                            Icons.timeline,
+                            color: Colors.blue,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 8),
+                          const Text(
+                            'GRAFIK HISTORIS 24 JAM',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const Spacer(),
+                          
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                    //  Container(
+                    //         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    //         decoration: BoxDecoration(
+                    //           color: Colors.blue.withOpacity(0.1),
+                    //           borderRadius: BorderRadius.circular(8),
+                    //         ),
+                    //         child: Row(
+                    //           children: [
+                    //             Container(
+                    //               width: 8,
+                    //               height: 8,
+                    //               decoration: const BoxDecoration(
+                    //                 color: Colors.blue,
+                    //                 shape: BoxShape.circle,
+                    //               ),
+                    //             ),
+                    //             const SizedBox(width: 4),
+                    //             Text(
+                    //               'Update setiap 30 menit',
+                    //               style: TextStyle(
+                    //                 fontSize: 10,
+                    //                 color: Colors.blue.shade700,
+                    //                 fontWeight: FontWeight.w500,
+                    //               ),
+                    //             ),
+                    //           ],
+                    //         ),
+                    //       ),
+                      
+                      
+                      // Chart Widget
+                      HistoryChart(
+                        roomId: _currentRoomData.id,
+                        roomName: _currentRoomData.name,
+                        buildingName: _currentRoomData.buildingName,
+                      ),
+                      
+                      const SizedBox(height: 16),
+                      
+                      // Chart Legend
+                      Wrap(
+                        spacing: 12,
+                        runSpacing: 8,
+                        children: [
+                          _buildLegendItem('AQI', Colors.blue),
+                          _buildLegendItem('PM2.5', Colors.red),
+                          _buildLegendItem('PM10', Colors.orange),
+                          _buildLegendItem('CO₂', Colors.green),
+                          _buildLegendItem('Suhu', Colors.purple),
+                          _buildLegendItem('Kelembaban', Colors.teal),
+                        ],
+                      ),
+                      
+                      const SizedBox(height: 8),
+                      
+                      
+                    ],
+                  ),
+                ),
               ],
             ),
           ),
@@ -841,10 +945,9 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
     _socketService.off('room-update');
     _socketService.off('notification');
     _socketService.off('room-building-updated');
-    _socketService.off('room-name-updated'); // 🔥 BARU: Hapus listener nama ruangan
-    _socketService.off('room-updated'); // 🔥 BARU: Hapus listener umum
+    _socketService.off('room-name-updated');
+    _socketService.off('room-updated');
 
-    // _autoRefreshTimer?.cancel();
     super.dispose();
   }
 }
