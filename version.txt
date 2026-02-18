@@ -3918,7 +3918,7 @@ testApi();
 .env:
 
 PORT=5000
-MONGODB_URI=mongodb+srv://fathannursidiq:ucYkW646eSDE0SYl@unila-aqi-cluster.qullc07.mongodb.net/?appName=unila-aqi-cluster
+MONGODB_URI=mongodb+srv://fathannursidiq:jnfP64IYgiABV8SO@unila-aqi-cluster.b4zcdqm.mongodb.net/?appName=unila-aqi-cluster
 JWT_SECRET=unila_aqi_secret_key_2025_vvyynnssxx141
 NODE_ENV=development
 
