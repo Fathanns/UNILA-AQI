@@ -26,7 +26,7 @@ class HistoryRepository {
     return headers;
   }
   
-  // Get history data untuk grafik
+  // Get history data untuk grafik - REAL DATA
   Future<HistoryDataResponse> getHistoryData({
     required String roomId,
     required DateTime selectedDate,
@@ -44,6 +44,7 @@ class HistoryRepository {
       );
       
       print('📊 History API Response: ${response.statusCode}');
+      print('📊 History URL: ${AppConstants.apiBaseUrl}/sensor-data/$roomId/history?date=$formattedDate&interval=$interval');
       
       if (response.statusCode == 200) {
         final jsonResponse = jsonDecode(response.body);
@@ -55,6 +56,9 @@ class HistoryRepository {
           // Konversi ke list SensorData
           final sensorData = data.map((json) => SensorData.fromJson(json)).toList();
           
+          // Sort by timestamp
+          sensorData.sort((a, b) => a.timestamp.compareTo(b.timestamp));
+          
           return HistoryDataResponse(
             success: true,
             data: sensorData,
@@ -65,11 +69,13 @@ class HistoryRepository {
                 : selectedDate,
             endDate: jsonResponse['endDate'] != null
                 ? DateTime.parse(jsonResponse['endDate'])
-                : selectedDate.add(Duration(days: 1)),
+                : selectedDate.add(const Duration(days: 1)),
           );
         } else {
           throw Exception(jsonResponse['message'] ?? 'Failed to fetch history data');
         }
+      } else if (response.statusCode == 401) {
+        throw Exception('Session expired. Please login again.');
       } else {
         throw Exception('Failed to fetch history data: ${response.statusCode}');
       }
@@ -83,10 +89,45 @@ class HistoryRepository {
     }
   }
   
+  // Get 24 hours sensor data - REAL DATA
+  Future<List<SensorData>> get24HoursSensorData(String roomId) async {
+    try {
+      final headers = await _getHeaders();
+      
+      final response = await http.get(
+        Uri.parse('${AppConstants.apiBaseUrl}/sensor-data/$roomId'),
+        headers: headers,
+      );
+      
+      if (response.statusCode == 200) {
+        final jsonResponse = jsonDecode(response.body);
+        
+        if (jsonResponse['success'] == true) {
+          final List<dynamic> data = jsonResponse['data'];
+          
+          // Konversi ke list SensorData
+          final sensorData = data.map((json) => SensorData.fromJson(json)).toList();
+          
+          // Sort by timestamp
+          sensorData.sort((a, b) => a.timestamp.compareTo(b.timestamp));
+          
+          return sensorData;
+        } else {
+          throw Exception(jsonResponse['message'] ?? 'Failed to fetch sensor data');
+        }
+      } else {
+        throw Exception('Failed to fetch sensor data: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('❌ Error fetching 24h sensor data: $e');
+      return [];
+    }
+  }
+  
   // Get available dates dengan data
   Future<List<DateTime>> getAvailableDates(String roomId) async {
     try {
-      final headers = await _getHeaders();
+      await _getHeaders();
       
       // Untuk sekarang, kita akan generate 7 hari terakhir
       // Di production, Anda mungkin ingin query database untuk tanggal yang punya data

@@ -180,11 +180,11 @@ router.get('/:roomId/history', authMiddleware, async (req, res) => {
     
     res.json({
       success: true,
-      data: aggregatedData,
-      aggregated: true,
+      data: aggregatedData, // Atau rawData
+      aggregated: true, // Atau false
       count: aggregatedData.length,
-      startDate,
-      endDate,
+      startDate: startDate,
+      endDate: endDate,
       message: 'Aggregated history data loaded'
     });
     

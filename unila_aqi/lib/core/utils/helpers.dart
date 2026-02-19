@@ -8,12 +8,12 @@ import '../constants/app_constants.dart';
 class Helpers {
   // AQI Helpers
   static Color getAQIColor(int aqi) {
-    if (aqi <= 50) return AppColors.aqiGood;
-    if (aqi <= 100) return AppColors.aqiModerate;
-    if (aqi <= 150) return AppColors.aqiUnhealthySensitive;
-    if (aqi <= 200) return AppColors.aqiUnhealthy;
-    if (aqi <= 300) return AppColors.aqiVeryUnhealthy;
-    return AppColors.aqiHazardous;
+    if (aqi <= 50) return AppColors.aqiGood; // hijau
+    if (aqi <= 100) return AppColors.aqiModerate; // orange untuk sedang
+    if (aqi <= 150) return AppColors.aqiUnhealthySensitive; // merah
+    if (aqi <= 200) return AppColors.aqiUnhealthy; // purple
+    if (aqi <= 300) return AppColors.aqiVeryUnhealthy; // hitam
+    return AppColors.aqiHazardous; // hitam
   }
 
   static String getAQILabel(int aqi) {
@@ -22,7 +22,7 @@ class Helpers {
     if (aqi <= 150) return 'TIDAK SEHAT';
     if (aqi <= 200) return 'SANGAT TIDAK SEHAT';
     if (aqi <= 300) return 'BERBAHAYA';
-    return 'BERBAHAYA';
+    return 'SANGAT BERBAHAYA';
   }
 
   static String getAQIHealthMessage(int aqi) {
@@ -45,13 +45,32 @@ class Helpers {
   }
 
   static Color getPM25Color(double value) {
-    if (value <= 12) return AppColors.aqiGood;
-    if (value <= 35.4) return AppColors.aqiModerate;
-    if (value <= 55.4) return AppColors.aqiUnhealthySensitive;
-    if (value <= 150.4) return AppColors.aqiUnhealthy;
-    if (value <= 250.4) return AppColors.aqiVeryUnhealthy;
-    return AppColors.aqiHazardous;
+    if (value <= 12) return AppColors.aqiGood; // hijau
+    if (value <= 35.4) return AppColors.aqiModerate; // orange untuk sedang
+    if (value <= 55.4) return AppColors.aqiUnhealthySensitive; // merah
+    if (value <= 150.4) return AppColors.aqiUnhealthy; // purple
+    if (value <= 250.4) return AppColors.aqiVeryUnhealthy; // hitam
+    return AppColors.aqiHazardous; // hitam
   }
+
+  static String getPM10Status(double value) {
+    if (value <= 50) return 'BAIK';
+    if (value <= 100) return 'SEDANG';
+    if (value <= 150) return 'TIDAK SEHAT';
+    if (value <= 250) return 'SANGAT TIDAK SEHAT';
+    if (value <= 350) return 'BERBAHAYA';
+    return 'BERBAHAYA';
+  }
+
+  static Color getPM10Color(double value) {
+    if (value <= 50) return AppColors.aqiGood; // hijau
+    if (value <= 100) return AppColors.aqiModerate; // orange untuk sedang
+    if (value <= 150) return AppColors.aqiUnhealthySensitive; // merah
+    if (value <= 250) return AppColors.aqiUnhealthy; // purple
+    if (value <= 350) return AppColors.aqiVeryUnhealthy; // hitam
+    return AppColors.aqiHazardous; // hitam
+  }
+  
 
   static String getTemperatureStatus(double value) {
     if (value >= 22 && value <= 26) return 'IDEAL';
@@ -61,10 +80,10 @@ class Helpers {
   }
 
   static Color getTemperatureColor(double value) {
-    if (value >= 22 && value <= 26) return AppColors.success;
-    if (value >= 20 && value <= 28) return AppColors.aqiGood;
-    if (value >= 18 && value <= 30) return AppColors.aqiModerate;
-    return AppColors.aqiUnhealthySensitive;
+    if (value >= 22 && value <= 26) return AppColors.success; // hijau
+    if (value >= 20 && value <= 28) return Colors.orange; // orange
+    if (value >= 18 && value <= 30) return AppColors.aqiUnhealthySensitive; // merah
+    return AppColors.aqiUnhealthy; // purple
   }
 
   static String getHumidityStatus(double value) {
@@ -75,10 +94,10 @@ class Helpers {
   }
 
   static Color getHumidityColor(double value) {
-    if (value >= 40 && value <= 60) return AppColors.success;
-    if (value >= 30 && value <= 70) return AppColors.aqiGood;
-    if (value >= 20 && value <= 80) return AppColors.aqiModerate;
-    return AppColors.aqiUnhealthySensitive;
+    if (value >= 40 && value <= 60) return AppColors.success; // hijau
+    if (value >= 30 && value <= 70) return Colors.orange; // orange
+    if (value >= 20 && value <= 80) return AppColors.aqiUnhealthySensitive; // merah
+    return AppColors.aqiUnhealthy; // purple
   }
 
   static String getCO2Status(double value) {
@@ -90,11 +109,11 @@ class Helpers {
   }
 
   static Color getCO2Color(double value) {
-    if (value <= 600) return AppColors.aqiGood;
-    if (value <= 1000) return AppColors.aqiModerate;
-    if (value <= 1500) return AppColors.aqiUnhealthySensitive;
-    if (value <= 2000) return AppColors.aqiUnhealthy;
-    return AppColors.aqiVeryUnhealthy;
+    if (value <= 600) return AppColors.aqiGood; // hijau
+    if (value <= 1000) return Colors.orange; // orange untuk sedang
+    if (value <= 1500) return AppColors.aqiUnhealthySensitive; // merah
+    if (value <= 2000) return AppColors.aqiUnhealthy; // purple
+    return AppColors.aqiVeryUnhealthy; // hitam
   }
 
   // Date & Time Helpers
@@ -102,15 +121,14 @@ class Helpers {
     return DateFormat(format).format(dateTime);
   }
 
-
   // Tambah method format baru untuk waktu update
-    static String formatLastUpdate(DateTime dateTime) {
+  static String formatLastUpdate(DateTime dateTime) {
     // Konversi ke waktu lokal
     final localTime = dateTime.toLocal();
     return '  ${_formatLocalTime(localTime)}';
   }
 
-static String formatLastUpdateWithDate(DateTime dateTime) {
+  static String formatLastUpdateWithDate(DateTime dateTime) {
     // Konversi ke waktu lokal
     final localTime = dateTime.toLocal();
     final now = DateTime.now().toLocal();
@@ -134,14 +152,14 @@ static String formatLastUpdateWithDate(DateTime dateTime) {
     return DateFormat('dd/MM HH:mm').format(localTime);
   }
 
-   static String _formatLocalTime(DateTime localTime) {
+  static String _formatLocalTime(DateTime localTime) {
     // Format 24 jam
     final hour = localTime.hour.toString().padLeft(2, '0');
     final minute = localTime.minute.toString().padLeft(2, '0');
     return '$hour:$minute';
   }
 
-   static String formatLocalTimeForDisplay(DateTime dateTime) {
+  static String formatLocalTimeForDisplay(DateTime dateTime) {
     final localTime = dateTime.toLocal();
     
     // Cek preferensi waktu 12/24 jam berdasarkan locale
@@ -155,68 +173,67 @@ static String formatLastUpdateWithDate(DateTime dateTime) {
     return format.format(localTime);
   }
 
-   static String formatLocalDateTimeFull(DateTime dateTime) {
+  static String formatLocalDateTimeFull(DateTime dateTime) {
     final localTime = dateTime.toLocal();
     return DateFormat('dd MMM yyyy HH:mm').format(localTime); // Contoh: 15 Jan 2024 14:30
   }
 
-
-// Method untuk format real-time (akan diupdate setiap detik)
-static String formatRealTimeUpdate(DateTime dateTime) {
-  final now = DateTime.now();
-  final difference = now.difference(dateTime);
-  
-  // Format yang berbeda berdasarkan berapa lama yang lalu
-  if (difference.inSeconds < 10) {
-    return 'Live • Baru saja';
-  } else if (difference.inSeconds < 60) {
-    return 'Live • ${difference.inSeconds} detik lalu';
-  } else if (difference.inMinutes < 5) {
-    return 'Live • ${difference.inMinutes} menit lalu';
-  } else {
-    return 'Terakhir update ${DateFormat('HH:mm').format(dateTime)}';
+  // Method untuk format real-time (akan diupdate setiap detik)
+  static String formatRealTimeUpdate(DateTime dateTime) {
+    final now = DateTime.now();
+    final difference = now.difference(dateTime);
+    
+    // Format yang berbeda berdasarkan berapa lama yang lalu
+    if (difference.inSeconds < 10) {
+      return 'Live • Baru saja';
+    } else if (difference.inSeconds < 60) {
+      return 'Live • ${difference.inSeconds} detik lalu';
+    } else if (difference.inMinutes < 5) {
+      return 'Live • ${difference.inMinutes} menit lalu';
+    } else {
+      return 'Terakhir update ${DateFormat('HH:mm').format(dateTime)}';
+    }
   }
-}
 
-// Method untuk format dengan indikator status
-static Map<String, dynamic> formatUpdateWithStatus(DateTime dateTime) {
-  final now = DateTime.now();
-  final difference = now.difference(dateTime);
-  
-  String text;
-  Color color;
-  IconData icon;
-  
-  if (difference.inSeconds < 30) {
-    text = 'Live • ${DateFormat('HH:mm').format(dateTime)}';
-    color = Colors.green;
-    icon = Icons.circle;
-  } else if (difference.inSeconds < 60) {
-    text = 'Baru • ${DateFormat('HH:mm').format(dateTime)}';
-    color = Colors.green;
-    icon = Icons.circle;
-  } else if (difference.inMinutes < 5) {
-    text = 'Terakhir update ${DateFormat('HH:mm').format(dateTime)}';
-    color = Colors.blue;
-    icon = Icons.circle;
-  } else if (difference.inMinutes < 15) {
-    text = 'Terakhir update ${DateFormat('HH:mm').format(dateTime)}';
-    color = Colors.orange;
-    icon = Icons.circle;
-  } else {
-    text = 'Update lama • ${DateFormat('dd/MM HH:mm').format(dateTime)}';
-    color = Colors.grey;
-    icon = Icons.circle;
+  // Method untuk format dengan indikator status
+  static Map<String, dynamic> formatUpdateWithStatus(DateTime dateTime) {
+    final now = DateTime.now();
+    final difference = now.difference(dateTime);
+    
+    String text;
+    Color color;
+    IconData icon;
+    
+    if (difference.inSeconds < 30) {
+      text = 'Live • ${DateFormat('HH:mm').format(dateTime)}';
+      color = Colors.green;
+      icon = Icons.circle;
+    } else if (difference.inSeconds < 60) {
+      text = 'Baru • ${DateFormat('HH:mm').format(dateTime)}';
+      color = Colors.green;
+      icon = Icons.circle;
+    } else if (difference.inMinutes < 5) {
+      text = 'Terakhir update ${DateFormat('HH:mm').format(dateTime)}';
+      color = Colors.blue;
+      icon = Icons.circle;
+    } else if (difference.inMinutes < 15) {
+      text = 'Terakhir update ${DateFormat('HH:mm').format(dateTime)}';
+      color = Colors.orange;
+      icon = Icons.circle;
+    } else {
+      text = 'Update lama • ${DateFormat('dd/MM HH:mm').format(dateTime)}';
+      color = Colors.grey;
+      icon = Icons.circle;
+    }
+    
+    return {
+      'text': text,
+      'color': color,
+      'icon': icon,
+      'isRecent': difference.inMinutes < 5,
+      'difference': difference
+    };
   }
-  
-  return {
-    'text': text,
-    'color': color,
-    'icon': icon,
-    'isRecent': difference.inMinutes < 5,
-    'difference': difference
-  };
-}
 
   static String formatTimeAgo(DateTime dateTime) {
     final now = DateTime.now();
@@ -307,14 +324,15 @@ static Map<String, dynamic> formatUpdateWithStatus(DateTime dateTime) {
     }
   }
   
-static String getAQICategory(int aqi) {
-  if (aqi <= 50) return 'baik';
-  if (aqi <= 100) return 'sedang';
-  if (aqi <= 150) return 'tidak_sehat';
-  if (aqi <= 200) return 'sangat_tidak_sehat';
-  if (aqi <= 300) return 'berbahaya';
-  return 'error';
-}
+  static String getAQICategory(int aqi) {
+    if (aqi <= 50) return 'baik';
+    if (aqi <= 100) return 'sedang';
+    if (aqi <= 150) return 'tidak_sehat';
+    if (aqi <= 200) return 'sangat_tidak_sehat';
+    if (aqi <= 300) return 'berbahaya';
+    return 'error';
+  }
+  
   // Network Helpers
   static String formatBytes(int bytes) {
     if (bytes < 1024) return '$bytes B';
@@ -335,52 +353,64 @@ static String getAQICategory(int aqi) {
   }
 
   static List<String> getDetailedRecommendations(Room room) {
-  final recommendations = <String>[];
-  final data = room.currentData;
+    final recommendations = <String>[];
+    final data = room.currentData;
 
-  
-  // AQI based recommendations
-  final aqi = room.currentAQI;
-  if (aqi > 150) {
-    recommendations.add('Hindari aktivitas di dalam ruangan');
-    recommendations.add('Gunakan masker ketika berada di ruangan ini');
-  } else if (aqi > 100) {
-    recommendations.add('udara sensitif, hindari aktivitas di dalam ruangan ini');
-    recommendations.add('Kurangi aktivitas fisik berat');
-  } else if (aqi > 50) {
-    recommendations.add('Kondisi udara cukup baik untuk aktivitas normal');
-  } else {
-    recommendations.add('Kondisi udara sangat baik');
-  }
-  
-  // PM2.5 specific
-  if (data.pm25 > 35.4) {
-    recommendations.add('PM2.5 tinggi: Gunakan air purifier');
-  }
-  
-  // CO2 specific
-  if (data.co2 > 1000) {
-    recommendations.add('CO₂ tinggi: Buka jendela untuk ventilasi');
-  }
-  
-  // Temperature specific
-  if (data.temperature > 28) {
-    recommendations.add('Suhu panas: Nyalakan AC atau kipas');
-  } else if (data.temperature < 22) {
-    recommendations.add('Suhu dingin: Gunakan pemanas ruangan');
-  }
-  
-  // Humidity specific
-  if (data.humidity > 70) {
-    recommendations.add('Kelembaban tinggi: Gunakan dehumidifier');
-  } else if (data.humidity < 40) {
-    recommendations.add('Kelembaban rendah: Gunakan humidifier');
-  }
+    // AQI based recommendations
+    final aqi = room.currentAQI;
+     if (aqi > 300) {
+      recommendations.add('KONDISI SANGAT BERBAHAYA - TIDAK ADA AKTIVITAS AKADEMIK TATAP MUKA');
+      recommendations.add('Tim manajemen gedung melakukan pemantauan AQI setiap jam');
+      recommendations.add('Nyalakan air purifier dengan kecepatan maksimum selama 24 jam non-stop untuk membersihkan ruangan');
+    }else if (aqi > 200) {
+      recommendations.add('Kualitas udara dalam kelas sangat berbahaya untuk perkuliahan tatap muka');
+      recommendations.add('Segera alihkan seluruh perkuliahan ke metode daring atau asynchronous');
+      recommendations.add('Nyalakan air purifier dengan kecepatan maksimum selama 24 jam non-stop untuk membersihkan ruangan');
+    }else if (aqi > 150) {
+      recommendations.add('Kualitas udara dalam kelas buruk dan berisiko bagi semua penghuni ruangan');
+      recommendations.add('Gunakan masker ketika berada di ruangan ini');
+      recommendations.add('Wjib menyalakan air purifier di setiap kelas yang digunakan');
+    } else if (aqi > 100) {
+      recommendations.add('Kualitas udara dalam kelas mulai berdampak pada kelompok sensitif');
+      recommendations.add('Kurangi aktivitas fisik berat');
+      recommendations.add('Jika tersedia, nyalakan air purifier di dalam kelas');
+    } else if (aqi > 50) {
+      recommendations.add('Kualitas udara masih dapat diterima untuk perkuliahan');
+      recommendations.add('Pastikan kelas dalam keadaan bersih, tidak ada debu berlebih di lantai, meja, atau AC');
+    } else {
+      recommendations.add('Kualitas udara sangat baik dan optimal untuk proses belajar mengajar');
+      recommendations.add('Aman untuk perkuliahan dengan durasi berapapun');
+    }
+    
+    // PM2.5 specific
+    if (data.pm25 > 35.4) {
+      recommendations.add('PM2.5 tinggi: Gunakan air purifier');
+    }
 
-
-  
-  return recommendations;
-
-  
-}
+     // PM10 specific
+    if (data.pm10 > 100) {
+      recommendations.add('PM10 tinggi: Bersihkan kelas secara basah sebelum perkuliahan');
+    }
+    
+    // CO2 specific
+    if (data.co2 > 1000) {
+      recommendations.add('CO₂ tinggi: Buka jendela untuk ventilasi');
+    }
+    
+    // Temperature specific
+    if (data.temperature > 28) {
+      recommendations.add('Suhu panas: Nyalakan AC atau kipas');
+    } else if (data.temperature < 22) {
+      recommendations.add('Suhu dingin: Gunakan pemanas ruangan');
+    } 
+    
+    // Humidity specific
+    if (data.humidity > 70) {
+      recommendations.add('Kelembaban tinggi: Gunakan dehumidifier');
+    } else if (data.humidity < 40) {
+      recommendations.add('Kelembaban rendah: Gunakan humidifier');
+    }
+    
+    return recommendations;
+  }
 }

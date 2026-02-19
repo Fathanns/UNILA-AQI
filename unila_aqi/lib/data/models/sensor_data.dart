@@ -11,6 +11,8 @@ class SensorData {
   final double humidity;
   final String category;
   final DateTime timestamp;
+  final List<dynamic>? rawData; // Untuk data agregasi
+  final String? timeLabel; // Untuk label waktu
 
   SensorData({
     required this.id,
@@ -25,22 +27,28 @@ class SensorData {
     required this.humidity,
     required this.category,
     required this.timestamp,
+    this.rawData,
+    this.timeLabel,
   });
 
   factory SensorData.fromJson(Map<String, dynamic> json) {
     return SensorData(
-      id: json['_id'] ?? json['id'],
-      roomId: json['roomId'],
-      roomName: json['roomName'],
-      buildingName: json['buildingName'],
-      aqi: json['aqi'],
+      id: json['_id']?.toString() ?? json['id']?.toString() ?? DateTime.now().millisecondsSinceEpoch.toString(),
+      roomId: json['roomId']?.toString() ?? '',
+      roomName: json['roomName']?.toString() ?? '',
+      buildingName: json['buildingName']?.toString() ?? '',
+      aqi: (json['aqi'] ?? 0).toInt(),
       pm25: (json['pm25'] ?? 0).toDouble(),
       pm10: (json['pm10'] ?? 0).toDouble(),
       co2: (json['co2'] ?? 0).toDouble(),
       temperature: (json['temperature'] ?? 0).toDouble(),
       humidity: (json['humidity'] ?? 0).toDouble(),
-      category: json['category'],
-      timestamp: DateTime.parse(json['timestamp']),
+      category: json['category']?.toString() ?? 'baik',
+      timestamp: json['timestamp'] != null 
+          ? DateTime.parse(json['timestamp'].toString()).toLocal()
+          : DateTime.now(),
+      rawData: json['rawData'],
+      timeLabel: json['timeLabel']?.toString(),
     );
   }
 
@@ -58,7 +66,8 @@ class SensorData {
       'humidity': humidity,
       'category': category,
       'timestamp': timestamp.toIso8601String(),
+      'rawData': rawData,
+      'timeLabel': timeLabel,
     };
   }
 }
-

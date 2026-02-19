@@ -13,11 +13,11 @@ class AppColors {
   
   // AQI Colors (from US EPA standard)
   static const Color aqiGood = Color(0xFF00E400); // Green
-  static const Color aqiModerate = Color(0xFFFFFF00); // Yellow
-  static const Color aqiUnhealthySensitive = Color(0xFFFF7E00); // Orange
-  static const Color aqiUnhealthy = Color(0xFFFF0000); // Red
+  static const Color aqiModerate = Color(0xFFFF7E00); // Yellow
+  static const Color aqiUnhealthySensitive = Color(0xFFFF0000); // Orange
+  static const Color aqiUnhealthy = Color(0xFF7E0023); // Red
   static const Color aqiVeryUnhealthy = Color(0xFF8F3F97); // Purple
-  static const Color aqiHazardous = Color(0xFF7E0023); // Maroon
+  static const Color aqiHazardous = Colors.black; // black
   
   // Neutral Colors
   static const Color background = Color(0xFFF8F9FA);

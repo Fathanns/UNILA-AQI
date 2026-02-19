@@ -265,16 +265,52 @@ Future<dynamic> forceRefresh() async {
 }
 
 // REAL: Get sensor history data untuk grafik
-Future<dynamic> getSensorHistory(String roomId, String date) async {
+Future<dynamic> getSensorHistory(String roomId, String date, {int interval = 30}) async {
   try {
     final headers = await _getHeaders();
     
     final response = await http.get(
-      Uri.parse('$baseUrl/sensor-data/$roomId/history?date=$date'),
+      Uri.parse('$baseUrl/sensor-data/$roomId/history?date=$date&interval=$interval'),
       headers: headers,
     );
     
-    return _handleResponse(response);
+    if (response.statusCode == 200) {
+      final jsonResponse = jsonDecode(response.body);
+      return jsonResponse;
+    } else {
+      return {
+        'success': false,
+        'data': [],
+        'error': 'Failed to fetch history data: ${response.statusCode}'
+      };
+    }
+  } catch (e) {
+    return {
+      'success': false,
+      'data': [],
+      'error': e.toString()
+    };
+  }
+}
+
+Future<dynamic> get24HoursSensorData(String roomId) async {
+  try {
+    final headers = await _getHeaders();
+    
+    final response = await http.get(
+      Uri.parse('$baseUrl/sensor-data/$roomId'),
+      headers: headers,
+    );
+    
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body);
+    } else {
+      return {
+        'success': false,
+        'data': [],
+        'error': 'Failed to fetch 24h data: ${response.statusCode}'
+      };
+    }
   } catch (e) {
     return {
       'success': false,
