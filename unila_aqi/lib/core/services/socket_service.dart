@@ -243,6 +243,32 @@ class SocketService {
     });
   });
 
+  _socket!.on('room-deleted', (data) {
+  if (kDebugMode) {
+    print('🗑️ Room deleted event received: ${data['roomName']} (${data['roomId']})');
+  }
+  
+  // Call registered handlers
+  if (_eventHandlers.containsKey('room-deleted')) {
+    for (final handler in _eventHandlers['room-deleted']!) {
+      try {
+        handler(data);
+      } catch (e) {
+        if (kDebugMode) {
+          print('❌ Error in room-deleted handler: $e');
+        }
+      }
+    }
+  }
+  
+  // Broadcast to data stream
+  _dataController.add({
+    'type': 'room-deleted',
+    'data': data,
+    'timestamp': DateTime.now()
+  });
+});
+
   // 🔥 BARU: Room name changed handler
   _socket!.on('room-name-changed', (data) {
     if (kDebugMode) {

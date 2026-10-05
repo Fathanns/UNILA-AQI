@@ -93,16 +93,104 @@ class RoomProvider with ChangeNotifier {
   }
 }
 
+void _handleRoomDeleted(dynamic data) {
+  try {
+    final roomId = data['roomId'];
+    final roomName = data['roomName'];
+    
+    print('🗑️ Processing room deletion: $roomName ($roomId)');
+    
+    final initialLength = _rooms.length;
+    _rooms.removeWhere((room) => room.id == roomId);
+    
+    if (_rooms.length < initialLength) {
+      // Update last update time
+      _lastUpdate = DateTime.now();
+      
+      // Reapply filters — ini juga akan otomatis reset _selectedBuilding
+      // jika gedung sudah tidak punya ruangan (dari fix sebelumnya)
+      _applyFilters();
+      
+      // Notify listeners untuk update UI
+      notifyListeners();
+      
+      print('✅ Room removed from dashboard: $roomName');
+    } else {
+      print('⚠️ Room not found in local list: $roomId');
+    }
+  } catch (e) {
+    print('❌ Error handling room deletion: $e');
+  }
+}
+
+void _handleDashboardRoomUpdated(dynamic data) {
+  try {
+    final action = data['action'];
+    final roomData = data['room'];
+
+    // Kita hanya handle 'created' di sini.
+    // 'updated' & 'deleted' sudah dihandle oleh listener lain.
+    if (action != 'created' || roomData == null) return;
+
+    final roomId = roomData['id']?.toString();
+    if (roomId == null) return;
+
+    // Cek duplikat — penting untuk avoid race condition
+    if (_rooms.any((r) => r.id == roomId)) {
+      print('ℹ️ Room already exists in list, skipping: $roomId');
+      return;
+    }
+
+    // Bangun objek Room dari payload broadcast backend
+    // NOTE: backend mengirim 'id' (bukan '_id') dan 'buildingId' (bukan 'building')
+    final newRoom = Room(
+      id: roomId,
+      name: roomData['name']?.toString() ?? 'Unknown',
+      buildingId: roomData['buildingId']?.toString() ?? '',
+      buildingName: roomData['buildingName']?.toString() ?? 'Unknown',
+      dataSource: roomData['dataSource']?.toString() ?? 'simulation',
+      iotDeviceId: roomData['iotDeviceId']?.toString(),
+      isActive: roomData['isActive'] == true,
+      currentAQI: (roomData['currentAQI'] as num?)?.toInt() ?? 0,
+      currentData: RoomData.fromJson(
+        Map<String, dynamic>.from(roomData['currentData'] ?? {}),
+      ),
+      createdAt: roomData['createdAt'] != null
+          ? DateTime.parse(roomData['createdAt'].toString())
+          : DateTime.now(),
+      updatedAt: roomData['updatedAt'] != null
+          ? DateTime.parse(roomData['updatedAt'].toString())
+          : DateTime.now(),
+    );
+
+    _rooms.add(newRoom);
+    _lastUpdate = DateTime.now();
+
+    // Reapply filters — _validateSelectedBuilding di dalam _applyFilters
+    // akan otomatis aman kalau building baru tidak terpilih.
+    _applyFilters();
+    notifyListeners();
+
+    print('✅ Room added to dashboard: ${newRoom.name} (${newRoom.buildingName})');
+  } catch (e) {
+    print('❌ Error handling dashboard-room-updated: $e');
+  }
+}
+
 void _setupSocketListeners() {
   _socketService.on('room-update', _handleRoomUpdate);
   _socketService.on('dashboard-update', _handleDashboardUpdate);
+  _socketService.on('dashboard-room-updated', _handleDashboardRoomUpdated);
   _socketService.on('room-name-changed', (data) {
     handleRoomNameChanged(data);
   });
   _socketService.on('room-building-changed', (data) {
     handleBuildingNameChanged(data);
   });
+  _socketService.on('room-deleted', _handleRoomDeleted);
 }
+
+
  
   // Start periodic refresh timer
   // void _startPeriodicRefresh() {
@@ -131,21 +219,35 @@ void _setupSocketListeners() {
   //     print('⏹️ Stopped periodic refresh');
   //   }
   // }
+
+  // Validasi apakah _selectedBuilding masih ada
+void _validateSelectedBuilding() {
+  final availableBuildings = buildings; // getter
+  if (!availableBuildings.contains(_selectedBuilding)) {
+    _selectedBuilding = 'Semua Gedung';
+  }
+}
  
   // Handle socket data stream
   void _handleSocketData(Map<String, dynamic> data) {
-    final type = data['type'];
-    final payload = data['data'];
- 
-    switch (type) {
-      case 'room-update':
-        _handleRoomUpdate(payload);
-        break;
-      case 'dashboard-update':
-        _handleDashboardUpdate(payload);
-        break;
-    }
+  final type = data['type'];
+  final payload = data['data'];
+
+  switch (type) {
+    case 'room-update':
+      _handleRoomUpdate(payload);
+      break;
+    case 'dashboard-update':
+      _handleDashboardUpdate(payload);
+      break;
+    case 'room-deleted': // 
+      _handleRoomDeleted(payload);
+      break;
+      case 'dashboard-room-updated': // 
+      _handleDashboardRoomUpdated(payload);
+      break;
   }
+}
  
   // Handle room update from WebSocket
   void _handleRoomUpdate(dynamic data) {
@@ -153,7 +255,7 @@ void _setupSocketListeners() {
     final roomId = data['roomId'];
     final roomData = data['data'];
     final source = data['source'] ?? 'unknown';
-    final action = data['action']; // 🔥 BARU: Tambah handling untuk action
+    final action = data['action']; //  Tambah handling untuk action
 
     print('🔄 Processing ${source.toUpperCase()} update for room: $roomId (action: ${action})');
 
@@ -183,9 +285,9 @@ void _setupSocketListeners() {
       // Create updated room data
       final updatedRoom = Room(
         id: _rooms[roomIndex].id,
-        name: roomData['name'] ?? _rooms[roomIndex].name, // 🔥 BARU: Ambil nama dari data baru
+        name: roomData['name'] ?? _rooms[roomIndex].name, //  Ambil nama dari data baru
         buildingId: _rooms[roomIndex].buildingId,
-        buildingName: roomData['buildingName'] ?? _rooms[roomIndex].buildingName, // 🔥 BARU: Ambil buildingName dari data baru
+        buildingName: roomData['buildingName'] ?? _rooms[roomIndex].buildingName, //  Ambil buildingName dari data baru
         dataSource: _rooms[roomIndex].dataSource,
         iotDeviceId: _rooms[roomIndex].iotDeviceId,
         isActive: _rooms[roomIndex].isActive,
@@ -238,7 +340,7 @@ void _setupSocketListeners() {
         break;
         
       case 'room-name-changed':
-        // 🔥 BARU: Handle room name change
+        //  Handle room name change
         handleRoomNameChanged(data);
         break;
         
@@ -252,7 +354,7 @@ void _setupSocketListeners() {
 
 
 
-// 🔥 BARU: Handle room name change
+// Handle room name change
 void handleRoomNameChanged(Map<String, dynamic> data) {
   try {
     final roomId = data['roomId'];
@@ -426,13 +528,14 @@ void handleRoomNameChanged(Map<String, dynamic> data) {
  
   // Apply all filters and sorting
   void _applyFilters() {
-    // Start with all rooms
-    List<Room> result = List.from(_rooms);
- 
-    // Apply building filter
-    if (_selectedBuilding != 'Semua Gedung') {
-      result = result.where((room) => room.buildingName == _selectedBuilding).toList();
-    }
+  // ✅ Validasi dulu sebelum filter
+  _validateSelectedBuilding();
+  
+  List<Room> result = List.from(_rooms);
+
+  if (_selectedBuilding != 'Semua Gedung') {
+    result = result.where((room) => room.buildingName == _selectedBuilding).toList();
+  }
  
     // Apply search query
     if (_searchQuery.isNotEmpty) {
@@ -555,6 +658,8 @@ void handleRoomNameChanged(Map<String, dynamic> data) {
       
       // Update last update time
       _lastUpdate = DateTime.now();
+
+      _applyFilters();
       
       // Notify listeners
       notifyListeners();
@@ -582,6 +687,9 @@ void handleRoomNameChanged(Map<String, dynamic> data) {
     // Remove event listeners
     _socketService.off('room-update');
     _socketService.off('dashboard-update');
+    _socketService.off('dashboard-room-updated');
+     _socketService.off('room-deleted');
+     
  
     super.dispose();
   }

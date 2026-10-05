@@ -88,7 +88,7 @@ class ModeSelectionScreen extends StatelessWidget {
                     ),
                   ),
                   child: const Text(
-                    'User Mode',
+                    'Pengunjung',
                     style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
                   ),
                 ),
@@ -114,7 +114,7 @@ class ModeSelectionScreen extends StatelessWidget {
                     side: const BorderSide(color: AppColors.primary, width: 2),
                   ),
                   child: const Text(
-                    'Admin Mode',
+                    'Admin',
                     style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w600,

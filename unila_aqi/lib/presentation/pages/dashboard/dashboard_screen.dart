@@ -414,37 +414,39 @@ void dispose() {
   }
   
   Widget _buildBuildingDropdown(RoomProvider roomProvider) {
-    // Remove duplicates from building list
-    final uniqueBuildings = roomProvider.buildings.toSet().toList();
+  // Remove duplicates from building list
+  final uniqueBuildings = roomProvider.buildings.toSet().toList();
+
+  // ✅ Pastikan value selalu ada di items
+  String selectedValue = roomProvider.selectedBuilding;
+  if (!uniqueBuildings.contains(selectedValue)) {
+    selectedValue = 'Semua Gedung';
     
-    // Log for debugging
-    if (uniqueBuildings.length != roomProvider.buildings.length) {
-      print('⚠️ Removed duplicate buildings. Original: ${roomProvider.buildings.length}, Unique: ${uniqueBuildings.length}');
-      print('Duplicates: ${roomProvider.buildings.where((building) => roomProvider.buildings.where((b) => b == building).length > 1).toSet()}');
-    }
-    
-    return DropdownButtonHideUnderline(
-      child: DropdownButton<String>(
-        value: roomProvider.selectedBuilding,
-        isExpanded: true,
-        icon: const Icon(Icons.arrow_drop_down),
-        onChanged: (value) {
-          if (value != null) {
-            roomProvider.updateBuildingFilter(value);
-          }
-        },
-        items: uniqueBuildings.map((building) {
-          return DropdownMenuItem(
-            value: building,
-            child: Text(
-              building,
-              overflow: TextOverflow.ellipsis,
-            ),
-          );
-        }).toList(),
-      ),
-    );
+    // Sinkronkan juga ke provider agar konsisten
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      roomProvider.updateBuildingFilter('Semua Gedung');
+    });
   }
+
+  return DropdownButtonHideUnderline(
+    child: DropdownButton<String>(
+      value: selectedValue, // ✅ gunakan selectedValue
+      isExpanded: true,
+      icon: const Icon(Icons.arrow_drop_down),
+      onChanged: (value) {
+        if (value != null) {
+          roomProvider.updateBuildingFilter(value);
+        }
+      },
+      items: uniqueBuildings.map((building) {
+        return DropdownMenuItem(
+          value: building,
+          child: Text(building, overflow: TextOverflow.ellipsis),
+        );
+      }).toList(),
+    ),
+  );
+}
   
   Widget _buildSortDropdown(RoomProvider roomProvider) {
     return DropdownButtonHideUnderline(

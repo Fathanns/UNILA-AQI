@@ -367,23 +367,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
               ),
               const SizedBox(height: 16),
               // Support Contact
-              const Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Jika mengalami masalah, hubungi:',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: AppColors.textSecondary,
-                    ),
-                  ),
-                  SizedBox(height: 8),
-                  Text(
-                    'admin@unila-aqi.ac.id\n(0721) 123-4567',
-                    style: TextStyle(fontSize: 14),
-                  ),
-                ],
-              ),
+              
             ],
           ),
         ),

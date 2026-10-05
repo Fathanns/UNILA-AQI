@@ -6681,6 +6681,32 @@ class SocketService {
     });
   });
 
+  _socket!.on('room-deleted', (data) {
+  if (kDebugMode) {
+    print('🗑️ Room deleted event received: ${data['roomName']} (${data['roomId']})');
+  }
+  
+  // Call registered handlers
+  if (_eventHandlers.containsKey('room-deleted')) {
+    for (final handler in _eventHandlers['room-deleted']!) {
+      try {
+        handler(data);
+      } catch (e) {
+        if (kDebugMode) {
+          print('❌ Error in room-deleted handler: $e');
+        }
+      }
+    }
+  }
+  
+  // Broadcast to data stream
+  _dataController.add({
+    'type': 'room-deleted',
+    'data': data,
+    'timestamp': DateTime.now()
+  });
+});
+
   // 🔥 BARU: Room name changed handler
   _socket!.on('room-name-changed', (data) {
     if (kDebugMode) {
@@ -9233,7 +9259,7 @@ class RoomRepository {
 ---------------------------------------------------------------------------------------------------------------------------------------
 lib/presentation/pages/info/aqi_info_screen.dart
 
-import 'package:flutter/material.dart';
+iimport 'package:flutter/material.dart';
 import '../../../data/repositories/aqi_info_repository.dart';
 import '../../../data/models/aqi_info.dart';
 import '../../../core/constants/colors.dart';
@@ -11467,7 +11493,13 @@ class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
     if (widget.isEditing) {
       final room = widget.room!;
       _nameController.text = room.name;
-      _selectedBuildingId = room.buildingId;
+      
+      // ✅ Validasi: pastikan buildingId masih ada di list
+      final buildingExists = widget.buildings.any((b) => b.id == room.buildingId);
+      _selectedBuildingId = buildingExists 
+          ? room.buildingId 
+          : (widget.buildings.isNotEmpty ? widget.buildings.first.id : null);
+      
       _selectedDataSource = room.dataSource;
       _selectedIotDeviceId = room.iotDeviceId;
       _isActive = room.isActive;
@@ -11980,33 +12012,7 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                     ),
                     const SizedBox(height: 24),
                     // Contact Information
-                    const Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Untuk bantuan, hubungi:',
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: AppColors.textSecondary,
-                          ),
-                        ),
-                        SizedBox(height: 8),
-                        Text(
-                          '• Email: admin@unila-aqi.ac.id',
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: AppColors.textSecondary,
-                          ),
-                        ),
-                        Text(
-                          '• Telepon: (0721) 123-4567',
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: AppColors.textSecondary,
-                          ),
-                        ),
-                      ],
-                    ),
+                    
                   ],
                 ),
               ),
@@ -12162,48 +12168,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
               ),
               const SizedBox(height: 32),
               // Alternative Contact Info
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: AppColors.surface,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: AppColors.border),
-                ),
-                child: const Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Atau hubungi super admin untuk reset password melalui:',
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: AppColors.textSecondary,
-                      ),
-                    ),
-                    SizedBox(height: 12),
-                    Row(
-                      children: [
-                        Icon(Icons.email, size: 16, color: AppColors.textHint),
-                        SizedBox(width: 8),
-                        Text(
-                          'admin@unila-aqi.ac.id',
-                          style: TextStyle(fontSize: 14),
-                        ),
-                      ],
-                    ),
-                    SizedBox(height: 8),
-                    Row(
-                      children: [
-                        Icon(Icons.phone, size: 16, color: AppColors.textHint),
-                        SizedBox(width: 8),
-                        Text(
-                          '(0721) 123-4567',
-                          style: TextStyle(fontSize: 14),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
+             
             ],
           ),
         ),
@@ -12305,7 +12270,7 @@ class ModeSelectionScreen extends StatelessWidget {
                     ),
                   ),
                   child: const Text(
-                    'User Mode',
+                    'Pengunjung',
                     style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
                   ),
                 ),
@@ -12331,7 +12296,7 @@ class ModeSelectionScreen extends StatelessWidget {
                     side: const BorderSide(color: AppColors.primary, width: 2),
                   ),
                   child: const Text(
-                    'Admin Mode',
+                    'Admin',
                     style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w600,
@@ -12729,23 +12694,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
               ),
               const SizedBox(height: 16),
               // Support Contact
-              const Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Jika mengalami masalah, hubungi:',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: AppColors.textSecondary,
-                    ),
-                  ),
-                  SizedBox(height: 8),
-                  Text(
-                    'admin@unila-aqi.ac.id\n(0721) 123-4567',
-                    style: TextStyle(fontSize: 14),
-                  ),
-                ],
-              ),
+              
             ],
           ),
         ),
@@ -13173,37 +13122,39 @@ void dispose() {
   }
   
   Widget _buildBuildingDropdown(RoomProvider roomProvider) {
-    // Remove duplicates from building list
-    final uniqueBuildings = roomProvider.buildings.toSet().toList();
+  // Remove duplicates from building list
+  final uniqueBuildings = roomProvider.buildings.toSet().toList();
+
+  // ✅ Pastikan value selalu ada di items
+  String selectedValue = roomProvider.selectedBuilding;
+  if (!uniqueBuildings.contains(selectedValue)) {
+    selectedValue = 'Semua Gedung';
     
-    // Log for debugging
-    if (uniqueBuildings.length != roomProvider.buildings.length) {
-      print('⚠️ Removed duplicate buildings. Original: ${roomProvider.buildings.length}, Unique: ${uniqueBuildings.length}');
-      print('Duplicates: ${roomProvider.buildings.where((building) => roomProvider.buildings.where((b) => b == building).length > 1).toSet()}');
-    }
-    
-    return DropdownButtonHideUnderline(
-      child: DropdownButton<String>(
-        value: roomProvider.selectedBuilding,
-        isExpanded: true,
-        icon: const Icon(Icons.arrow_drop_down),
-        onChanged: (value) {
-          if (value != null) {
-            roomProvider.updateBuildingFilter(value);
-          }
-        },
-        items: uniqueBuildings.map((building) {
-          return DropdownMenuItem(
-            value: building,
-            child: Text(
-              building,
-              overflow: TextOverflow.ellipsis,
-            ),
-          );
-        }).toList(),
-      ),
-    );
+    // Sinkronkan juga ke provider agar konsisten
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      roomProvider.updateBuildingFilter('Semua Gedung');
+    });
   }
+
+  return DropdownButtonHideUnderline(
+    child: DropdownButton<String>(
+      value: selectedValue, // ✅ gunakan selectedValue
+      isExpanded: true,
+      icon: const Icon(Icons.arrow_drop_down),
+      onChanged: (value) {
+        if (value != null) {
+          roomProvider.updateBuildingFilter(value);
+        }
+      },
+      items: uniqueBuildings.map((building) {
+        return DropdownMenuItem(
+          value: building,
+          child: Text(building, overflow: TextOverflow.ellipsis),
+        );
+      }).toList(),
+    ),
+  );
+}
   
   Widget _buildSortDropdown(RoomProvider roomProvider) {
     return DropdownButtonHideUnderline(
@@ -14476,16 +14427,104 @@ class RoomProvider with ChangeNotifier {
   }
 }
 
+void _handleRoomDeleted(dynamic data) {
+  try {
+    final roomId = data['roomId'];
+    final roomName = data['roomName'];
+    
+    print('🗑️ Processing room deletion: $roomName ($roomId)');
+    
+    final initialLength = _rooms.length;
+    _rooms.removeWhere((room) => room.id == roomId);
+    
+    if (_rooms.length < initialLength) {
+      // Update last update time
+      _lastUpdate = DateTime.now();
+      
+      // Reapply filters — ini juga akan otomatis reset _selectedBuilding
+      // jika gedung sudah tidak punya ruangan (dari fix sebelumnya)
+      _applyFilters();
+      
+      // Notify listeners untuk update UI
+      notifyListeners();
+      
+      print('✅ Room removed from dashboard: $roomName');
+    } else {
+      print('⚠️ Room not found in local list: $roomId');
+    }
+  } catch (e) {
+    print('❌ Error handling room deletion: $e');
+  }
+}
+
+void _handleDashboardRoomUpdated(dynamic data) {
+  try {
+    final action = data['action'];
+    final roomData = data['room'];
+
+    // Kita hanya handle 'created' di sini.
+    // 'updated' & 'deleted' sudah dihandle oleh listener lain.
+    if (action != 'created' || roomData == null) return;
+
+    final roomId = roomData['id']?.toString();
+    if (roomId == null) return;
+
+    // Cek duplikat — penting untuk avoid race condition
+    if (_rooms.any((r) => r.id == roomId)) {
+      print('ℹ️ Room already exists in list, skipping: $roomId');
+      return;
+    }
+
+    // Bangun objek Room dari payload broadcast backend
+    // NOTE: backend mengirim 'id' (bukan '_id') dan 'buildingId' (bukan 'building')
+    final newRoom = Room(
+      id: roomId,
+      name: roomData['name']?.toString() ?? 'Unknown',
+      buildingId: roomData['buildingId']?.toString() ?? '',
+      buildingName: roomData['buildingName']?.toString() ?? 'Unknown',
+      dataSource: roomData['dataSource']?.toString() ?? 'simulation',
+      iotDeviceId: roomData['iotDeviceId']?.toString(),
+      isActive: roomData['isActive'] == true,
+      currentAQI: (roomData['currentAQI'] as num?)?.toInt() ?? 0,
+      currentData: RoomData.fromJson(
+        Map<String, dynamic>.from(roomData['currentData'] ?? {}),
+      ),
+      createdAt: roomData['createdAt'] != null
+          ? DateTime.parse(roomData['createdAt'].toString())
+          : DateTime.now(),
+      updatedAt: roomData['updatedAt'] != null
+          ? DateTime.parse(roomData['updatedAt'].toString())
+          : DateTime.now(),
+    );
+
+    _rooms.add(newRoom);
+    _lastUpdate = DateTime.now();
+
+    // Reapply filters — _validateSelectedBuilding di dalam _applyFilters
+    // akan otomatis aman kalau building baru tidak terpilih.
+    _applyFilters();
+    notifyListeners();
+
+    print('✅ Room added to dashboard: ${newRoom.name} (${newRoom.buildingName})');
+  } catch (e) {
+    print('❌ Error handling dashboard-room-updated: $e');
+  }
+}
+
 void _setupSocketListeners() {
   _socketService.on('room-update', _handleRoomUpdate);
   _socketService.on('dashboard-update', _handleDashboardUpdate);
+  _socketService.on('dashboard-room-updated', _handleDashboardRoomUpdated);
   _socketService.on('room-name-changed', (data) {
     handleRoomNameChanged(data);
   });
   _socketService.on('room-building-changed', (data) {
     handleBuildingNameChanged(data);
   });
+  _socketService.on('room-deleted', _handleRoomDeleted);
 }
+
+
  
   // Start periodic refresh timer
   // void _startPeriodicRefresh() {
@@ -14514,21 +14553,35 @@ void _setupSocketListeners() {
   //     print('⏹️ Stopped periodic refresh');
   //   }
   // }
+
+  // Validasi apakah _selectedBuilding masih ada
+void _validateSelectedBuilding() {
+  final availableBuildings = buildings; // getter
+  if (!availableBuildings.contains(_selectedBuilding)) {
+    _selectedBuilding = 'Semua Gedung';
+  }
+}
  
   // Handle socket data stream
   void _handleSocketData(Map<String, dynamic> data) {
-    final type = data['type'];
-    final payload = data['data'];
- 
-    switch (type) {
-      case 'room-update':
-        _handleRoomUpdate(payload);
-        break;
-      case 'dashboard-update':
-        _handleDashboardUpdate(payload);
-        break;
-    }
+  final type = data['type'];
+  final payload = data['data'];
+
+  switch (type) {
+    case 'room-update':
+      _handleRoomUpdate(payload);
+      break;
+    case 'dashboard-update':
+      _handleDashboardUpdate(payload);
+      break;
+    case 'room-deleted': // 
+      _handleRoomDeleted(payload);
+      break;
+      case 'dashboard-room-updated': // 
+      _handleDashboardRoomUpdated(payload);
+      break;
   }
+}
  
   // Handle room update from WebSocket
   void _handleRoomUpdate(dynamic data) {
@@ -14536,7 +14589,7 @@ void _setupSocketListeners() {
     final roomId = data['roomId'];
     final roomData = data['data'];
     final source = data['source'] ?? 'unknown';
-    final action = data['action']; // 🔥 BARU: Tambah handling untuk action
+    final action = data['action']; //  Tambah handling untuk action
 
     print('🔄 Processing ${source.toUpperCase()} update for room: $roomId (action: ${action})');
 
@@ -14566,9 +14619,9 @@ void _setupSocketListeners() {
       // Create updated room data
       final updatedRoom = Room(
         id: _rooms[roomIndex].id,
-        name: roomData['name'] ?? _rooms[roomIndex].name, // 🔥 BARU: Ambil nama dari data baru
+        name: roomData['name'] ?? _rooms[roomIndex].name, //  Ambil nama dari data baru
         buildingId: _rooms[roomIndex].buildingId,
-        buildingName: roomData['buildingName'] ?? _rooms[roomIndex].buildingName, // 🔥 BARU: Ambil buildingName dari data baru
+        buildingName: roomData['buildingName'] ?? _rooms[roomIndex].buildingName, //  Ambil buildingName dari data baru
         dataSource: _rooms[roomIndex].dataSource,
         iotDeviceId: _rooms[roomIndex].iotDeviceId,
         isActive: _rooms[roomIndex].isActive,
@@ -14621,7 +14674,7 @@ void _setupSocketListeners() {
         break;
         
       case 'room-name-changed':
-        // 🔥 BARU: Handle room name change
+        //  Handle room name change
         handleRoomNameChanged(data);
         break;
         
@@ -14635,7 +14688,7 @@ void _setupSocketListeners() {
 
 
 
-// 🔥 BARU: Handle room name change
+// Handle room name change
 void handleRoomNameChanged(Map<String, dynamic> data) {
   try {
     final roomId = data['roomId'];
@@ -14809,13 +14862,14 @@ void handleRoomNameChanged(Map<String, dynamic> data) {
  
   // Apply all filters and sorting
   void _applyFilters() {
-    // Start with all rooms
-    List<Room> result = List.from(_rooms);
- 
-    // Apply building filter
-    if (_selectedBuilding != 'Semua Gedung') {
-      result = result.where((room) => room.buildingName == _selectedBuilding).toList();
-    }
+  // ✅ Validasi dulu sebelum filter
+  _validateSelectedBuilding();
+  
+  List<Room> result = List.from(_rooms);
+
+  if (_selectedBuilding != 'Semua Gedung') {
+    result = result.where((room) => room.buildingName == _selectedBuilding).toList();
+  }
  
     // Apply search query
     if (_searchQuery.isNotEmpty) {
@@ -14938,6 +14992,8 @@ void handleRoomNameChanged(Map<String, dynamic> data) {
       
       // Update last update time
       _lastUpdate = DateTime.now();
+
+      _applyFilters();
       
       // Notify listeners
       notifyListeners();
@@ -14965,10 +15021,14 @@ void handleRoomNameChanged(Map<String, dynamic> data) {
     // Remove event listeners
     _socketService.off('room-update');
     _socketService.off('dashboard-update');
+    _socketService.off('dashboard-room-updated');
+     _socketService.off('room-deleted');
+     
  
     super.dispose();
   }
 }
+
 ---------------------------------------------------------------------------------------------------------------------------------------
 lib/presentation/widgets/chart/history_chart.dart:
 
@@ -15863,27 +15923,7 @@ class AppDrawer extends StatelessWidget {
                           fontWeight: FontWeight.w600,
                         ),
                       ),
-                      const SizedBox(height: 4),
-                      Row(
-                        children: [
-                          Container(
-                            width: 8,
-                            height: 8,
-                            decoration: const BoxDecoration(
-                              color: Colors.green,
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            isAdmin ? '● Online' : 'Pengguna',
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey,
-                            ),
-                          ),
-                        ],
-                      ),
+                      
                     ],
                   ),
                 ),

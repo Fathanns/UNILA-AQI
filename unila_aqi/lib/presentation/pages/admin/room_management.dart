@@ -500,7 +500,13 @@ class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
     if (widget.isEditing) {
       final room = widget.room!;
       _nameController.text = room.name;
-      _selectedBuildingId = room.buildingId;
+      
+      // ✅ Validasi: pastikan buildingId masih ada di list
+      final buildingExists = widget.buildings.any((b) => b.id == room.buildingId);
+      _selectedBuildingId = buildingExists 
+          ? room.buildingId 
+          : (widget.buildings.isNotEmpty ? widget.buildings.first.id : null);
+      
       _selectedDataSource = room.dataSource;
       _selectedIotDeviceId = room.iotDeviceId;
       _isActive = room.isActive;
