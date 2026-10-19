@@ -39,22 +39,26 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
     _isLoading = true;
     _hasError = false;
   });
-  
+
   try {
     final List<Object> results = await Future.wait([
       _roomRepository.getRooms(),
       _buildingRepository.getBuildings(),
     ]);
-    
+
     // Cast hasil ke tipe yang sesuai
     final List<Room> rooms = results[0] as List<Room>;
     final List<Building> buildings = results[1] as List<Building>;
-    
+
     setState(() {
       _rooms = rooms;
-      _filteredRooms = rooms;
       _buildings = buildings;
+      // 🔥 JANGAN set _filteredRooms = rooms di sini
     });
+
+    // 🔥 Reapply filter aktif setelah data ter-load
+    _filterRooms();
+
   } catch (e) {
     setState(() {
       _hasError = true;

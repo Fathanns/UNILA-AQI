@@ -21,43 +21,61 @@ class BuildingSection extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          
           // Building Header
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            decoration: BoxDecoration(
-              color: Theme.of(context).primaryColor.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Row(
-              children: [
-                const Icon(Icons.location_city, size: 20),
-                const SizedBox(width: 8),
-                Text(
-                  buildingName,
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).primaryColor,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    '${rooms.length} ruangan',
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: Colors.white,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-              ],
+// Building Header
+Container(
+  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+  decoration: BoxDecoration(
+    color: Theme.of(context).primaryColor.withOpacity(0.1),
+    borderRadius: BorderRadius.circular(8),
+  ),
+  child: IntrinsicHeight(
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch, 
+      children: [
+        // ✅ Ikon sekarang di tengah secara vertikal
+        Align(
+          alignment: Alignment.center, // Ubah dari topLeft ke center
+          child: const Icon(Icons.location_city, size: 20), // Padding dihapus
+        ),
+        const SizedBox(width: 8),
+        
+        // Nama gedung (bisa wrap ke bawah)
+        Expanded(
+          child: Text(
+            buildingName,
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
             ),
           ),
+        ),
+        const SizedBox(width: 8),
+        
+        // Chip jumlah ruangan (tetap di tengah)
+        Align(
+          alignment: Alignment.center, 
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            decoration: BoxDecoration(
+              color: Theme.of(context).primaryColor,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              '${rooms.length} ruangan',
+              style: const TextStyle(
+                fontSize: 12,
+                color: Colors.white,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ),
+      ],
+    ),
+  ),
+),
           const SizedBox(height: 12),
           // Rooms List
           ListView.separated(

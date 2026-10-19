@@ -28,27 +28,32 @@ class _BuildingManagementScreenState extends State<BuildingManagementScreen> {
   }
   
   Future<void> _loadBuildings() async {
+  setState(() {
+    _isLoading = true;
+    _hasError = false;
+  });
+
+  try {
+    final buildings = await _buildingRepository.getBuildings();
+
     setState(() {
-      _isLoading = true;
-      _hasError = false;
+      _buildings = buildings;
+      // 🔥 JANGAN set _filteredBuildings = buildings di sini
     });
-    
-    try {
-      final buildings = await _buildingRepository.getBuildings();
-      setState(() {
-        _buildings = buildings;
-        _filteredBuildings = buildings;
-      });
-    } catch (e) {
-      setState(() {
-        _hasError = true;
-        _errorMessage = e.toString();
-      });
-      Helpers.showSnackBar(context, 'Gagal memuat data gedung: $e', isError: true);
-    } finally {
-      setState(() => _isLoading = false);
-    }
+
+    // 🔥 Reapply filter pencarian yang sedang aktif
+    _filterBuildings(_searchController.text);
+
+  } catch (e) {
+    setState(() {
+      _hasError = true;
+      _errorMessage = e.toString();
+    });
+    Helpers.showSnackBar(context, 'Gagal memuat data gedung: $e', isError: true);
+  } finally {
+    setState(() => _isLoading = false);
   }
+}
   
   void _filterBuildings(String query) {
     if (query.isEmpty) {

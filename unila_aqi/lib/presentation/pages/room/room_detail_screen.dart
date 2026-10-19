@@ -579,195 +579,160 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
 
 Widget _buildRecommendationItem(String text) {
   return Padding(
-    padding: const EdgeInsets.only(bottom: 10),
+    padding: const EdgeInsets.only(bottom: 8),
     child: Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Container(
-          width: 20,
-          height: 20,
-          alignment: Alignment.center,
-          child: Icon(
-            Icons.fiber_manual_record,
-            size: 6,
-            color: Colors.blueGrey.shade400,
-          ),
+        const Icon(
+          Icons.arrow_right,
+          size: 16,
+          color: Colors.grey,
         ),
-        const SizedBox(width: 8),
+        const SizedBox(width: 4),
         Expanded(
           child: Text(
-  text,
-  style: TextStyle(
-    fontSize: 14,
-    color: Colors.black,
-    fontWeight: FontWeight.w400,
-    height: 1.6,
-    letterSpacing: 0.2,
-  ),
-  textAlign: TextAlign.justify,
-),
+            text,
+            style: const TextStyle(
+              fontFamily: 'Inter',
+              fontSize: 15,                       // ✅ sama seperti label parameter
+              fontWeight: FontWeight.w400,        // ✅ eksplisit normal (tidak bold)
+              color: Colors.black,     // ✅ abu-abu seperti label parameter
+              height: 1.4,                        // ✅ spacing antar baris
+            ),
+          ),
         ),
       ],
     ),
   );
 }
 
-  
-
-  Widget _buildRoomInfoHeader() {
-  return Container(
-    padding: const EdgeInsets.all(20),
-    decoration: BoxDecoration(
-      gradient: LinearGradient(
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-        colors: [
-          Colors.white,
-          Colors.grey.shade50,
+    Widget _buildRoomInfoHeader() {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Colors.white,
+            Colors.grey.shade50,
+          ],
+        ),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.grey.shade200, width: 1),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+            spreadRadius: -2,
+          ),
+          BoxShadow(
+            color: Colors.blue.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
         ],
       ),
-      borderRadius: BorderRadius.circular(20),
-      border: Border.all(color: Colors.grey.shade200, width: 1),
-      boxShadow: [
-        BoxShadow(
-          color: Colors.black.withOpacity(0.03),
-          blurRadius: 12,
-          offset: const Offset(0, 4),
-          spreadRadius: -2,
-        ),
-        BoxShadow(
-          color: Colors.blue.withOpacity(0.05),
-          blurRadius: 8,
-          offset: const Offset(0, 2),
-        ),
-      ],
-    ),
-    child: Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        // Modern icon dengan gradient
-        Container(
-          width: 52,
-          height: 52,
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                Colors.blue.shade400,
-                Colors.blue.shade600,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center, // Bisa diubah ke .start jika ikon terlihat aneh saat teks jadi 2 baris
+        children: [
+          // Modern icon dengan gradient
+          Container(
+            width: 52,
+            height: 52,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Colors.blue.shade400,
+                  Colors.blue.shade600,
+                ],
+              ),
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.blue.withOpacity(0.3),
+                  blurRadius: 8,
+                  offset: const Offset(0, 4),
+                ),
               ],
             ),
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.blue.withOpacity(0.3),
-                blurRadius: 8,
-                offset: const Offset(0, 4),
-              ),
-            ],
+            child: const Icon(
+              Icons.meeting_room_rounded,
+              size: 28,
+              color: Colors.white,
+            ),
           ),
-          child: const Icon(
-            Icons.meeting_room_rounded,
-            size: 28,
-            color: Colors.white,
-          ),
-        ),
-        const SizedBox(width: 16),
+          const SizedBox(width: 16),
 
-        // Informasi ruangan
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Nama ruangan
-              Text(
-                _currentRoomData.name,
-                style: const TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.textPrimary,
-                  height: 1.2,
+          // Informasi ruangan
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // ✅ Nama ruangan (maxLines & overflow dihapus)
+                Text(
+                  _currentRoomData.name,
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textPrimary,
+                    height: 1.2,
+                  ),
                 ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              const SizedBox(height: 6),
+                const SizedBox(height: 6),
 
-              // Lokasi gedung
-              Row(
-                children: [
-                  Icon(
-                    Icons.location_on_rounded,
-                    size: 16,
-                    color: Colors.blueGrey.shade400,
-                  ),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      _currentRoomData.buildingName,
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.blueGrey.shade700,
-                        fontWeight: FontWeight.w500,
+                // ✅ Lokasi gedung (maxLines & overflow dihapus)
+                Row(
+                  children: [
+                    Icon(
+                      Icons.location_on_rounded,
+                      size: 16,
+                      color: Colors.blueGrey.shade400,
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        _currentRoomData.buildingName,
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.blueGrey.shade700,
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 6),
+                  ],
+                ),
+                const SizedBox(height: 6),
 
-              // Informasi update terakhir
-              Row(
-                children: [
-                  Icon(
-                    Icons.update_rounded,
-                    size: 14,
-                    color: Colors.blueGrey.shade400,
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    'Diperbarui ${Helpers.formatLastUpdateWithDate(_currentRoomData.currentData.updatedAt)}',
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: Colors.blueGrey.shade600,
-                      fontWeight: FontWeight.w400,
+                // Informasi update terakhir
+                Row(
+                  children: [
+                    Icon(
+                      Icons.update_rounded,
+                      size: 14,
+                      color: Colors.blueGrey.shade400,
                     ),
-                  ),
-                ],
-              ),
-            ],
+                    const SizedBox(width: 6),
+                    Text(
+                      'Diperbarui ${Helpers.formatLastUpdateWithDate(_currentRoomData.currentData.updatedAt)}',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.blueGrey.shade600,
+                        fontWeight: FontWeight.w400,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
-        ),
-
-        // Jika Anda memiliki data status (misal: tersedia/tidak), bisa ditambahkan di sini
-        // Contoh: jika ada properti `isAvailable` atau `status`
-        // if (_currentRoomData.currentData.isAvailable != null)
-        //   Container(
-        //     width: 10,
-        //     height: 10,
-        //     decoration: BoxDecoration(
-        //       shape: BoxShape.circle,
-        //       color: _currentRoomData.currentData.isAvailable
-        //           ? Colors.green.shade400
-        //           : Colors.red.shade400,
-        //       boxShadow: [
-        //         BoxShadow(
-        //           color: (_currentRoomData.currentData.isAvailable
-        //                   ? Colors.green
-        //                   : Colors.red)
-        //               .withOpacity(0.4),
-        //           blurRadius: 4,
-        //         ),
-        //       ],
-        //     ),
-        //   ),
-      ],
-    ),
-  );
-}
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -999,34 +964,7 @@ Widget _buildRecommendationItem(String text) {
                           ),
                         ),
                         const Spacer(),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: Colors.blue.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: Row(
-                            children: [
-                              Container(
-                                width: 6,
-                                height: 6,
-                                decoration: const BoxDecoration(
-                                  color: Colors.blue,
-                                  shape: BoxShape.circle,
-                                ),
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                'Update otomatis',
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  color: Colors.blue.shade700,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
+          
                       ],
                     ),
                     const SizedBox(height: 8),
