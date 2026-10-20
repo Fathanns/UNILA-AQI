@@ -165,9 +165,151 @@ const checkAdminRegistered = async (req, res) => {
   }
 };
 
+// Update profile (username & email)
+const updateProfile = async (req, res) => {
+  try {
+    const { username, email } = req.body;
+
+    if (!username || !username.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Username is required'
+      });
+    }
+
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Cek username unik
+    if (username.trim() !== user.username) {
+      const existing = await User.findOne({
+        username: username.trim(),
+        _id: { $ne: user._id }
+      });
+      if (existing) {
+        return res.status(400).json({
+          success: false,
+          message: 'Username already taken'
+        });
+      }
+    }
+
+    // Validasi format email (jika diisi)
+    if (email && email.trim()) {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email.trim())) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid email format'
+        });
+      }
+    }
+
+    user.username = username.trim();
+    if (email !== undefined) {
+      user.email = email ? email.trim() : '';
+    }
+
+    await user.save();
+
+    res.json({
+      success: true,
+      message: 'Profile updated successfully',
+      user: {
+        id: user._id,
+        username: user.username,
+        email: user.email,
+        role: user.role
+      }
+    });
+  } catch (error) {
+    console.error('Update profile error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message
+    });
+  }
+};
+
+// Change password
+const changePassword = async (req, res) => {
+  try {
+    const { oldPassword, newPassword } = req.body;
+
+    if (!oldPassword || !newPassword) {
+      return res.status(400).json({
+        success: false,
+        message: 'Old and new password are required'
+      });
+    }
+
+    if (newPassword.length < 8) {
+      return res.status(400).json({
+        success: false,
+        message: 'Password must be at least 8 characters'
+      });
+    }
+
+    if (!/^(?=.*[a-zA-Z])(?=.*\d)/.test(newPassword)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Password must contain both letters and numbers'
+      });
+    }
+
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    const isValid = await comparePassword(oldPassword, user.password);
+    if (!isValid) {
+      return res.status(401).json({
+        success: false,
+        message: 'Old password is incorrect'
+      });
+    }
+
+    if (oldPassword === newPassword) {
+      return res.status(400).json({
+        success: false,
+        message: 'New password must be different from old password'
+      });
+    }
+
+    user.password = await hashPassword(newPassword);
+    await user.save();
+
+    res.json({
+      success: true,
+      message: 'Password changed successfully'
+    });
+  } catch (error) {
+    console.error('Change password error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message
+    });
+  }
+};
+
+
+
 module.exports = {
   registerAdmin,
   login,
   getProfile,
-  checkAdminRegistered
+  checkAdminRegistered,
+  updateProfile,
+  changePassword
 };

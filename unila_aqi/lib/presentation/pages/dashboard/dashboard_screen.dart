@@ -239,7 +239,7 @@ void dispose() {
           Navigator.pushNamed(context, '/admin/iot-devices');
         },
         onProfileTap: () {
-          Helpers.showSnackBar(context, 'Profile management coming soon!');
+          Navigator.pushNamed(context, '/admin/profile');
         },
         onHelpTap: _handleHelpTap,
         onLogoutTap: _handleLogout,

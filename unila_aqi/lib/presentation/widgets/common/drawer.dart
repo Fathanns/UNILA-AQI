@@ -35,45 +35,53 @@ class AppDrawer extends StatelessWidget {
       child: Column(
         children: [
           // Header
+                    // Header
           Container(
             padding: const EdgeInsets.fromLTRB(16, 48, 16, 24),
-            color: AppColors.primary,
+            // --- PERUBAHAN DI SINI ---
+            decoration: BoxDecoration(
+              gradient: AppColors.primaryGradient,
+              boxShadow: [
+                BoxShadow(
+                  color: AppColors.primary.withOpacity(0.25),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            // -------------------------
             child: Column(
               children: [
                 Container(
-              width: 100,
-              height: 100,
-              decoration: BoxDecoration(
-                color: AppColors.primary,
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: AppColors.primary,
-                  width: 2,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.white,
-                    blurRadius: 1.5,
-                    offset: const Offset(1, 2),
+                  width: 100,
+                  height: 100,
+                  decoration: BoxDecoration(
+                    // --- PERUBAHAN DI SINI (Menyesuaikan gaya Profil Admin) ---
+                    color: Colors.white.withOpacity(0.2), 
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: Colors.white.withOpacity(0.5),
+                      width: 3,
+                    ),
+                    // -------------------------
                   ),
-                ],
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(8.0), // Padding untuk memberi ruang
-                child: Image.asset(
-                  'assets/images/logo_unila.png',
-                  width: 104, // 120 - (8*2) = 104
-                  height: 104,
-                  fit: BoxFit.contain, // Gunakan contain agar tidak terpotong
+                  child: Padding(
+                    padding: const EdgeInsets.all(8.0),
+                    child: Image.asset(
+                      'assets/images/logo_unila.png',
+                      width: 104,
+                      height: 104,
+                      fit: BoxFit.contain,
+                    ),
+                  ),
                 ),
-              ),
-            ),
                 const SizedBox(height: 16),
                 Text(
                   'UNILA Air Quality Index',
                   style: Theme.of(context).textTheme.titleLarge?.copyWith(
                     color: Colors.white,
                     fontWeight: FontWeight.w600,
+                    fontFamily: 'Inter',
                   ),
                   textAlign: TextAlign.center,
                 ),

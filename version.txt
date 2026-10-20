@@ -169,11 +169,153 @@ const checkAdminRegistered = async (req, res) => {
   }
 };
 
+// Update profile (username & email)
+const updateProfile = async (req, res) => {
+  try {
+    const { username, email } = req.body;
+
+    if (!username || !username.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Username is required'
+      });
+    }
+
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Cek username unik
+    if (username.trim() !== user.username) {
+      const existing = await User.findOne({
+        username: username.trim(),
+        _id: { $ne: user._id }
+      });
+      if (existing) {
+        return res.status(400).json({
+          success: false,
+          message: 'Username already taken'
+        });
+      }
+    }
+
+    // Validasi format email (jika diisi)
+    if (email && email.trim()) {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email.trim())) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid email format'
+        });
+      }
+    }
+
+    user.username = username.trim();
+    if (email !== undefined) {
+      user.email = email ? email.trim() : '';
+    }
+
+    await user.save();
+
+    res.json({
+      success: true,
+      message: 'Profile updated successfully',
+      user: {
+        id: user._id,
+        username: user.username,
+        email: user.email,
+        role: user.role
+      }
+    });
+  } catch (error) {
+    console.error('Update profile error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message
+    });
+  }
+};
+
+// Change password
+const changePassword = async (req, res) => {
+  try {
+    const { oldPassword, newPassword } = req.body;
+
+    if (!oldPassword || !newPassword) {
+      return res.status(400).json({
+        success: false,
+        message: 'Old and new password are required'
+      });
+    }
+
+    if (newPassword.length < 8) {
+      return res.status(400).json({
+        success: false,
+        message: 'Password must be at least 8 characters'
+      });
+    }
+
+    if (!/^(?=.*[a-zA-Z])(?=.*\d)/.test(newPassword)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Password must contain both letters and numbers'
+      });
+    }
+
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    const isValid = await comparePassword(oldPassword, user.password);
+    if (!isValid) {
+      return res.status(401).json({
+        success: false,
+        message: 'Old password is incorrect'
+      });
+    }
+
+    if (oldPassword === newPassword) {
+      return res.status(400).json({
+        success: false,
+        message: 'New password must be different from old password'
+      });
+    }
+
+    user.password = await hashPassword(newPassword);
+    await user.save();
+
+    res.json({
+      success: true,
+      message: 'Password changed successfully'
+    });
+  } catch (error) {
+    console.error('Change password error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message
+    });
+  }
+};
+
+
+
 module.exports = {
   registerAdmin,
   login,
   getProfile,
-  checkAdminRegistered
+  checkAdminRegistered,
+  updateProfile,
+  changePassword
 };
 
 ---------------------------------------------------------------------------------------------------------------------------------------
@@ -492,7 +634,7 @@ const userSchema = new mongoose.Schema({
 module.exports = mongoose.model('User', userSchema);
 
 ---------------------------------------------------------------------------------------------------------------------------------------
-src/routes/authRoute.js:
+src/routes/authRoutes.js
 
 const express = require('express');
 const router = express.Router();
@@ -517,344 +659,32 @@ module.exports = router;
 ---------------------------------------------------------------------------------------------------------------------------------------
 src/routes/buildingRoutes.js
 
-// File: src/routes/buildingRoutes.js
 const express = require('express');
 const router = express.Router();
-const Building = require('../models/Building');
-const Room = require('../models/Room');
-const { authMiddleware, adminMiddleware } = require('../middleware/authMiddleware');
 
-// Helper untuk broadcast building update
-const broadcastBuildingUpdate = (io, building, action, updatedRooms = []) => {
-  if (io) {
-    io.emit('building-updated', {
-      action: action, // 'created', 'updated', 'deleted'
-      building: building,
-      updatedRooms: updatedRooms,
-      timestamp: new Date()
-    });
-    
-    // Broadcast ke room-specific channels untuk semua room yang terpengaruh
-    updatedRooms.forEach(room => {
-      io.to(room._id.toString()).emit('room-building-updated', {
-        buildingId: building._id,
-        oldBuildingName: room.buildingName,
-        newBuildingName: building.name,
-        timestamp: new Date()
-      });
-    });
-  }
-};
+const {
+  registerAdmin,
+  login,
+  getProfile,
+  checkAdminRegistered,
+  updateProfile,       
+  changePassword 
+} = require('../controllers/authController');
 
-// GET all buildings (PUBLIC - untuk semua user)
-router.get('/', async (req, res) => {
-  try {
-    const buildings = await Building.find().sort({ name: 1 });
-    
-    res.json({
-      success: true,
-      count: buildings.length,
-      data: buildings
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: 'Error fetching buildings',
-      error: error.message
-    });
-  }
-});
+const { authMiddleware } = require('../middleware/authMiddleware');
 
-// GET single building (PUBLIC - untuk semua user)
-router.get('/:id', async (req, res) => {
-  try {
-    const building = await Building.findById(req.params.id);
-    
-    if (!building) {
-      return res.status(404).json({
-        success: false,
-        message: 'Building not found'
-      });
-    }
-    
-    res.json({
-      success: true,
-      data: building
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: 'Error fetching building',
-      error: error.message
-    });
-  }
-});
+// Public routes
+router.get('/check-admin', checkAdminRegistered);
+router.post('/register-admin', registerAdmin);
+router.post('/login', login);
+router.get('/profile', authMiddleware, getProfile);    
 
-// POST create building (ADMIN ONLY)
-router.post('/', authMiddleware, adminMiddleware, async (req, res) => {
-  try {
-    const { name, code, description } = req.body;
-    
-    // Validate required fields
-    if (!name) {
-      return res.status(400).json({
-        success: false,
-        message: 'Building name is required'
-      });
-    }
-    
-    // Check if code is unique
-    if (code) {
-      const existingBuilding = await Building.findOne({ code });
-      if (existingBuilding) {
-        return res.status(400).json({
-          success: false,
-          message: 'Building code already exists'
-        });
-      }
-    }
-    
-    const building = new Building({
-      name,
-      code,
-      description,
-      roomCount: 0,
-      createdAt: new Date(),
-      updatedAt: new Date()
-    });
-    
-    await building.save();
-    
-    // Broadcast via Socket.io
-    const io = req.app.get('socketio');
-    if (io) {
-      broadcastBuildingUpdate(io, building, 'created');
-    }
-    
-    res.status(201).json({
-      success: true,
-      message: 'Building created successfully',
-      data: building
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: 'Error creating building',
-      error: error.message
-    });
-  }
-});
+// Protected routes
+router.get('/profile', authMiddleware, getProfile);
+router.put('/profile', authMiddleware, updateProfile);             
+router.put('/change-password', authMiddleware, changePassword);     
 
-// PUT update building (ADMIN ONLY) - PERBAIKAN UTAMA
-router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
-  try {
-    const { name, code, description } = req.body;
-    const io = req.app.get('socketio');
-    
-    const building = await Building.findById(req.params.id);
-    
-    if (!building) {
-      return res.status(404).json({
-        success: false,
-        message: 'Building not found'
-      });
-    }
-    
-    // Simpan nama lama untuk perbandingan
-    const oldName = building.name;
-    
-    // Check if new code is unique (if being changed)
-    if (code && code !== building.code) {
-      const existingBuilding = await Building.findOne({ code });
-      if (existingBuilding) {
-        return res.status(400).json({
-          success: false,
-          message: 'Building code already exists'
-        });
-      }
-    }
-    
-    // Update fields
-    if (name) building.name = name;
-    if (code !== undefined) building.code = code;
-    if (description !== undefined) building.description = description;
-    building.updatedAt = new Date();
-    
-    await building.save();
-    
-    // **PERBAIKAN UTAMA: Update buildingName di semua room yang terkait**
-    let updatedRooms = [];
-    if (name && name !== oldName) {
-      // Find all rooms in this building
-      const rooms = await Room.find({ building: building._id });
-      
-      // Update buildingName for each room
-      const updatePromises = rooms.map(async (room) => {
-        room.buildingName = building.name;
-        room.updatedAt = new Date();
-        await room.save();
-        return room;
-      });
-      
-      updatedRooms = await Promise.all(updatePromises);
-      
-      console.log(`✅ Updated building name for ${updatedRooms.length} rooms in ${building.name}`);
-    }
-    
-    // **Broadcast via Socket.io untuk semua perubahan**
-    if (io) {
-      // Broadcast building update
-      broadcastBuildingUpdate(io, building, 'updated', updatedRooms);
-      
-      // Broadcast individual room updates
-      updatedRooms.forEach(room => {
-        io.to(room._id.toString()).emit('room-update', {
-          roomId: room._id,
-          data: {
-            currentAQI: room.currentAQI,
-            currentData: room.currentData,
-            updatedAt: room.updatedAt,
-            buildingName: room.buildingName // Include updated building name
-          },
-          timestamp: new Date(),
-          source: 'building-update',
-          type: 'building-name-changed'
-        });
-        
-        // Broadcast to dashboard untuk refresh
-        io.emit('dashboard-update', {
-          type: 'building-name-changed',
-          buildingId: building._id,
-          oldBuildingName: oldName,
-          newBuildingName: building.name,
-          affectedRooms: updatedRooms.map(r => r._id),
-          timestamp: new Date()
-        });
-      });
-    }
-    
-    res.json({
-      success: true,
-      message: 'Building updated successfully',
-      data: building,
-      updatedRoomsCount: updatedRooms.length
-    });
-  } catch (error) {
-    console.error('Error updating building:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Error updating building',
-      error: error.message
-    });
-  }
-});
-
-// DELETE building (ADMIN ONLY) - Perbaiki untuk broadcast
-router.delete('/:id', authMiddleware, adminMiddleware, async (req, res) => {
-  try {
-    const buildingId = req.params.id;
-    const io = req.app.get('socketio');
-    
-    // Check if building has rooms
-    const roomCount = await Room.countDocuments({ building: buildingId });
-    
-    if (roomCount > 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'Cannot delete building with existing rooms',
-        roomCount: roomCount
-      });
-    }
-    
-    const building = await Building.findByIdAndDelete(buildingId);
-    
-    if (!building) {
-      return res.status(404).json({
-        success: false,
-        message: 'Building not found'
-      });
-    }
-    
-    // Broadcast via Socket.io
-    if (io) {
-      broadcastBuildingUpdate(io, building, 'deleted');
-    }
-    
-    res.json({
-      success: true,
-      message: 'Building deleted successfully'
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: 'Error deleting building',
-      error: error.message
-    });
-  }
-});
-
-router.post('/:id/sync-rooms', authMiddleware, adminMiddleware, async (req, res) => {
-  try {
-    const buildingId = req.params.id;
-    const io = req.app.get('socketio');
-    
-    const building = await Building.findById(buildingId);
-    if (!building) {
-      return res.status(404).json({
-        success: false,
-        message: 'Building not found'
-      });
-    }
-    
-    // Find all rooms in this building
-    const rooms = await Room.find({ building: buildingId });
-    
-    // Update buildingName for each room
-    const updatePromises = rooms.map(async (room) => {
-      if (room.buildingName !== building.name) {
-        room.buildingName = building.name;
-        room.updatedAt = new Date();
-        return await room.save();
-      }
-      return room;
-    });
-    
-    const updatedRooms = (await Promise.all(updatePromises))
-      .filter(room => room.buildingName === building.name);
-    
-    // Broadcast updates
-    if (io && updatedRooms.length > 0) {
-      updatedRooms.forEach(room => {
-        io.to(room._id.toString()).emit('room-update', {
-          roomId: room._id,
-          data: {
-            currentAQI: room.currentAQI,
-            currentData: room.currentData,
-            updatedAt: room.updatedAt,
-            buildingName: room.buildingName
-          },
-          timestamp: new Date(),
-          source: 'building-sync'
-        });
-      });
-    }
-    
-    res.json({
-      success: true,
-      message: `Synced building name for ${updatedRooms.length} rooms`,
-      building: building.name,
-      updatedCount: updatedRooms.length
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: 'Error syncing building rooms',
-      error: error.message
-    });
-  }
-});
-
-module.exports = router;roomRoutes.js
+module.exports = router;
 
 ---------------------------------------------------------------------------------------------------------------------------------------
 routes/iotDeviceRoutes.js
@@ -9037,6 +8867,78 @@ class IoTDeviceRepository {
 }
 
 ---------------------------------------------------------------------------------------------------------------------------------------
+lib/data/repositories/profile_repository.dart
+
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import '../../core/constants/app_constants.dart';
+import '../../core/services/storage_service.dart';
+
+class ProfileRepository {
+  final StorageService _storage = StorageService();
+
+  Future<Map<String, String>> _getHeaders() async {
+    final token = _storage.getString('auth_token');
+    final headers = {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+    };
+    if (token != null) headers['Authorization'] = 'Bearer $token';
+    return headers;
+  }
+
+  Future<Map<String, dynamic>> getProfile() async {
+    final headers = await _getHeaders();
+    final response = await http.get(
+      Uri.parse('${AppConstants.apiBaseUrl}/auth/profile'),
+      headers: headers,
+    );
+    final json = jsonDecode(response.body);
+    if (response.statusCode == 200 && json['success'] == true) {
+      return json;
+    }
+    throw Exception(json['message'] ?? 'Gagal memuat profil');
+  }
+
+  Future<Map<String, dynamic>> updateProfile({
+    required String username,
+    String? email,
+  }) async {
+    final headers = await _getHeaders();
+    final response = await http.put(
+      Uri.parse('${AppConstants.apiBaseUrl}/auth/profile'),
+      headers: headers,
+      body: jsonEncode({'username': username, 'email': email}),
+    );
+    final json = jsonDecode(response.body);
+    if (response.statusCode == 200 && json['success'] == true) {
+      return json;
+    }
+    throw Exception(json['message'] ?? 'Gagal memperbarui profil');
+  }
+
+  Future<Map<String, dynamic>> changePassword({
+    required String oldPassword,
+    required String newPassword,
+  }) async {
+    final headers = await _getHeaders();
+    final response = await http.put(
+      Uri.parse('${AppConstants.apiBaseUrl}/auth/change-password'),
+      headers: headers,
+      body: jsonEncode({
+        'oldPassword': oldPassword,
+        'newPassword': newPassword,
+      }),
+    );
+    final json = jsonDecode(response.body);
+    if (response.statusCode == 200 && json['success'] == true) {
+      return json;
+    }
+    throw Exception(json['message'] ?? 'Gagal mengubah password');
+  }
+}
+
+---------------------------------------------------------------------------------------------------------------------------------------
 lib/data/repositories/room_repository.dart:
 
 import 'dart:convert';
@@ -9252,477 +9154,6 @@ class RoomRepository {
     } catch (e) {
       rethrow;
     }
-  }
-}
-
-
----------------------------------------------------------------------------------------------------------------------------------------
-lib/presentation/pages/info/aqi_info_screen.dart
-
-iimport 'package:flutter/material.dart';
-import '../../../data/repositories/aqi_info_repository.dart';
-import '../../../data/models/aqi_info.dart';
-import '../../../core/constants/colors.dart';
-
-class AQIInfoScreen extends StatefulWidget {
-  const AQIInfoScreen({super.key});
-
-  @override
-  State<AQIInfoScreen> createState() => _AQIInfoScreenState();
-}
-
-class _AQIInfoScreenState extends State<AQIInfoScreen> {
-  final AQIInfoRepository _repository = AQIInfoRepository();
-  late Future<AQIInfo> _aqiInfoFuture;
-
-  @override
-  void initState() {
-    super.initState();
-    _aqiInfoFuture = _repository.getAQIInfo();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Informasi AQI'),
-        centerTitle: true,
-        elevation: 0,
-      ),
-      body: FutureBuilder<AQIInfo>(
-        future: _aqiInfoFuture,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-
-          if (snapshot.hasError) {
-            return Center(
-              child: Text('Error: ${snapshot.error}'),
-            );
-          }
-
-          final aqiInfo = snapshot.data!;
-
-          return _buildContent(aqiInfo);
-        },
-      ),
-    );
-  }
-
-  Widget _buildContent(AQIInfo aqiInfo) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Header
-          _buildHeader(aqiInfo),
-          const SizedBox(height: 24),
-
-          // Parameters
-          _buildSectionTitle('Parameter yang Dimonitor'),
-          const SizedBox(height: 12),
-          ...aqiInfo.parameters.map(_buildParameterCard).toList(),
-          const SizedBox(height: 24),
-
-          // AQI Categories
-          _buildSectionTitle('Kategori Indeks Kualitas Udara (AQI)'),
-          const SizedBox(height: 12),
-          ...aqiInfo.categories.map(_buildCategoryCard).toList(),
-          const SizedBox(height: 24),
-
-          // Units Information
-          _buildSectionTitle('Penjelasan Satuan'),
-          const SizedBox(height: 12),
-          ...aqiInfo.units.map(_buildUnitCard).toList(),
-          const SizedBox(height: 24),
-
-          // Additional Information
-          _buildSectionTitle('Tips Kesehatan'),
-          _buildHealthTips(),
-          const SizedBox(height: 32),
-
-          // Footer
-          _buildFooter(),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildHeader(AQIInfo aqiInfo) {
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          children: [
-            Text(
-              aqiInfo.icon,
-              style: const TextStyle(fontSize: 48),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              aqiInfo.title,
-              style: const TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.w700,
-                color: AppColors.primary,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 12),
-            Text(
-              aqiInfo.description,
-              style: const TextStyle(
-                fontSize: 16,
-                height: 1.5,
-                color: AppColors.textSecondary,
-              ),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSectionTitle(String title) {
-    return Text(
-      title,
-      style: const TextStyle(
-        fontSize: 20,
-        fontWeight: FontWeight.w700,
-        color: AppColors.textPrimary,
-      ),
-    );
-  }
-
-  Widget _buildParameterCard(AQIParameter parameter) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      elevation: 1,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Text(
-                  parameter.icon,
-                  style: const TextStyle(fontSize: 24),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        parameter.name,
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      Text(
-                        '${parameter.abbreviation} (${parameter.unit})',
-                        style: const TextStyle(
-                          fontSize: 14,
-                          color: AppColors.textSecondary,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Text(
-              parameter.description,
-              style: const TextStyle(
-                fontSize: 14,
-                height: 1.5,
-              ),
-            ),
-            const SizedBox(height: 12),
-            _buildInfoRow('🏥 Dampak Kesehatan:', parameter.impact),
-            _buildInfoRow('📊 Sumber Utama:', parameter.source),
-            _buildInfoRow('✅ Rentang Aman:', parameter.safeRange),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildInfoRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label,
-            style: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              color: AppColors.textPrimary,
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              value,
-              style: const TextStyle(
-                fontSize: 14,
-                color: AppColors.textSecondary,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildCategoryCard(AQICategory category) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      elevation: 1,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: category.color, width: 2),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  width: 20,
-                  height: 20,
-                  decoration: BoxDecoration(
-                    color: category.color,
-                    shape: BoxShape.circle,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Text(
-                  category.name,
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                    color: category.color,
-                  ),
-                ),
-                const Spacer(),
-                Text(
-                  '${category.min} - ${category.max}',
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Text(
-              category.description,
-              style: const TextStyle(
-                fontSize: 14,
-                height: 1.5,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-            const SizedBox(height: 8),
-            _buildInfoRow('👥 Efek Kesehatan:', category.healthEffect),
-            _buildInfoRow('💡 Rekomendasi:', category.recommendation),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildUnitCard(UnitInfo unit) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      elevation: 1,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: AppColors.primary.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    unit.symbol,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.primary,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Text(
-                  unit.name,
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Text(
-              unit.description,
-              style: const TextStyle(
-                fontSize: 14,
-                height: 1.5,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: AppColors.surface,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.lightbulb_outline, size: 20),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Contoh: ${unit.example}',
-                      style: const TextStyle(
-                        fontSize: 14,
-                        fontStyle: FontStyle.italic,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildHealthTips() {
-    return Card(
-      elevation: 1,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            _buildTipItem(
-              '🌬️ Ventilasi yang Baik',
-              'Pastikan ruangan memiliki sirkulasi udara yang cukup untuk mengurangi akumulasi CO₂ dan polutan',
-            ),
-            const SizedBox(height: 12),
-            _buildTipItem(
-              '🌱 Tanaman Dalam Ruangan',
-              'Beberapa tanaman seperti lidah mertua dan peace lily dapat membantu membersihkan udara',
-            ),
-            const SizedBox(height: 12),
-            _buildTipItem(
-              '🔄 Monitor Rutin',
-              'Periksa kualitas udara secara teratur, terutama di ruangan dengan banyak aktivitas',
-            ),
-            const SizedBox(height: 12),
-            _buildTipItem(
-              '🏃 Aktivitas Fisik',
-              'Hindari aktivitas fisik berat saat kualitas udara sedang atau tidak sehat',
-            ),
-            const SizedBox(height: 12),
-            _buildTipItem(
-              '🩺 Kelompok Sensitif',
-              'Anak-anak, lansia, dan penderita asma lebih rentan terhadap efek polusi udara',
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTipItem(String title, String description) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
-          width: 40,
-          height: 40,
-          decoration: BoxDecoration(
-            color: AppColors.primary.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Center(
-            child: Text(
-              title.substring(0, 3),
-              style: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                description,
-                style: const TextStyle(
-                  fontSize: 13,
-                  color: AppColors.textSecondary,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildFooter() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      
-    );
   }
 }
 
@@ -10991,7 +10422,903 @@ class _AddEditIoTDeviceScreenState extends State<AddEditIoTDeviceScreen> {
 ---------------------------------------------------------------------------------------------------------------------------------------
 lib/presentation/pages/admin/profile_management.dart:
 
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../../../core/constants/colors.dart';
+import '../../../core/utils/helpers.dart';
+import '../../../core/utils/validators.dart';
+import '../../../data/repositories/profile_repository.dart';
+import '../../../data/repositories/building_repository.dart';
+import '../../../data/repositories/room_repository.dart';
+import '../../../data/repositories/iot_device_repository.dart';
+import '../../providers/auth_provider.dart';
 
+class ProfileManagementScreen extends StatefulWidget {
+  const ProfileManagementScreen({super.key});
+
+  @override
+  State<ProfileManagementScreen> createState() =>
+      _ProfileManagementScreenState();
+}
+
+class _ProfileManagementScreenState extends State<ProfileManagementScreen> {
+  final _profileRepository = ProfileRepository();
+  final _buildingRepository = BuildingRepository();
+  final _roomRepository = RoomRepository();
+  final _deviceRepository = IoTDeviceRepository();
+
+  bool _isLoading = true;
+  String? _error;
+
+  String _username = '';
+  String _email = '';
+  DateTime? _lastLogin;
+
+  int _buildingCount = 0;
+  int _roomCount = 0;
+  int _deviceCount = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadData();
+  }
+
+  /// Helper: ambil panjang list, kalau error kembalikan 0
+  Future<int> _safeCount<T>(Future<List<T>> future) async {
+    try {
+      return (await future).length;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  Future<void> _loadData() async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+
+    try {
+      // Jalankan profile & hitungan paralel
+      final profileFuture = _profileRepository.getProfile();
+      final countsFuture = Future.wait<int>([
+        _safeCount(_buildingRepository.getBuildings()),
+        _safeCount(_roomRepository.getRooms()),
+        _safeCount(_deviceRepository.getDevices()),
+      ]);
+
+      final profile = await profileFuture;
+      final counts = await countsFuture;
+
+      final user = profile['user'] as Map<String, dynamic>;
+
+      if (!mounted) return;
+      setState(() {
+        _username = user['username']?.toString() ?? '';
+        _email = user['email']?.toString() ?? '';
+        _lastLogin = user['lastLogin'] != null
+            ? DateTime.parse(user['lastLogin'].toString()).toLocal()
+            : null;
+        _buildingCount = counts[0];
+        _roomCount = counts[1];
+        _deviceCount = counts[2];
+        _isLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e.toString();
+        _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _logout() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Logout'),
+        content: const Text('Apakah Anda yakin ingin keluar dari akun ini?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Batal'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Logout',
+                style: TextStyle(color: AppColors.error)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    await authProvider.logout();
+    if (mounted) {
+      Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
+    }
+  }
+
+  void _navigateToEditProfile() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => EditProfileScreen(
+          currentUsername: _username,
+          currentEmail: _email,
+          onSaved: _loadData,
+        ),
+      ),
+    );
+  }
+
+  void _navigateToChangePassword() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const ChangePasswordScreen()),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Profil Admin'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _loadData,
+            tooltip: 'Refresh',
+          ),
+        ],
+      ),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : _error != null
+              ? _buildErrorState()
+              : _buildContent(),
+    );
+  }
+
+  Widget _buildErrorState() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.error_outline, size: 64, color: AppColors.error),
+            const SizedBox(height: 16),
+            Text('Gagal memuat profil',
+                style: Theme.of(context).textTheme.titleLarge),
+            const SizedBox(height: 8),
+            Text(_error ?? '',
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: AppColors.textSecondary)),
+            const SizedBox(height: 16),
+            ElevatedButton.icon(
+              onPressed: _loadData,
+              icon: const Icon(Icons.refresh),
+              label: const Text('Coba Lagi'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildContent() {
+    return RefreshIndicator(
+      onRefresh: _loadData,
+      color: AppColors.primary,
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        child: Column(
+          children: [
+            _buildProfileHeader(),
+            const SizedBox(height: 16),
+            _buildInfoSection(),
+            const SizedBox(height: 16),
+            _buildSummarySection(),
+            const SizedBox(height: 16),
+            _buildActionSection(),
+            const SizedBox(height: 24),
+            _buildFooter(),
+            const SizedBox(height: 24),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildProfileHeader() {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        gradient: AppColors.primaryGradient,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.primary.withOpacity(0.25),
+            blurRadius: 12,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Container(
+            width: 88,
+            height: 88,
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.25),
+              shape: BoxShape.circle,
+              border:
+                  Border.all(color: Colors.white.withOpacity(0.5), width: 3),
+            ),
+            child: const Icon(Icons.admin_panel_settings,
+                size: 48, color: Colors.white),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            _username,
+            style: const TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.w700,
+              color: Colors.white,
+              fontFamily: 'Inter',
+            ),
+          ),
+          const SizedBox(height: 6),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.25),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: const Text(
+              'ADMIN',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: Colors.white,
+                letterSpacing: 1,
+                fontFamily: 'Inter',
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: _navigateToEditProfile,
+              icon: const Icon(Icons.edit, size: 18, color: Colors.white),
+              label: const Text(
+                'EDIT PROFIL',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                  fontFamily: 'Inter',
+                ),
+              ),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.white,
+                side: const BorderSide(color: Colors.white, width: 1.5),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInfoSection() {
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 16),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.info_outline,
+                    size: 20, color: AppColors.primary),
+                const SizedBox(width: 8),
+                Text('Informasi Akun',
+                    style: Theme.of(context).textTheme.titleLarge),
+              ],
+            ),
+            const Divider(height: 24),
+            _buildInfoRow(
+              icon: Icons.person_outline,
+              label: 'Username',
+              value: _username,
+            ),
+            const SizedBox(height: 16),
+            _buildInfoRow(
+              icon: Icons.email_outlined,
+              label: 'Email',
+              value: _email.isEmpty ? '-' : _email,
+            ),
+            const SizedBox(height: 16),
+            _buildInfoRow(
+              icon: Icons.access_time,
+              label: 'Login Terakhir',
+              value: _lastLogin != null
+                  ? Helpers.formatDateTime(_lastLogin!)
+                  : 'Belum pernah login',
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInfoRow({
+    required IconData icon,
+    required String label,
+    required String value,
+  }) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: AppColors.primary.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(icon, size: 20, color: AppColors.primary),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: AppColors.textHint,
+                  fontWeight: FontWeight.w500,
+                  fontFamily: 'Inter',
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                value,
+                style: const TextStyle(
+                  fontSize: 15,
+                  color: AppColors.textPrimary,
+                  fontWeight: FontWeight.w600,
+                  fontFamily: 'Inter',
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSummarySection() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(left: 4, bottom: 8),
+            child: Text('Ringkasan',
+                style: Theme.of(context).textTheme.titleLarge),
+          ),
+          Row(
+            children: [
+              Expanded(
+                child: _buildStatCard(
+                  icon: Icons.location_city,
+                  label: 'Gedung',
+                  value: _buildingCount.toString(),
+                  color: AppColors.primary,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildStatCard(
+                  icon: Icons.meeting_room,
+                  label: 'Ruangan',
+                  value: _roomCount.toString(),
+                  color: AppColors.secondary,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildStatCard(
+                  icon: Icons.sensors,
+                  label: 'Device IoT',
+                  value: _deviceCount.toString(),
+                  color: AppColors.info,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatCard({
+    required IconData icon,
+    required String label,
+    required String value,
+    required Color color,
+  }) {
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon, color: color, size: 22),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              value,
+              style: TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.w800,
+                color: color,
+                fontFamily: 'Inter',
+              ),
+            ),
+            Text(
+              label,
+              style: const TextStyle(
+                fontSize: 11,
+                color: AppColors.textSecondary,
+                fontWeight: FontWeight.w500,
+                fontFamily: 'Inter',
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildActionSection() {
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 16),
+      child: Column(
+        children: [
+          _buildActionTile(
+            icon: Icons.lock_outline,
+            label: 'Ganti Password',
+            onTap: _navigateToChangePassword,
+          ),
+          const Divider(height: 1, indent: 16, endIndent: 16),
+          _buildActionTile(
+            icon: Icons.logout,
+            label: 'Logout',
+            onTap: _logout,
+            isDestructive: true,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildActionTile({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+    bool isDestructive = false,
+  }) {
+    final color = isDestructive ? AppColors.error : AppColors.primary;
+    return ListTile(
+      leading: Container(
+        width: 36,
+        height: 36,
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Icon(icon, size: 18, color: color),
+      ),
+      title: Text(
+        label,
+        style: TextStyle(
+          fontSize: 15,
+          fontWeight: FontWeight.w600,
+          color: isDestructive ? AppColors.error : AppColors.textPrimary,
+          fontFamily: 'Inter',
+        ),
+      ),
+      trailing: Icon(Icons.chevron_right, size: 20, color: color),
+      onTap: onTap,
+    );
+  }
+
+  Widget _buildFooter() {
+    return Center(
+      child: Text(
+        'v 1.0.0',
+        style: TextStyle(
+          fontSize: 12,
+          color: AppColors.textHint,
+          fontFamily: 'Inter',
+        ),
+      ),
+    );
+  }
+}
+
+// ============================================================
+// EDIT PROFILE
+// ============================================================
+class EditProfileScreen extends StatefulWidget {
+  final String currentUsername;
+  final String currentEmail;
+  final VoidCallback onSaved;
+
+  const EditProfileScreen({
+    super.key,
+    required this.currentUsername,
+    required this.currentEmail,
+    required this.onSaved,
+  });
+
+  @override
+  State<EditProfileScreen> createState() => _EditProfileScreenState();
+}
+
+class _EditProfileScreenState extends State<EditProfileScreen> {
+  final _formKey = GlobalKey<FormState>();
+  final _usernameController = TextEditingController();
+  final _emailController = TextEditingController();
+  final _profileRepository = ProfileRepository();
+  bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _usernameController.text = widget.currentUsername;
+    _emailController.text = widget.currentEmail;
+  }
+
+  @override
+  void dispose() {
+    _usernameController.dispose();
+    _emailController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() => _isLoading = true);
+    try {
+      await _profileRepository.updateProfile(
+        username: _usernameController.text.trim(),
+        email: _emailController.text.trim().isEmpty
+            ? null
+            : _emailController.text.trim(),
+      );
+
+      // Update prefs username agar drawer mengikuti
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('username', _usernameController.text.trim());
+
+      // Refresh AuthProvider agar drawer langsung update
+      if (mounted) {
+        final authProvider = Provider.of<AuthProvider>(context, listen: false);
+        await authProvider.initialize();
+      }
+
+      widget.onSaved();
+
+      if (mounted) {
+        Helpers.showSnackBar(context, 'Profil berhasil diperbarui');
+        Navigator.pop(context);
+      }
+    } catch (e) {
+      if (mounted) {
+        Helpers.showSnackBar(context, 'Gagal menyimpan profil: $e',
+            isError: true);
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Edit Profil'),
+        actions: [
+          if (_isLoading)
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+        ],
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Form(
+          key: _formKey,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Username*',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
+              const SizedBox(height: 8),
+              TextFormField(
+                controller: _usernameController,
+                decoration: const InputDecoration(
+                  hintText: 'Masukkan username',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.person_outline),
+                ),
+                validator: (value) =>
+                    Validators.validateRequired(value, 'Username'),
+              ),
+              const SizedBox(height: 16),
+              const Text('Email',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
+              const SizedBox(height: 8),
+              TextFormField(
+                controller: _emailController,
+                decoration: const InputDecoration(
+                  hintText: 'Masukkan email (opsional)',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.email_outlined),
+                ),
+                keyboardType: TextInputType.emailAddress,
+                validator: (value) {
+                  if (value == null || value.isEmpty) return null;
+                  return Validators.validateEmail(value);
+                },
+              ),
+              const SizedBox(height: 32),
+              SizedBox(
+                width: double.infinity,
+                height: 50,
+                child: ElevatedButton(
+                  onPressed: _isLoading ? null : _save,
+                  child: const Text(
+                    'SIMPAN PERUBAHAN',
+                    style:
+                        TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ============================================================
+// CHANGE PASSWORD
+// ============================================================
+class ChangePasswordScreen extends StatefulWidget {
+  const ChangePasswordScreen({super.key});
+
+  @override
+  State<ChangePasswordScreen> createState() => _ChangePasswordScreenState();
+}
+
+class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
+  final _formKey = GlobalKey<FormState>();
+  final _oldController = TextEditingController();
+  final _newController = TextEditingController();
+  final _confirmController = TextEditingController();
+  final _profileRepository = ProfileRepository();
+
+  bool _isLoading = false;
+  bool _obscureOld = true;
+  bool _obscureNew = true;
+  bool _obscureConfirm = true;
+
+  @override
+  void dispose() {
+    _oldController.dispose();
+    _newController.dispose();
+    _confirmController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() => _isLoading = true);
+    try {
+      await _profileRepository.changePassword(
+        oldPassword: _oldController.text,
+        newPassword: _newController.text,
+      );
+      if (mounted) {
+        Helpers.showSnackBar(context, 'Password berhasil diubah');
+        Navigator.pop(context);
+      }
+    } catch (e) {
+      if (mounted) {
+        Helpers.showSnackBar(context, 'Gagal mengubah password: $e',
+            isError: true);
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Ganti Password'),
+        actions: [
+          if (_isLoading)
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+        ],
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Form(
+          key: _formKey,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Password Lama*',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
+              const SizedBox(height: 8),
+              TextFormField(
+                controller: _oldController,
+                obscureText: _obscureOld,
+                decoration: InputDecoration(
+                  hintText: 'Masukkan password lama',
+                  border: const OutlineInputBorder(),
+                  prefixIcon: const Icon(Icons.lock_outline),
+                  suffixIcon: IconButton(
+                    icon: Icon(_obscureOld
+                        ? Icons.visibility_off
+                        : Icons.visibility),
+                    onPressed: () =>
+                        setState(() => _obscureOld = !_obscureOld),
+                  ),
+                ),
+                validator: (value) =>
+                    Validators.validateRequired(value, 'Password lama'),
+              ),
+              const SizedBox(height: 16),
+              const Text('Password Baru*',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
+              const SizedBox(height: 8),
+              TextFormField(
+                controller: _newController,
+                obscureText: _obscureNew,
+                decoration: InputDecoration(
+                  hintText: 'Minimal 8 karakter, huruf dan angka',
+                  border: const OutlineInputBorder(),
+                  prefixIcon: const Icon(Icons.lock),
+                  suffixIcon: IconButton(
+                    icon: Icon(_obscureNew
+                        ? Icons.visibility_off
+                        : Icons.visibility),
+                    onPressed: () =>
+                        setState(() => _obscureNew = !_obscureNew),
+                  ),
+                ),
+                validator: Validators.validatePassword,
+              ),
+              const SizedBox(height: 16),
+              const Text('Konfirmasi Password Baru*',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
+              const SizedBox(height: 8),
+              TextFormField(
+                controller: _confirmController,
+                obscureText: _obscureConfirm,
+                decoration: InputDecoration(
+                  hintText: 'Ulangi password baru',
+                  border: const OutlineInputBorder(),
+                  prefixIcon: const Icon(Icons.lock),
+                  suffixIcon: IconButton(
+                    icon: Icon(_obscureConfirm
+                        ? Icons.visibility_off
+                        : Icons.visibility),
+                    onPressed: () =>
+                        setState(() => _obscureConfirm = !_obscureConfirm),
+                  ),
+                ),
+                validator: (value) => Validators.validateConfirmPassword(
+                  value,
+                  _newController.text,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.surface,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: AppColors.border),
+                ),
+                child: const Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Ketentuan Password:',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
+                        fontFamily: 'Inter',
+                      ),
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      '• Minimal 8 karakter\n• Kombinasi huruf dan angka',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: AppColors.textSecondary,
+                        fontFamily: 'Inter',
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 32),
+              SizedBox(
+                width: double.infinity,
+                height: 50,
+                child: ElevatedButton(
+                  onPressed: _isLoading ? null : _save,
+                  child: const Text(
+                    'GANTI PASSWORD',
+                    style:
+                        TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 ---------------------------------------------------------------------------------------------------------------------------------------
 lib/presentation/pages/admin/room_management.dart:
@@ -12956,7 +13283,7 @@ void dispose() {
           Navigator.pushNamed(context, '/admin/iot-devices');
         },
         onProfileTap: () {
-          Helpers.showSnackBar(context, 'Profile management coming soon!');
+          Navigator.pushNamed(context, '/admin/profile');
         },
         onHelpTap: _handleHelpTap,
         onLogoutTap: _handleLogout,
@@ -13195,6 +13522,476 @@ void dispose() {
           ),
         ],
       ),
+    );
+  }
+}
+
+---------------------------------------------------------------------------------------------------------------------------------------
+lib/presentation/pages/info/aqi_info_screen.dart
+
+import 'package:flutter/material.dart';
+import '../../../data/repositories/aqi_info_repository.dart';
+import '../../../data/models/aqi_info.dart';
+import '../../../core/constants/colors.dart';
+
+class AQIInfoScreen extends StatefulWidget {
+  const AQIInfoScreen({super.key});
+
+  @override
+  State<AQIInfoScreen> createState() => _AQIInfoScreenState();
+}
+
+class _AQIInfoScreenState extends State<AQIInfoScreen> {
+  final AQIInfoRepository _repository = AQIInfoRepository();
+  late Future<AQIInfo> _aqiInfoFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _aqiInfoFuture = _repository.getAQIInfo();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Informasi AQI'),
+        centerTitle: true,
+        elevation: 0,
+      ),
+      body: FutureBuilder<AQIInfo>(
+        future: _aqiInfoFuture,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          if (snapshot.hasError) {
+            return Center(
+              child: Text('Error: ${snapshot.error}'),
+            );
+          }
+
+          final aqiInfo = snapshot.data!;
+
+          return _buildContent(aqiInfo);
+        },
+      ),
+    );
+  }
+
+  Widget _buildContent(AQIInfo aqiInfo) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header
+          _buildHeader(aqiInfo),
+          const SizedBox(height: 24),
+
+          // Parameters
+          _buildSectionTitle('Parameter yang Dimonitor'),
+          const SizedBox(height: 12),
+          ...aqiInfo.parameters.map(_buildParameterCard).toList(),
+          const SizedBox(height: 24),
+
+          // AQI Categories
+          _buildSectionTitle('Kategori Indeks Kualitas Udara (AQI)'),
+          const SizedBox(height: 12),
+          ...aqiInfo.categories.map(_buildCategoryCard).toList(),
+          const SizedBox(height: 24),
+
+          // Units Information
+          _buildSectionTitle('Penjelasan Satuan'),
+          const SizedBox(height: 12),
+          ...aqiInfo.units.map(_buildUnitCard).toList(),
+          const SizedBox(height: 24),
+
+          // Additional Information
+          _buildSectionTitle('Tips Kesehatan'),
+          _buildHealthTips(),
+          const SizedBox(height: 32),
+
+          // Footer
+          _buildFooter(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHeader(AQIInfo aqiInfo) {
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          children: [
+            Text(
+              aqiInfo.icon,
+              style: const TextStyle(fontSize: 48),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              aqiInfo.title,
+              style: const TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.w700,
+                color: AppColors.primary,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              aqiInfo.description,
+              style: const TextStyle(
+                fontSize: 16,
+                height: 1.5,
+                color: AppColors.textSecondary,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSectionTitle(String title) {
+    return Text(
+      title,
+      style: const TextStyle(
+        fontSize: 20,
+        fontWeight: FontWeight.w700,
+        color: AppColors.textPrimary,
+      ),
+    );
+  }
+
+  Widget _buildParameterCard(AQIParameter parameter) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      elevation: 1,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Text(
+                  parameter.icon,
+                  style: const TextStyle(fontSize: 24),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        parameter.name,
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      Text(
+                        '${parameter.abbreviation} (${parameter.unit})',
+                        style: const TextStyle(
+                          fontSize: 14,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(
+              parameter.description,
+              style: const TextStyle(
+                fontSize: 14,
+                height: 1.5,
+              ),
+            ),
+            const SizedBox(height: 12),
+            _buildInfoRow('🏥 Dampak Kesehatan:', parameter.impact),
+            _buildInfoRow('📊 Sumber Utama:', parameter.source),
+            _buildInfoRow('✅ Rentang Aman:', parameter.safeRange),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInfoRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(
+                fontSize: 14,
+                color: AppColors.textSecondary,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCategoryCard(AQICategory category) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      elevation: 1,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: category.color, width: 2),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 20,
+                  height: 20,
+                  decoration: BoxDecoration(
+                    color: category.color,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  category.name,
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    color: category.color,
+                  ),
+                ),
+                const Spacer(),
+                Text(
+                  '${category.min} - ${category.max}',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(
+              category.description,
+              style: const TextStyle(
+                fontSize: 14,
+                height: 1.5,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const SizedBox(height: 8),
+            _buildInfoRow('👥 Efek Kesehatan:', category.healthEffect),
+            _buildInfoRow('💡 Rekomendasi:', category.recommendation),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildUnitCard(UnitInfo unit) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      elevation: 1,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    unit.symbol,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  unit.name,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(
+              unit.description,
+              style: const TextStyle(
+                fontSize: 14,
+                height: 1.5,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.lightbulb_outline, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Contoh: ${unit.example}',
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHealthTips() {
+    return Card(
+      elevation: 1,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            _buildTipItem(
+              '🌬️ Ventilasi yang Baik',
+              'Pastikan ruangan memiliki sirkulasi udara yang cukup untuk mengurangi akumulasi CO₂ dan polutan',
+            ),
+            const SizedBox(height: 12),
+            _buildTipItem(
+              '🌱 Tanaman Dalam Ruangan',
+              'Beberapa tanaman seperti lidah mertua dan peace lily dapat membantu membersihkan udara',
+            ),
+            const SizedBox(height: 12),
+            _buildTipItem(
+              '🔄 Monitor Rutin',
+              'Periksa kualitas udara secara teratur, terutama di ruangan dengan banyak aktivitas',
+            ),
+            const SizedBox(height: 12),
+            _buildTipItem(
+              '🏃 Aktivitas Fisik',
+              'Hindari aktivitas fisik berat saat kualitas udara sedang atau tidak sehat',
+            ),
+            const SizedBox(height: 12),
+            _buildTipItem(
+              '🩺 Kelompok Sensitif',
+              'Anak-anak, lansia, dan penderita asma lebih rentan terhadap efek polusi udara',
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTipItem(String title, String description) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: AppColors.primary.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Center(
+            child: Text(
+              title.substring(0, 3),
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                description,
+                style: const TextStyle(
+                  fontSize: 13,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildFooter() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      
     );
   }
 }
@@ -15925,45 +16722,53 @@ class AppDrawer extends StatelessWidget {
       child: Column(
         children: [
           // Header
+                    // Header
           Container(
             padding: const EdgeInsets.fromLTRB(16, 48, 16, 24),
-            color: AppColors.primary,
+            // --- PERUBAHAN DI SINI ---
+            decoration: BoxDecoration(
+              gradient: AppColors.primaryGradient,
+              boxShadow: [
+                BoxShadow(
+                  color: AppColors.primary.withOpacity(0.25),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            // -------------------------
             child: Column(
               children: [
                 Container(
-              width: 100,
-              height: 100,
-              decoration: BoxDecoration(
-                color: AppColors.primary,
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: AppColors.primary,
-                  width: 2,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.white,
-                    blurRadius: 1.5,
-                    offset: const Offset(1, 2),
+                  width: 100,
+                  height: 100,
+                  decoration: BoxDecoration(
+                    // --- PERUBAHAN DI SINI (Menyesuaikan gaya Profil Admin) ---
+                    color: Colors.white.withOpacity(0.2), 
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: Colors.white.withOpacity(0.5),
+                      width: 3,
+                    ),
+                    // -------------------------
                   ),
-                ],
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(8.0), // Padding untuk memberi ruang
-                child: Image.asset(
-                  'assets/images/logo_unila.png',
-                  width: 104, // 120 - (8*2) = 104
-                  height: 104,
-                  fit: BoxFit.contain, // Gunakan contain agar tidak terpotong
+                  child: Padding(
+                    padding: const EdgeInsets.all(8.0),
+                    child: Image.asset(
+                      'assets/images/logo_unila.png',
+                      width: 104,
+                      height: 104,
+                      fit: BoxFit.contain,
+                    ),
+                  ),
                 ),
-              ),
-            ),
                 const SizedBox(height: 16),
                 Text(
                   'UNILA Air Quality Index',
                   style: Theme.of(context).textTheme.titleLarge?.copyWith(
                     color: Colors.white,
                     fontWeight: FontWeight.w600,
+                    fontFamily: 'Inter',
                   ),
                   textAlign: TextAlign.center,
                 ),
@@ -16540,6 +17345,7 @@ import 'presentation/providers/building_provider.dart';
 import 'presentation/pages/auth/mode_selection_screen.dart';
 import 'presentation/pages/dashboard/dashboard_screen.dart';
 import 'core/services/storage_service.dart';
+import 'presentation/pages/admin/profile_management.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -16582,6 +17388,7 @@ class MyApp extends StatelessWidget {
         '/admin/buildings': (context) => const BuildingManagementScreen(),
         '/admin/rooms': (context) => const RoomManagementScreen(),
         '/admin/iot-devices': (context) => const IoTManagementScreen(),
+        '/admin/profile': (context) => const ProfileManagementScreen(),
       },
       // Enable smooth scrolling
       scrollBehavior: const MaterialScrollBehavior().copyWith(

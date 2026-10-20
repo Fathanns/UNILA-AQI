@@ -10,6 +10,7 @@ import 'presentation/providers/building_provider.dart';
 import 'presentation/pages/auth/mode_selection_screen.dart';
 import 'presentation/pages/dashboard/dashboard_screen.dart';
 import 'core/services/storage_service.dart';
+import 'presentation/pages/admin/profile_management.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -52,6 +53,7 @@ class MyApp extends StatelessWidget {
         '/admin/buildings': (context) => const BuildingManagementScreen(),
         '/admin/rooms': (context) => const RoomManagementScreen(),
         '/admin/iot-devices': (context) => const IoTManagementScreen(),
+        '/admin/profile': (context) => const ProfileManagementScreen(),
       },
       // Enable smooth scrolling
       scrollBehavior: const MaterialScrollBehavior().copyWith(
