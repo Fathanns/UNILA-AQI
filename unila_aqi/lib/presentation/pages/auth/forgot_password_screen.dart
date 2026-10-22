@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../../../core/constants/colors.dart';
+import '../../../core/utils/helpers.dart';
 import '../../../core/utils/validators.dart';
+import '../../../core/services/api_service.dart';
 import 'reset_password_screen.dart';
 
 class ForgotPasswordScreen extends StatefulWidget {
@@ -23,15 +25,22 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   }
 
   Future<void> _handleSendResetLink() async {
-    if (!_formKey.currentState!.validate()) return;
+  if (!_formKey.currentState!.validate()) return;
 
-    setState(() => _isLoading = true);
+  setState(() => _isLoading = true);
 
-    // Simulasi delay network
-    await Future.delayed(const Duration(seconds: 2));
+  try {
+    final response = await ApiService().forgotPassword(_emailController.text.trim());
 
-    if (mounted) {
+    if (response['success'] == true && mounted) {
       setState(() => _isLoading = false);
+
+      Helpers.showSnackBar(
+        context,
+        'Kode verifikasi telah dikirim ke email Anda',
+      );
+
+      // Navigate ke halaman reset password
       Navigator.push(
         context,
         MaterialPageRoute(
@@ -41,7 +50,19 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
         ),
       );
     }
+  } catch (e) {
+    if (mounted) {
+      setState(() => _isLoading = false);
+
+      final rawMsg = e.toString().replaceFirst('Exception: ', '');
+      final message = rawMsg.contains('tidak terdaftar')
+          ? 'Email tidak sesuai / tidak terdaftar sebagai admin'
+          : rawMsg;
+
+      Helpers.showSnackBar(context, message, isError: true);
+    }
   }
+}
 
   @override
   Widget build(BuildContext context) {
@@ -116,22 +137,13 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                       height: 50,
                       child: ElevatedButton(
                         onPressed: _isLoading ? null : _handleSendResetLink,
-                        child: _isLoading
-                            ? const SizedBox(
-                                width: 24,
-                                height: 24,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white,
-                                ),
-                              )
-                            : const Text(
-                                'KIRIM LINK RESET',
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
+                        child: const Text(
+                          'KIRIM LINK RESET',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
                       ),
                     ),
                   ],

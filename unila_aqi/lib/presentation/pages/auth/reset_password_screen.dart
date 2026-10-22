@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import '../../../core/constants/colors.dart';
 import '../../../core/utils/helpers.dart';
 import '../../../core/utils/validators.dart';
+import '../../../core/services/api_service.dart';
+import 'admin_login_screen.dart';
 
 class ResetPasswordScreen extends StatefulWidget {
   final String email;
@@ -18,7 +20,8 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
       List.generate(6, (index) => TextEditingController());
   final _newPasswordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
-  final List<FocusNode> _codeFocusNodes = List.generate(6, (index) => FocusNode());
+  final List<FocusNode> _codeFocusNodes =
+      List.generate(6, (index) => FocusNode());
 
   bool _isLoading = false;
   bool _obscureNewPassword = true;
@@ -30,10 +33,11 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
   void initState() {
     super.initState();
     _startCountdown();
-    // Set up focus nodes to move to next field
+    // Setup focus nodes untuk auto pindah ke field berikutnya
     for (int i = 0; i < 5; i++) {
       _codeFocusNodes[i].addListener(() {
-        if (!_codeFocusNodes[i].hasFocus && _codeControllers[i].text.length == 1) {
+        if (!_codeFocusNodes[i].hasFocus &&
+            _codeControllers[i].text.length == 1) {
           FocusScope.of(context).requestFocus(_codeFocusNodes[i + 1]);
         }
       });
@@ -53,6 +57,9 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
     super.dispose();
   }
 
+  // ============================================================
+  // COUNTDOWN UNTUK KIRIM ULANG KODE
+  // ============================================================
   void _startCountdown() {
     Future.delayed(const Duration(seconds: 1), () {
       if (mounted) {
@@ -68,72 +75,155 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
     });
   }
 
+  // ============================================================
+  // RESET PASSWORD (VALIDASI KODE + SIMPAN PASSWORD BARU)
+  // ============================================================
   Future<void> _handleResetPassword() async {
     if (!_formKey.currentState!.validate()) return;
 
-    // Combine code from 6 fields
+    // Gabungkan 6 digit kode dari masing-masing field
     String code = '';
     for (var controller in _codeControllers) {
       code += controller.text;
     }
 
     if (code.length != 6) {
-      Helpers.showSnackBar(context, 'Masukkan 6 digit kode dengan lengkap', isError: true);
+      Helpers.showSnackBar(
+        context,
+        'Masukkan 6 digit kode dengan lengkap',
+        isError: true,
+      );
       return;
     }
 
     setState(() => _isLoading = true);
 
-    // Simulasi delay network
-    await Future.delayed(const Duration(seconds: 2));
+    try {
+      final response = await ApiService().resetPasswordWithCode(
+        email: widget.email,
+        code: code,
+        newPassword: _newPasswordController.text,
+      );
 
-    if (mounted) {
+      if (!mounted) return;
+
+      if (response['success'] == true) {
+        setState(() => _isLoading = false);
+        _showSuccessDialog();
+      } else {
+        setState(() => _isLoading = false);
+        Helpers.showSnackBar(
+          context,
+          response['message'] ?? 'Gagal mereset password',
+          isError: true,
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+
       setState(() => _isLoading = false);
-      // Tampilkan dialog sukses
-      _showSuccessDialog();
+
+      final rawMsg = e.toString().replaceFirst('Exception: ', '');
+
+      // Pesan yang lebih user-friendly
+      String message = rawMsg;
+      if (rawMsg.toLowerCase().contains('kode') &&
+          rawMsg.toLowerCase().contains('salah')) {
+        message = 'Kode verifikasi salah. Periksa kembali kode yang Anda masukkan.';
+      } else if (rawMsg.toLowerCase().contains('kedaluwarsa') ||
+          rawMsg.toLowerCase().contains('expired')) {
+        message = 'Kode sudah kedaluwarsa. Silakan kirim ulang kode.';
+      }
+
+      Helpers.showSnackBar(context, message, isError: true);
     }
   }
 
-  void _showSuccessDialog() {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        title: const Row(
-          children: [
-            Icon(Icons.check_circle, color: AppColors.success),
-            SizedBox(width: 8),
-            Text('Berhasil'),
-          ],
-        ),
-        content: const Text(
-          'Password telah berhasil direset! Anda dapat login menggunakan password baru Anda.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context); // Tutup dialog
-              Navigator.pop(context); // Kembali ke login
-            },
-            child: const Text('LOGIN SEKARANG'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _resendCode() {
+  // ============================================================
+  // KIRIM ULANG KODE (RESEND)
+  // ============================================================
+  Future<void> _resendCode() async {
     if (!_canResend) return;
 
-    setState(() {
-      _canResend = false;
-      _countdown = 60;
-    });
+    setState(() => _isLoading = true);
 
-    Helpers.showSnackBar(context, 'Kode verifikasi telah dikirim ulang');
-    _startCountdown();
+    try {
+      final response = await ApiService().resendResetCode(widget.email);
+
+      if (!mounted) return;
+
+      if (response['success'] == true) {
+        setState(() {
+          _isLoading = false;
+          _canResend = false;
+          _countdown = 60;
+        });
+
+        Helpers.showSnackBar(
+          context,
+          'Kode verifikasi baru telah dikirim ke email Anda',
+        );
+
+        _startCountdown();
+      } else {
+        setState(() => _isLoading = false);
+        Helpers.showSnackBar(
+          context,
+          response['message'] ?? 'Gagal mengirim ulang kode',
+          isError: true,
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() => _isLoading = false);
+
+      final rawMsg = e.toString().replaceFirst('Exception: ', '');
+      Helpers.showSnackBar(
+        context,
+        'Gagal mengirim ulang kode: $rawMsg',
+        isError: true,
+      );
+    }
   }
 
+  // ============================================================
+  // DIALOG SUKSES
+  // ============================================================
+  void _showSuccessDialog() {
+  showDialog(
+    context: context,
+    barrierDismissible: false,
+    builder: (dialogContext) => AlertDialog(
+      title: const Text('Berhasil'),
+      content: const Text(
+        'Password telah berhasil direset. '
+        'Silakan login kembali menggunakan password baru Anda.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () {
+            Navigator.pop(dialogContext); // Tutup dialog
+
+            // 🔥 Kembali ke halaman login admin, bersihkan stack
+            Navigator.pushAndRemoveUntil(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const AdminLoginScreen(),
+              ),
+              (route) => false,
+            );
+          },
+          child: const Text('LOGIN SEKARANG'),
+        ),
+      ],
+    ),
+  );
+}
+
+  // ============================================================
+  // HELPER: MASKED EMAIL
+  // ============================================================
   String _maskedEmail(String email) {
     final parts = email.split('@');
     if (parts.length != 2) return email;
@@ -144,6 +234,9 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
     return '$masked@$domain';
   }
 
+  // ============================================================
+  // UI BUILD
+  // ============================================================
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -175,6 +268,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                 ),
               ),
               const SizedBox(height: 16),
+
               // Title
               Text(
                 'RESET PASSWORD',
@@ -184,6 +278,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                     ),
               ),
               const SizedBox(height: 16),
+
               // Instruction
               const Text(
                 'Kode verifikasi telah dikirim ke email:',
@@ -204,6 +299,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 32),
+
               // Form
               Form(
                 key: _formKey,
@@ -228,14 +324,17 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                                 borderRadius: BorderRadius.circular(8),
                               ),
                               counterText: '',
-                              contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                              contentPadding: const EdgeInsets.symmetric(
+                                vertical: 12,
+                              ),
                             ),
                             textAlign: TextAlign.center,
                             keyboardType: TextInputType.number,
                             maxLength: 1,
                             onChanged: (value) {
                               if (value.length == 1 && index < 5) {
-                                FocusScope.of(context).requestFocus(_codeFocusNodes[index + 1]);
+                                FocusScope.of(context)
+                                    .requestFocus(_codeFocusNodes[index + 1]);
                               }
                             },
                             validator: (value) {
@@ -249,6 +348,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                       }),
                     ),
                     const SizedBox(height: 32),
+
                     // New Password
                     TextFormField(
                       controller: _newPasswordController,
@@ -262,7 +362,8 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                                 : Icons.visibility,
                           ),
                           onPressed: () {
-                            setState(() => _obscureNewPassword = !_obscureNewPassword);
+                            setState(() =>
+                                _obscureNewPassword = !_obscureNewPassword);
                           },
                         ),
                         border: const OutlineInputBorder(),
@@ -271,6 +372,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                       validator: Validators.validatePassword,
                     ),
                     const SizedBox(height: 16),
+
                     // Confirm Password
                     TextFormField(
                       controller: _confirmPasswordController,
@@ -284,61 +386,61 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                                 : Icons.visibility,
                           ),
                           onPressed: () {
-                            setState(() => _obscureConfirmPassword = !_obscureConfirmPassword);
+                            setState(() => _obscureConfirmPassword =
+                                !_obscureConfirmPassword);
                           },
                         ),
                         border: const OutlineInputBorder(),
                       ),
                       obscureText: _obscureConfirmPassword,
                       validator: (value) => Validators.validateConfirmPassword(
-                        value, _newPasswordController.text,
+                        value,
+                        _newPasswordController.text,
                       ),
                     ),
                     const SizedBox(height: 32),
+
                     // Reset Button
                     SizedBox(
                       width: double.infinity,
                       height: 50,
                       child: ElevatedButton(
                         onPressed: _isLoading ? null : _handleResetPassword,
-                        child: _isLoading
-                            ? const SizedBox(
-                                width: 24,
-                                height: 24,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white,
-                                ),
-                              )
-                            : const Text(
-                                'RESET PASSWORD',
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
+                        child: const Text(
+                          'RESET PASSWORD',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
                       ),
                     ),
                   ],
                 ),
               ),
               const SizedBox(height: 24),
+
               // Resend Code
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   TextButton(
-                    onPressed: _canResend ? _resendCode : null,
+                    onPressed: _canResend && !_isLoading ? _resendCode : null,
                     child: Text(
-                      _canResend ? 'Kirim ulang kode' : 'Kirim ulang kode (${_countdown}s)',
+                      _canResend
+                          ? 'Kirim ulang kode'
+                          : 'Kirim ulang kode (${_countdown}s)',
                       style: TextStyle(
-                        color: _canResend ? AppColors.primary : AppColors.textDisabled,
+                        color: _canResend
+                            ? AppColors.primary
+                            : AppColors.textDisabled,
                       ),
                     ),
                   ),
                 ],
               ),
               const SizedBox(height: 24),
+
               // Password Requirements
               Container(
                 padding: const EdgeInsets.all(16),
@@ -359,15 +461,18 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                     ),
                     SizedBox(height: 8),
                     Text(
-                      '• Minimal 8 karakter\n• Kombinasi huruf dan angka\n• Hindari penggunaan password yang mudah ditebak',
-                      style: TextStyle(fontSize: 14, color: AppColors.textSecondary),
+                      '• Minimal 8 karakter\n'
+                      '• Kombinasi huruf dan angka\n'
+                      '• Hindari penggunaan password yang mudah ditebak',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: AppColors.textSecondary,
+                      ),
                     ),
                   ],
                 ),
               ),
               const SizedBox(height: 16),
-              // Support Contact
-              
             ],
           ),
         ),

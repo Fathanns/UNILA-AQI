@@ -154,28 +154,19 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                     const SizedBox(height: 24),
                     // Login Button
                     SizedBox(
-                      width: double.infinity,
-                      height: 50,
-                      child: ElevatedButton(
-                        onPressed: _isLoading ? null : _handleLogin,
-                        child: _isLoading
-                            ? const SizedBox(
-                                width: 24,
-                                height: 24,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white,
-                                ),
-                              )
-                            : const Text(
-                                'LOGIN',
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                      ),
-                    ),
+  width: double.infinity,
+  height: 50,
+  child: ElevatedButton(
+    onPressed: _isLoading ? null : _handleLogin,
+    child: const Text(
+      'LOGIN',
+      style: TextStyle(
+        fontSize: 16,
+        fontWeight: FontWeight.w600,
+      ),
+    ),
+  ),
+),
                     const SizedBox(height: 16),
                     // Forgot Password Link
                     TextButton(

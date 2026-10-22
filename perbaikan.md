@@ -23,3 +23,10 @@ perbaikan:
 tambahan feature:
 - kedinamisan saat siang dan malam pada data partikel dll
 - lupa password: tambahkan email admin
+
+22 10 2026
+
+perbaikan
+- hilangkan warn ketika password tidak sesuai di auth admin
+- perbaiki snackbar ketika credential tidak tepat
+- hilangkan lingkaran load ketika login, lupa password ketika memasukan email, reset parword

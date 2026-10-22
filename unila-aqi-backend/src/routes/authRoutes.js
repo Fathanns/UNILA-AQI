@@ -7,7 +7,10 @@ const {
   getProfile,
   checkAdminRegistered,
   updateProfile,       
-  changePassword 
+  changePassword,
+  requestPasswordReset,
+  resetPasswordWithCode,
+  resendResetCode,
 } = require('../controllers/authController');
 
 const { authMiddleware } = require('../middleware/authMiddleware');
@@ -16,7 +19,11 @@ const { authMiddleware } = require('../middleware/authMiddleware');
 router.get('/check-admin', checkAdminRegistered);
 router.post('/register-admin', registerAdmin);
 router.post('/login', login);
-router.get('/profile', authMiddleware, getProfile);    
+router.get('/profile', authMiddleware, getProfile);  
+
+router.post('/forgot-password', requestPasswordReset);
+router.post('/reset-password', resetPasswordWithCode);
+router.post('/resend-reset-code', resendResetCode);
 
 // Protected routes
 router.get('/profile', authMiddleware, getProfile);

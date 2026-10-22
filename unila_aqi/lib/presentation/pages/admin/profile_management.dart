@@ -259,7 +259,7 @@ class _ProfileManagementScreenState extends State<ProfileManagementScreen> {
               borderRadius: BorderRadius.circular(20),
             ),
             child: const Text(
-              'ADMIN',
+              'ADMINISTRATOR',
               style: TextStyle(
                 fontSize: 11,
                 fontWeight: FontWeight.w700,

@@ -320,6 +320,26 @@ Future<dynamic> get24HoursSensorData(String roomId) async {
   }
 }
 
+Future<dynamic> forgotPassword(String email) async {
+  return await post('auth/forgot-password', {'email': email});
+}
+
+Future<dynamic> resetPasswordWithCode({
+  required String email,
+  required String code,
+  required String newPassword,
+}) async {
+  return await post('auth/reset-password', {
+    'email': email,
+    'code': code,
+    'newPassword': newPassword,
+  });
+}
+
+Future<dynamic> resendResetCode(String email) async {
+  return await post('auth/resend-reset-code', {'email': email});
+}
+
   // Dispose
   void dispose() {
     _client.close();

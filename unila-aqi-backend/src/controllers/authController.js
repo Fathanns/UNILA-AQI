@@ -1,5 +1,6 @@
 const User = require('../models/User');
 const { generateToken, hashPassword, comparePassword } = require('../utils/auth');
+const { generateResetCode, sendResetCodeEmail } = require('../utils/emailService');
 
 // Register admin (untuk pertama kali)
 const registerAdmin = async (req, res) => {
@@ -303,6 +304,204 @@ const changePassword = async (req, res) => {
   }
 };
 
+// ============ FITUR LUPA PASSWORD ============
+
+// 1. Request reset password (kirim kode ke email)
+const requestPasswordReset = async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email || !email.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email wajib diisi',
+      });
+    }
+
+    // Cari admin dengan email tersebut
+    const user = await User.findOne({
+      email: email.trim().toLowerCase(),
+      role: 'admin',
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'Email tidak terdaftar sebagai admin',
+      });
+    }
+
+    // Generate kode 6-digit
+    const code = generateResetCode();
+    const expiry = new Date(Date.now() + 15 * 60 * 1000); // 15 menit
+
+    user.resetPasswordCode = code;
+    user.resetPasswordCodeExpiry = expiry;
+    await user.save();
+
+    // Kirim email
+    try {
+      await sendResetCodeEmail(user.email, code, user.username);
+      console.log(`✅ Reset code sent to ${user.email}`);
+    } catch (emailError) {
+      console.error('❌ Email send error:', emailError);
+      return res.status(500).json({
+        success: false,
+        message: 'Gagal mengirim email. Periksa koneksi server atau coba lagi.',
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Kode verifikasi telah dikirim ke email Anda',
+      email: user.email,
+    });
+  } catch (error) {
+    console.error('Request password reset error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message,
+    });
+  }
+};
+
+// 2. Reset password dengan kode verifikasi
+const resetPasswordWithCode = async (req, res) => {
+  try {
+    const { email, code, newPassword } = req.body;
+
+    if (!email || !code || !newPassword) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email, kode, dan password baru wajib diisi',
+      });
+    }
+
+    if (newPassword.length < 8) {
+      return res.status(400).json({
+        success: false,
+        message: 'Password minimal 8 karakter',
+      });
+    }
+
+    if (!/^(?=.*[a-zA-Z])(?=.*\d)/.test(newPassword)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Password harus mengandung huruf dan angka',
+      });
+    }
+
+    const user = await User.findOne({
+      email: email.trim().toLowerCase(),
+      role: 'admin',
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'Email tidak terdaftar sebagai admin',
+      });
+    }
+
+    if (!user.resetPasswordCode || !user.resetPasswordCodeExpiry) {
+      return res.status(400).json({
+        success: false,
+        message: 'Kode verifikasi tidak ditemukan. Silakan minta kode baru.',
+      });
+    }
+
+    if (new Date() > new Date(user.resetPasswordCodeExpiry)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Kode sudah kedaluwarsa. Silakan minta kode baru.',
+      });
+    }
+
+    if (user.resetPasswordCode !== code.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Kode verifikasi salah',
+      });
+    }
+
+    // Update password
+    user.password = await hashPassword(newPassword);
+    user.resetPasswordCode = undefined;
+    user.resetPasswordCodeExpiry = undefined;
+    await user.save();
+
+    res.json({
+      success: true,
+      message: 'Password berhasil direset',
+    });
+  } catch (error) {
+    console.error('Reset password error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message,
+    });
+  }
+};
+
+// 3. Kirim ulang kode
+const resendResetCode = async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email || !email.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email wajib diisi',
+      });
+    }
+
+    const user = await User.findOne({
+      email: email.trim().toLowerCase(),
+      role: 'admin',
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'Email tidak terdaftar sebagai admin',
+      });
+    }
+
+    // Generate kode baru
+    const code = generateResetCode();
+    const expiry = new Date(Date.now() + 15 * 60 * 1000);
+
+    user.resetPasswordCode = code;
+    user.resetPasswordCodeExpiry = expiry;
+    await user.save();
+
+    try {
+      await sendResetCodeEmail(user.email, code, user.username);
+      console.log(`✅ Reset code resent to ${user.email}`);
+    } catch (emailError) {
+      console.error('❌ Email send error:', emailError);
+      return res.status(500).json({
+        success: false,
+        message: 'Gagal mengirim email. Coba lagi nanti.',
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Kode verifikasi baru telah dikirim ke email',
+    });
+  } catch (error) {
+    console.error('Resend code error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message,
+    });
+  }
+};
+
 
 
 module.exports = {
@@ -311,5 +510,8 @@ module.exports = {
   getProfile,
   checkAdminRegistered,
   updateProfile,
-  changePassword
+  changePassword,
+  requestPasswordReset,
+  resetPasswordWithCode,
+  resendResetCode,
 };

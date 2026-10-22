@@ -201,7 +201,7 @@ class AppDrawer extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.all(16),
             child: Text(
-              'v1.0.0',
+              'v 1.0.0',
               style: TextStyle(
                 fontSize: 12,
                 color: Colors.grey[600],
