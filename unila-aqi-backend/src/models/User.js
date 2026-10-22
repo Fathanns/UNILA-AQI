@@ -21,6 +21,17 @@ const userSchema = new mongoose.Schema({
     trim: true,
     lowercase: true
   },
+  pendingEmail: {
+  type: String,
+  trim: true,
+  lowercase: true
+},
+emailChangeCode: {
+  type: String
+},
+emailChangeCodeExpiry: {
+  type: Date
+},
   isActive: {
     type: Boolean,
     default: true

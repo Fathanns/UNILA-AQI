@@ -549,7 +549,7 @@ class _ProfileManagementScreenState extends State<ProfileManagementScreen> {
 }
 
 // ============================================================
-// EDIT PROFILE
+// EDIT PROFILE (dengan verifikasi email 6 digit)
 // ============================================================
 class EditProfileScreen extends StatefulWidget {
   final String currentUsername;
@@ -571,8 +571,12 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   final _formKey = GlobalKey<FormState>();
   final _usernameController = TextEditingController();
   final _emailController = TextEditingController();
+  final _codeController = TextEditingController();
   final _profileRepository = ProfileRepository();
+
   bool _isLoading = false;
+  bool _isSendingCode = false;
+  bool _codeSent = false;
 
   @override
   void initState() {
@@ -585,19 +589,88 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   void dispose() {
     _usernameController.dispose();
     _emailController.dispose();
+    _codeController.dispose();
     super.dispose();
+  }
+
+  bool get _isEmailChanged {
+    return _emailController.text.trim().toLowerCase() !=
+        widget.currentEmail.trim().toLowerCase();
+  }
+
+  Future<void> _sendEmailCode() async {
+    final email = _emailController.text.trim();
+
+    final emailError = Validators.validateEmail(email);
+    if (emailError != null) {
+      Helpers.showSnackBar(context, emailError, isError: true);
+      return;
+    }
+
+    if (!_isEmailChanged) {
+      Helpers.showSnackBar(
+        context,
+        'Email baru sama dengan email saat ini',
+        isError: true,
+      );
+      return;
+    }
+
+    setState(() => _isSendingCode = true);
+
+    try {
+      await _profileRepository.requestEmailChangeCode(email);
+
+      if (!mounted) return;
+
+      setState(() => _codeSent = true);
+
+      Helpers.showSnackBar(
+        context,
+        'Kode verifikasi telah dikirim ke $email',
+      );
+    } catch (e) {
+      if (mounted) {
+        Helpers.showSnackBar(
+          context,
+          e.toString().replaceFirst('Exception: ', ''),
+          isError: true,
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isSendingCode = false);
+      }
+    }
   }
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
 
+    final email = _emailController.text.trim();
+    final emailChanged =
+        email.toLowerCase() != widget.currentEmail.trim().toLowerCase();
+
+    if (emailChanged) {
+      final code = _codeController.text.trim();
+
+      if (code.length != 6) {
+        Helpers.showSnackBar(
+          context,
+          'Masukkan 6 digit kode verifikasi email',
+          isError: true,
+        );
+        return;
+      }
+    }
+
     setState(() => _isLoading = true);
+
     try {
       await _profileRepository.updateProfile(
         username: _usernameController.text.trim(),
-        email: _emailController.text.trim().isEmpty
-            ? null
-            : _emailController.text.trim(),
+        email: email.isEmpty ? null : email,
+        emailChangeCode: emailChanged ? _codeController.text.trim() : null,
       );
 
       // Update prefs username agar drawer mengikuti
@@ -618,8 +691,11 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       }
     } catch (e) {
       if (mounted) {
-        Helpers.showSnackBar(context, 'Gagal menyimpan profil: $e',
-            isError: true);
+        Helpers.showSnackBar(
+          context,
+          'Gagal menyimpan profil: ${e.toString().replaceFirst('Exception: ', '')}',
+          isError: true,
+        );
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -675,11 +751,77 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                   prefixIcon: Icon(Icons.email_outlined),
                 ),
                 keyboardType: TextInputType.emailAddress,
+                onChanged: (_) => setState(() {
+                  _codeSent = false;
+                  _codeController.clear();
+                }),
                 validator: (value) {
                   if (value == null || value.isEmpty) return null;
                   return Validators.validateEmail(value);
                 },
               ),
+
+              // Verifikasi email — muncul hanya jika email berubah
+              if (_isEmailChanged) ...[
+                const SizedBox(height: 16),
+                const Text(
+                  'Kode Verifikasi Email*',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: TextFormField(
+                        controller: _codeController,
+                        keyboardType: TextInputType.number,
+                        maxLength: 6,
+                        decoration: const InputDecoration(
+                          hintText: 'Masukkan 6 digit kode',
+                          border: OutlineInputBorder(),
+                          prefixIcon: Icon(Icons.verified_outlined),
+                          counterText: '',
+                        ),
+                        validator: (value) {
+                          if (!_isEmailChanged) return null;
+                          if (value == null || value.trim().length != 6) {
+                            return 'Masukkan 6 digit kode verifikasi';
+                          }
+                          return null;
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    SizedBox(
+                      height: 56,
+                      child: OutlinedButton(
+                        onPressed: _isSendingCode ? null : _sendEmailCode,
+                        child: _isSendingCode
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : Text(_codeSent ? 'Kirim Ulang' : 'Kirim Kode'),
+                      ),
+                    ),
+                  ],
+                ),
+                if (_codeSent)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(
+                      'Kode dikirim ke ${_emailController.text.trim()}',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ),
+              ],
+
               const SizedBox(height: 32),
               SizedBox(
                 width: double.infinity,
