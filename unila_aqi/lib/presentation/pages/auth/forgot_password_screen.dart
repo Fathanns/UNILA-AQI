@@ -124,7 +124,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                         labelText: 'Email',
                         prefixIcon: Icon(Icons.email),
                         border: OutlineInputBorder(),
-                        hintText: 'admin@unila-aqi.ac.id',
+                        
                       ),
                       validator: Validators.validateEmail,
                       keyboardType: TextInputType.emailAddress,

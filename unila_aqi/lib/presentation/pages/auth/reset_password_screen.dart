@@ -4,6 +4,8 @@ import '../../../core/utils/helpers.dart';
 import '../../../core/utils/validators.dart';
 import '../../../core/services/api_service.dart';
 import 'admin_login_screen.dart';
+import 'package:flutter/services.dart';
+
 
 class ResetPasswordScreen extends StatefulWidget {
   final String email;
@@ -16,12 +18,10 @@ class ResetPasswordScreen extends StatefulWidget {
 
 class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
   final _formKey = GlobalKey<FormState>();
-  final List<TextEditingController> _codeControllers =
-      List.generate(6, (index) => TextEditingController());
+  final _codeController = TextEditingController();   // ✅ ganti 6 controller
+  final _codeFocusNode = FocusNode();    
   final _newPasswordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
-  final List<FocusNode> _codeFocusNodes =
-      List.generate(6, (index) => FocusNode());
 
   bool _isLoading = false;
   bool _obscureNewPassword = true;
@@ -30,32 +30,20 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
   bool _canResend = false;
 
   @override
-  void initState() {
-    super.initState();
-    _startCountdown();
-    // Setup focus nodes untuk auto pindah ke field berikutnya
-    for (int i = 0; i < 5; i++) {
-      _codeFocusNodes[i].addListener(() {
-        if (!_codeFocusNodes[i].hasFocus &&
-            _codeControllers[i].text.length == 1) {
-          FocusScope.of(context).requestFocus(_codeFocusNodes[i + 1]);
-        }
-      });
-    }
-  }
+void initState() {
+  super.initState();
+  _codeController.addListener(() => setState(() {})); // update kotak visual
+  _startCountdown();
+}
 
   @override
-  void dispose() {
-    for (var controller in _codeControllers) {
-      controller.dispose();
-    }
-    for (var focusNode in _codeFocusNodes) {
-      focusNode.dispose();
-    }
-    _newPasswordController.dispose();
-    _confirmPasswordController.dispose();
-    super.dispose();
-  }
+void dispose() {
+  _codeController.dispose();
+  _codeFocusNode.dispose();
+  _newPasswordController.dispose();
+  _confirmPasswordController.dispose();
+  super.dispose();
+}
 
   // ============================================================
   // COUNTDOWN UNTUK KIRIM ULANG KODE
@@ -79,22 +67,17 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
   // RESET PASSWORD (VALIDASI KODE + SIMPAN PASSWORD BARU)
   // ============================================================
   Future<void> _handleResetPassword() async {
-    if (!_formKey.currentState!.validate()) return;
+  if (!_formKey.currentState!.validate()) return;
 
-    // Gabungkan 6 digit kode dari masing-masing field
-    String code = '';
-    for (var controller in _codeControllers) {
-      code += controller.text;
-    }
-
-    if (code.length != 6) {
-      Helpers.showSnackBar(
-        context,
-        'Masukkan 6 digit kode dengan lengkap',
-        isError: true,
-      );
-      return;
-    }
+  final code = _codeController.text;   // ✅ langsung
+  if (code.length != 6) {
+    Helpers.showSnackBar(
+      context,
+      'Masukkan 6 digit kode dengan lengkap',
+      isError: true,
+    );
+    return;
+  }
 
     setState(() => _isLoading = true);
 
@@ -311,42 +294,61 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                       style: TextStyle(fontSize: 16),
                     ),
                     const SizedBox(height: 16),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: List.generate(6, (index) {
-                        return SizedBox(
-                          width: 50,
-                          child: TextFormField(
-                            controller: _codeControllers[index],
-                            focusNode: _codeFocusNodes[index],
-                            decoration: InputDecoration(
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              counterText: '',
-                              contentPadding: const EdgeInsets.symmetric(
-                                vertical: 12,
-                              ),
-                            ),
-                            textAlign: TextAlign.center,
-                            keyboardType: TextInputType.number,
-                            maxLength: 1,
-                            onChanged: (value) {
-                              if (value.length == 1 && index < 5) {
-                                FocusScope.of(context)
-                                    .requestFocus(_codeFocusNodes[index + 1]);
-                              }
-                            },
-                            validator: (value) {
-                              if (value == null || value.isEmpty) {
-                                return '';
-                              }
-                              return null;
-                            },
-                          ),
-                        );
-                      }),
-                    ),
+                    GestureDetector(
+  onTap: () => _codeFocusNode.requestFocus(),
+  child: Stack(
+    children: [
+      // TextField asli, disembunyikan (opacity 0) tapi tetap menerima input
+      Opacity(
+        opacity: 0,
+        child: TextField(
+          controller: _codeController,
+          focusNode: _codeFocusNode,
+          keyboardType: TextInputType.number,
+          maxLength: 6,
+          inputFormatters: [
+            FilteringTextInputFormatter.digitsOnly, // hanya angka
+          ],
+          decoration: const InputDecoration(counterText: ''),
+        ),
+      ),
+
+      // Kotak visual 6 digit
+      Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        children: List.generate(6, (index) {
+          final hasChar = _codeController.text.length > index;
+          final isCursorHere =
+              _codeFocusNode.hasFocus &&
+              _codeController.text.length == index;
+          final isFocused = isCursorHere;
+
+          return Container(
+            width: 50,
+            height: 56,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: isFocused
+                    ? AppColors.primary
+                    : AppColors.border,
+                width: isFocused ? 2 : 1,
+              ),
+            ),
+            alignment: Alignment.center,
+            child: Text(
+              hasChar ? _codeController.text[index] : '',
+              style: const TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          );
+        }),
+      ),
+    ],
+  ),
+),
                     const SizedBox(height: 32),
 
                     // New Password

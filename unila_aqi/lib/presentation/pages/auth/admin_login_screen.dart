@@ -42,12 +42,15 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
     );
 
     if (mounted) {
-      // Navigate to admin dashboard
       Navigator.pushReplacementNamed(context, '/admin-dashboard');
     }
   } catch (e) {
     if (mounted) {
-      Helpers.showSnackBar(context, 'Login gagal: $e', isError: true);
+      Helpers.showSnackBar(
+        context,
+        'Username atau password yang Anda masukkan salah.',
+        isError: true,
+      );
     }
   } finally {
     if (mounted) {
@@ -148,8 +151,7 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                         border: const OutlineInputBorder(),
                       ),
                       obscureText: _obscurePassword,
-                      validator: Validators.validatePassword,
-                      textInputAction: TextInputAction.done,
+                      validator: (value) => Validators.validateRequired(value, 'Password'),
                     ),
                     const SizedBox(height: 24),
                     // Login Button
