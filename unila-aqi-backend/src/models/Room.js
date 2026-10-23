@@ -24,10 +24,6 @@ const roomSchema = new mongoose.Schema({
     type: String,
     default: null
   },
-  isActive: {
-    type: Boolean,
-    default: true
-  },
   currentAQI: {
     type: Number,
     default: 0
@@ -49,16 +45,5 @@ const roomSchema = new mongoose.Schema({
     default: Date.now
   }
 });
-
-// KOMENTARI SEMUA HOOKS UNTUK SEKARANG
-// buildingSchema.pre('save', function(next) {
-//   this.updatedAt = Date.now();
-//   next();
-// });
-
-// buildingSchema.pre('findOneAndUpdate', function(next) {
-//   this.set({ updatedAt: Date.now() });
-//   next();
-// });
 
 module.exports = mongoose.model('Room', roomSchema);

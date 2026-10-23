@@ -787,22 +787,17 @@ const iotDeviceSchema = new mongoose.Schema({
     type: String,
     trim: true
   },
-  // HAPUS field building dan buildingName
   apiEndpoint: {
     type: String,
     required: true,
     trim: true
-  },
-  isActive: {
-    type: Boolean,
-    default: true
   },
   lastUpdate: {
     type: Date
   },
   status: {
     type: String,
-    enum: ['online', 'offline', 'error'],
+    enum: ['online', 'offline'],
     default: 'offline'
   },
   createdAt: {
@@ -846,10 +841,6 @@ const roomSchema = new mongoose.Schema({
     type: String,
     default: null
   },
-  isActive: {
-    type: Boolean,
-    default: true
-  },
   currentAQI: {
     type: Number,
     default: 0
@@ -871,17 +862,6 @@ const roomSchema = new mongoose.Schema({
     default: Date.now
   }
 });
-
-// KOMENTARI SEMUA HOOKS UNTUK SEKARANG
-// buildingSchema.pre('save', function(next) {
-//   this.updatedAt = Date.now();
-//   next();
-// });
-
-// buildingSchema.pre('findOneAndUpdate', function(next) {
-//   this.set({ updatedAt: Date.now() });
-//   next();
-// });
 
 module.exports = mongoose.model('Room', roomSchema);
 
@@ -1084,7 +1064,7 @@ const { authMiddleware, adminMiddleware } = require('../middleware/authMiddlewar
 router.get('/', authMiddleware, async (req, res) => {
   try {
     const devices = await IoTDevice.find().sort({ name: 1 });
-    
+
     res.json({
       success: true,
       count: devices.length,
@@ -1103,14 +1083,14 @@ router.get('/', authMiddleware, async (req, res) => {
 router.get('/:id', authMiddleware, async (req, res) => {
   try {
     const device = await IoTDevice.findById(req.params.id);
-    
+
     if (!device) {
       return res.status(404).json({
         success: false,
         message: 'IoT device not found'
       });
     }
-    
+
     res.json({
       success: true,
       data: device
@@ -1127,24 +1107,22 @@ router.get('/:id', authMiddleware, async (req, res) => {
 // POST create IoT device (admin only)
 router.post('/', authMiddleware, adminMiddleware, async (req, res) => {
   try {
-    const { name, description, apiEndpoint, isActive } = req.body;
-    
-    // Validate required fields
+    const { name, description, apiEndpoint } = req.body;
+
     if (!name) {
       return res.status(400).json({
         success: false,
         message: 'Device name is required'
       });
     }
-    
+
     if (!apiEndpoint) {
       return res.status(400).json({
         success: false,
         message: 'API endpoint is required'
       });
     }
-    
-    // Validate API endpoint format (basic URL validation)
+
     try {
       new URL(apiEndpoint);
     } catch (error) {
@@ -1153,8 +1131,7 @@ router.post('/', authMiddleware, adminMiddleware, async (req, res) => {
         message: 'Invalid API endpoint URL format'
       });
     }
-    
-    // Check if device name already exists
+
     const existingDevice = await IoTDevice.findOne({ name: name.trim() });
     if (existingDevice) {
       return res.status(400).json({
@@ -1162,19 +1139,18 @@ router.post('/', authMiddleware, adminMiddleware, async (req, res) => {
         message: 'Device name already exists'
       });
     }
-    
+
     const device = new IoTDevice({
       name: name.trim(),
       description: description?.trim(),
       apiEndpoint: apiEndpoint.trim(),
-      isActive: isActive !== undefined ? isActive : true,
       status: 'offline',
       createdAt: new Date(),
       updatedAt: new Date()
     });
-    
+
     await device.save();
-    
+
     res.status(201).json({
       success: true,
       message: 'IoT device created successfully',
@@ -1192,18 +1168,17 @@ router.post('/', authMiddleware, adminMiddleware, async (req, res) => {
 // PUT update IoT device (admin only)
 router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
   try {
-    const { name, description, apiEndpoint, isActive } = req.body;
-    
+    const { name, description, apiEndpoint } = req.body;
+
     const device = await IoTDevice.findById(req.params.id);
-    
+
     if (!device) {
       return res.status(404).json({
         success: false,
         message: 'IoT device not found'
       });
     }
-    
-    // Validate API endpoint format if provided
+
     if (apiEndpoint) {
       try {
         new URL(apiEndpoint);
@@ -1214,14 +1189,13 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
         });
       }
     }
-    
-    // Check if new device name already exists (if changing)
+
     if (name && name !== device.name) {
-      const existingDevice = await IoTDevice.findOne({ 
+      const existingDevice = await IoTDevice.findOne({
         name: name.trim(),
         _id: { $ne: device._id }
       });
-      
+
       if (existingDevice) {
         return res.status(400).json({
           success: false,
@@ -1229,16 +1203,14 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
         });
       }
     }
-    
-    // Update fields
+
     if (name) device.name = name.trim();
     if (description !== undefined) device.description = description?.trim();
     if (apiEndpoint) device.apiEndpoint = apiEndpoint.trim();
-    if (isActive !== undefined) device.isActive = isActive;
     device.updatedAt = new Date();
-    
+
     await device.save();
-    
+
     res.json({
       success: true,
       message: 'IoT device updated successfully',
@@ -1257,18 +1229,17 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
 router.delete('/:id', authMiddleware, adminMiddleware, async (req, res) => {
   try {
     const device = await IoTDevice.findById(req.params.id);
-    
+
     if (!device) {
       return res.status(404).json({
         success: false,
         message: 'IoT device not found'
       });
     }
-    
-    // Check if device is being used by any room
+
     const Room = require('../models/Room');
     const roomCount = await Room.countDocuments({ iotDeviceId: device._id.toString() });
-    
+
     if (roomCount > 0) {
       return res.status(400).json({
         success: false,
@@ -1276,9 +1247,9 @@ router.delete('/:id', authMiddleware, adminMiddleware, async (req, res) => {
         roomCount: roomCount
       });
     }
-    
+
     await device.deleteOne();
-    
+
     res.json({
       success: true,
       message: 'IoT device deleted successfully'
@@ -1292,34 +1263,34 @@ router.delete('/:id', authMiddleware, adminMiddleware, async (req, res) => {
   }
 });
 
-// PATCH update device status (for simulation or real IoT device)
+// PATCH update device status
 router.patch('/:id/status', authMiddleware, adminMiddleware, async (req, res) => {
   try {
     const { status, lastUpdate } = req.body;
-    
+
     const device = await IoTDevice.findById(req.params.id);
-    
+
     if (!device) {
       return res.status(404).json({
         success: false,
         message: 'IoT device not found'
       });
     }
-    
-    const validStatuses = ['online', 'offline', 'error'];
+
+    const validStatuses = ['online', 'offline'];
     if (status && !validStatuses.includes(status)) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid status. Must be online, offline, or error'
+        message: 'Invalid status. Must be online or offline'
       });
     }
-    
+
     if (status) device.status = status;
     if (lastUpdate) device.lastUpdate = new Date(lastUpdate);
     device.updatedAt = new Date();
-    
+
     await device.save();
-    
+
     res.json({
       success: true,
       message: 'Device status updated successfully',
@@ -1334,11 +1305,12 @@ router.patch('/:id/status', authMiddleware, adminMiddleware, async (req, res) =>
   }
 });
 
+
 router.post('/force-poll', authMiddleware, adminMiddleware, async (req, res) => {
   try {
     const iotService = require('../services/iotService');
     const result = await iotService.forcePollAll();
-    
+
     res.json({
       success: true,
       message: 'Force polling initiated',
@@ -1353,20 +1325,19 @@ router.post('/force-poll', authMiddleware, adminMiddleware, async (req, res) => 
   }
 });
 
-// Get IoT service status
 router.get('/service/status', authMiddleware, async (req, res) => {
   try {
     const iotService = require('../services/iotService');
-    const simulationService = require('../services/simulationService'); // TAMBAH
-    
+    const simulationService = require('../services/simulationService');
+
     const iotStatus = iotService.getStatus();
-    const simulationStatus = simulationService.getStatus(); // TAMBAH
-    
+    const simulationStatus = simulationService.getStatus();
+
     res.json({
       success: true,
       data: {
         iot: iotStatus,
-        simulation: simulationStatus, // TAMBAH
+        simulation: simulationStatus,
         summary: {
           iotRunning: iotStatus.isRunning,
           simulationRunning: simulationStatus.isRunning,
@@ -1388,18 +1359,16 @@ module.exports = router;
 ---------------------------------------------------------------------------------------------------------------------------------------
 src/routes/roomRoutes.js
 
-// File: src/routes/roomRoutes.js
 const express = require('express');
 const router = express.Router();
 const Room = require('../models/Room');
 const Building = require('../models/Building');
 const { authMiddleware, adminMiddleware } = require('../middleware/authMiddleware');
 
-// Helper untuk broadcast room update - DIPERBAIKI LENGKAP
 const broadcastRoomUpdate = (io, room, action, oldData = null) => {
   if (io) {
     const updateData = {
-      action: action, // 'created', 'updated', 'deleted'
+      action: action,
       room: {
         id: room._id,
         name: room.name,
@@ -1407,28 +1376,22 @@ const broadcastRoomUpdate = (io, room, action, oldData = null) => {
         buildingName: room.buildingName,
         dataSource: room.dataSource,
         iotDeviceId: room.iotDeviceId,
-        isActive: room.isActive,
         currentAQI: room.currentAQI,
         currentData: room.currentData,
         createdAt: room.createdAt,
         updatedAt: room.updatedAt
       },
-      oldData: oldData, // Untuk tracking perubahan
+      oldData: oldData,
       timestamp: new Date()
     };
-    
-    // Broadcast ke channel spesifik room
+
     io.to(room._id.toString()).emit('room-updated', updateData);
-    
-    // Broadcast ke semua client di dashboard
     io.emit('dashboard-room-updated', updateData);
-    
-    // 🔥 PERBAIKAN UTAMA: Broadcast perubahan spesifik jika ada
+
     if (oldData) {
-      // Jika nama berubah
       if (oldData.name !== room.name) {
         console.log(`🔄 Broadcasting room name change: ${oldData.name} -> ${room.name}`);
-        
+
         io.emit('room-name-changed', {
           roomId: room._id,
           oldName: oldData.name,
@@ -1436,8 +1399,7 @@ const broadcastRoomUpdate = (io, room, action, oldData = null) => {
           buildingName: room.buildingName,
           timestamp: new Date()
         });
-        
-        // Juga broadcast ke channel spesifik room
+
         io.to(room._id.toString()).emit('room-name-updated', {
           roomId: room._id,
           oldName: oldData.name,
@@ -1446,8 +1408,7 @@ const broadcastRoomUpdate = (io, room, action, oldData = null) => {
           timestamp: new Date()
         });
       }
-      
-      // Jika building berubah
+
       if (oldData.buildingId !== room.building.toString()) {
         io.emit('room-building-changed', {
           roomId: room._id,
@@ -1458,20 +1419,8 @@ const broadcastRoomUpdate = (io, room, action, oldData = null) => {
           timestamp: new Date()
         });
       }
-      
-      // Jika status aktif berubah
-      if (oldData.isActive !== room.isActive) {
-        io.emit('room-status-changed', {
-          roomId: room._id,
-          oldStatus: oldData.isActive,
-          newStatus: room.isActive,
-          roomName: room.name,
-          buildingName: room.buildingName,
-          timestamp: new Date()
-        });
-      }
     }
-    
+
     console.log(`📢 Broadcast room ${action}: ${room.name} (${room._id})`);
   }
 };
@@ -1482,7 +1431,7 @@ router.get('/', async (req, res) => {
     const rooms = await Room.find()
       .populate('building', 'name code')
       .sort({ name: 1 });
-    
+
     res.json({
       success: true,
       count: rooms.length,
@@ -1502,14 +1451,14 @@ router.get('/:id', async (req, res) => {
   try {
     const room = await Room.findById(req.params.id)
       .populate('building', 'name code');
-    
+
     if (!room) {
       return res.status(404).json({
         success: false,
         message: 'Room not found'
       });
     }
-    
+
     res.json({
       success: true,
       data: room
@@ -1526,25 +1475,23 @@ router.get('/:id', async (req, res) => {
 // POST create room (admin only)
 router.post('/', authMiddleware, adminMiddleware, async (req, res) => {
   try {
-    const { name, buildingId, dataSource, iotDeviceId, isActive } = req.body;
+    const { name, buildingId, dataSource, iotDeviceId } = req.body;
     const io = req.app.get('socketio');
-    
-    // Validate required fields
+
     if (!name) {
       return res.status(400).json({
         success: false,
         message: 'Room name is required'
       });
     }
-    
+
     if (!buildingId) {
       return res.status(400).json({
         success: false,
         message: 'Building ID is required'
       });
     }
-    
-    // Check if building exists
+
     const building = await Building.findById(buildingId);
     if (!building) {
       return res.status(404).json({
@@ -1552,8 +1499,7 @@ router.post('/', authMiddleware, adminMiddleware, async (req, res) => {
         message: 'Building not found'
       });
     }
-    
-    // Validate dataSource
+
     const validDataSources = ['simulation', 'iot'];
     if (dataSource && !validDataSources.includes(dataSource)) {
       return res.status(400).json({
@@ -1561,36 +1507,32 @@ router.post('/', authMiddleware, adminMiddleware, async (req, res) => {
         message: 'Invalid data source. Must be "simulation" or "iot"'
       });
     }
-    
-    // For IoT source, iotDeviceId is required
+
     if (dataSource === 'iot' && !iotDeviceId) {
       return res.status(400).json({
         success: false,
         message: 'IoT Device ID is required for IoT data source'
       });
     }
-    
-    // Check if room name already exists in the same building
+
     const existingRoom = await Room.findOne({
       name: name.trim(),
       building: buildingId
     });
-    
+
     if (existingRoom) {
       return res.status(400).json({
         success: false,
         message: 'Room name already exists in this building'
       });
     }
-    
-    // Create room with synced building name
+
     const room = new Room({
       name: name.trim(),
       building: buildingId,
-      buildingName: building.name, // Get building name from Building collection
+      buildingName: building.name,
       dataSource: dataSource || 'simulation',
       iotDeviceId: dataSource === 'iot' ? iotDeviceId : null,
-      isActive: isActive !== undefined ? isActive : true,
       currentAQI: 0,
       currentData: {
         pm25: 0,
@@ -1603,18 +1545,16 @@ router.post('/', authMiddleware, adminMiddleware, async (req, res) => {
       createdAt: new Date(),
       updatedAt: new Date()
     });
-    
+
     await room.save();
-    
-    // Update building room count
+
     building.roomCount = await Room.countDocuments({ building: buildingId });
     await building.save();
-    
-    // 🔥 PERBAIKAN: Broadcast room creation
+
     if (io) {
       broadcastRoomUpdate(io, room, 'created');
     }
-    
+
     res.status(201).json({
       success: true,
       message: 'Room created successfully',
@@ -1629,37 +1569,32 @@ router.post('/', authMiddleware, adminMiddleware, async (req, res) => {
   }
 });
 
-// PUT update room (admin only) - PERBAIKAN UTAMA LENGKAP
+// PUT update room (admin only)
 router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
   try {
-    const { name, buildingId, dataSource, iotDeviceId, isActive } = req.body;
+    const { name, buildingId, dataSource, iotDeviceId } = req.body;
     const io = req.app.get('socketio');
-    
+
     const room = await Room.findById(req.params.id)
       .populate('building', 'name');
-    
+
     if (!room) {
       return res.status(404).json({
         success: false,
         message: 'Room not found'
       });
     }
-    
-    // 🔥 SIMPAN DATA LAMA UNTUK PERBANDINGAN
+
     const oldData = {
       name: room.name,
       buildingId: room.building._id ? room.building._id.toString() : room.building.toString(),
       buildingName: room.buildingName,
       dataSource: room.dataSource,
-      isActive: room.isActive,
       iotDeviceId: room.iotDeviceId
     };
-    
+
     console.log(`🔄 Room update request for: ${room.name}`);
-    console.log(`   Old data:`, oldData);
-    console.log(`   New data:`, { name, buildingId, dataSource, iotDeviceId, isActive });
-    
-    // Validate dataSource if provided
+
     const validDataSources = ['simulation', 'iot'];
     if (dataSource && !validDataSources.includes(dataSource)) {
       return res.status(400).json({
@@ -1667,20 +1602,18 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
         message: 'Invalid data source. Must be "simulation" or "iot"'
       });
     }
-    
-    // For IoT source, iotDeviceId is required
+
     if (dataSource === 'iot' && !iotDeviceId) {
       return res.status(400).json({
         success: false,
         message: 'IoT Device ID is required for IoT data source'
       });
     }
-    
+
     let buildingChanged = false;
     let oldBuildingId = null;
     let newBuilding = null;
-    
-    // If building is being changed
+
     if (buildingId && buildingId !== room.building.toString()) {
       newBuilding = await Building.findById(buildingId);
       if (!newBuilding) {
@@ -1689,34 +1622,31 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
           message: 'Building not found'
         });
       }
-      
-      // Check if room name already exists in the new building
+
       const existingRoom = await Room.findOne({
         name: name || room.name,
         building: buildingId,
         _id: { $ne: room._id }
       });
-      
+
       if (existingRoom) {
         return res.status(400).json({
           success: false,
           message: 'Room name already exists in the new building'
         });
       }
-      
+
       oldBuildingId = room.building;
       room.building = buildingId;
-      room.buildingName = newBuilding.name; // Update building name from new building
+      room.buildingName = newBuilding.name;
       buildingChanged = true;
-      console.log(`   Building changed: ${oldData.buildingName} -> ${newBuilding.name}`);
     } else if (name && name !== room.name) {
-      // Check if room name already exists in the same building
       const existingRoom = await Room.findOne({
         name: name,
         building: room.building,
         _id: { $ne: room._id }
       });
-      
+
       if (existingRoom) {
         return res.status(400).json({
           success: false,
@@ -1724,47 +1654,35 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
         });
       }
     }
-    
-    // Update fields
+
     if (name) {
-      console.log(`   Name changed: ${room.name} -> ${name}`);
       room.name = name.trim();
     }
     if (dataSource !== undefined) {
-      console.log(`   Data source changed: ${room.dataSource} -> ${dataSource}`);
       room.dataSource = dataSource;
       room.iotDeviceId = dataSource === 'iot' ? iotDeviceId : null;
     }
     if (iotDeviceId !== undefined && dataSource === 'iot') {
       room.iotDeviceId = iotDeviceId;
     }
-    if (isActive !== undefined) {
-      console.log(`   Status changed: ${room.isActive} -> ${isActive}`);
-      room.isActive = isActive;
-    }
     room.updatedAt = new Date();
-    
-    // If building didn't change, ensure buildingName is synced
+
     if (!buildingChanged) {
       const currentBuilding = await Building.findById(room.building);
       if (currentBuilding && room.buildingName !== currentBuilding.name) {
-        console.log(`   Syncing building name: ${room.buildingName} -> ${currentBuilding.name}`);
         room.buildingName = currentBuilding.name;
       }
     }
-    
+
     await room.save();
-    
-    // Update building room counts if building changed
+
     if (buildingChanged) {
-      // Update old building count
       if (oldBuildingId) {
         const oldBuilding = await Building.findById(oldBuildingId);
         if (oldBuilding) {
           oldBuilding.roomCount = await Room.countDocuments({ building: oldBuildingId });
           await oldBuilding.save();
-          
-          // Broadcast old building update
+
           if (io) {
             io.emit('building-updated', {
               action: 'room-removed',
@@ -1776,13 +1694,11 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
           }
         }
       }
-      
-      // Update new building count
+
       if (newBuilding) {
         newBuilding.roomCount = await Room.countDocuments({ building: buildingId });
         await newBuilding.save();
-        
-        // Broadcast new building update
+
         if (io) {
           io.emit('building-updated', {
             action: 'room-added',
@@ -1794,24 +1710,17 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
         }
       }
     } else {
-      // Update current building count
       const currentBuilding = await Building.findById(room.building);
       if (currentBuilding) {
         currentBuilding.roomCount = await Room.countDocuments({ building: room.building });
         await currentBuilding.save();
       }
     }
-    
-    // 🔥 PERBAIKAN UTAMA: Broadcast room update melalui WebSocket
+
     if (io) {
-      console.log(`📢 Broadcasting room update via WebSocket...`);
       broadcastRoomUpdate(io, room, 'updated', oldData);
-      
-      // Special handling for name changes
+
       if (name && name !== oldData.name) {
-        console.log(`   🚀 Sending room-name-changed event`);
-        
-        // Additional broadcast for immediate UI update
         io.emit('room-name-changed-immediate', {
           roomId: room._id,
           oldName: oldData.name,
@@ -1821,17 +1730,13 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
         });
       }
     }
-    
-    // Log perubahan
+
     const changes = {
       nameChanged: name && name !== oldData.name,
       buildingChanged: buildingChanged,
-      dataSourceChanged: dataSource && dataSource !== oldData.dataSource,
-      statusChanged: isActive !== undefined && isActive !== oldData.isActive
+      dataSourceChanged: dataSource && dataSource !== oldData.dataSource
     };
-    
-    console.log(`✅ Room updated successfully. Changes:`, changes);
-    
+
     res.json({
       success: true,
       message: 'Room updated successfully',
@@ -1853,30 +1758,28 @@ router.delete('/:id', authMiddleware, adminMiddleware, async (req, res) => {
   try {
     const io = req.app.get('socketio');
     const room = await Room.findById(req.params.id);
-    
+
     if (!room) {
       return res.status(404).json({
         success: false,
         message: 'Room not found'
       });
     }
-    
+
     const buildingId = room.building;
     const roomData = {
       id: room._id,
       name: room.name,
       buildingName: room.buildingName
     };
-    
+
     await room.deleteOne();
-    
-    // Update building room count
+
     const building = await Building.findById(buildingId);
     if (building) {
       building.roomCount = await Room.countDocuments({ building: buildingId });
       await building.save();
-      
-      // Broadcast building update
+
       if (io) {
         io.emit('building-updated', {
           action: 'room-deleted',
@@ -1886,8 +1789,7 @@ router.delete('/:id', authMiddleware, adminMiddleware, async (req, res) => {
         });
       }
     }
-    
-    // Broadcast room deletion
+
     if (io) {
       io.emit('room-deleted', {
         roomId: room._id,
@@ -1895,15 +1797,14 @@ router.delete('/:id', authMiddleware, adminMiddleware, async (req, res) => {
         buildingName: room.buildingName,
         timestamp: new Date()
       });
-      
-      // Juga kirim ke channel spesifik room
+
       io.to(room._id.toString()).emit('room-updated', {
         action: 'deleted',
         room: roomData,
         timestamp: new Date()
       });
     }
-    
+
     res.json({
       success: true,
       message: 'Room deleted successfully'
@@ -1917,32 +1818,31 @@ router.delete('/:id', authMiddleware, adminMiddleware, async (req, res) => {
   }
 });
 
-// 🔥 BARU: Endpoint untuk force refresh room data
+// Force refresh
 router.post('/:id/force-refresh', authMiddleware, adminMiddleware, async (req, res) => {
   try {
     const io = req.app.get('socketio');
     const room = await Room.findById(req.params.id);
-    
+
     if (!room) {
       return res.status(404).json({
         success: false,
         message: 'Room not found'
       });
     }
-    
+
     if (io) {
-      // Broadcast refresh event
       io.emit('room-force-refresh', {
         roomId: room._id,
         roomName: room.name,
         timestamp: new Date()
       });
-      
+
       io.to(room._id.toString()).emit('room-refresh-requested', {
         timestamp: new Date()
       });
     }
-    
+
     res.json({
       success: true,
       message: 'Force refresh broadcasted',
@@ -1958,28 +1858,27 @@ router.post('/:id/force-refresh', authMiddleware, adminMiddleware, async (req, r
   }
 });
 
-// 🔥 BARU: Endpoint untuk sync room dengan building name
+// Sync building name
 router.post('/:id/sync-building', authMiddleware, adminMiddleware, async (req, res) => {
   try {
     const io = req.app.get('socketio');
     const room = await Room.findById(req.params.id).populate('building', 'name');
-    
+
     if (!room) {
       return res.status(404).json({
         success: false,
         message: 'Room not found'
       });
     }
-    
+
     const oldBuildingName = room.buildingName;
     const newBuildingName = room.building.name;
-    
+
     if (oldBuildingName !== newBuildingName) {
       room.buildingName = newBuildingName;
       room.updatedAt = new Date();
       await room.save();
-      
-      // Broadcast update
+
       if (io) {
         io.emit('room-building-synced', {
           roomId: room._id,
@@ -1988,7 +1887,7 @@ router.post('/:id/sync-building', authMiddleware, adminMiddleware, async (req, r
           timestamp: new Date()
         });
       }
-      
+
       res.json({
         success: true,
         message: 'Building name synced',
@@ -2390,12 +2289,9 @@ class IoTService {
     this.task = null;
     this.io = null;
     this.deviceLastData = new Map();
-    this.pollingInterval = 10000; // 60 detik untuk IoT
+    this.pollingInterval = 10000;
   }
 
-  /**
-   * Start IoT polling service
-   */
   start(io) {
     if (this.isRunning) {
       console.log('⚠️ IoT Service is already running');
@@ -2405,7 +2301,6 @@ class IoTService {
     this.io = io;
     console.log(`🚀 Starting IoT Service (polling every ${this.pollingInterval/1000}s)...`);
 
-    // Schedule task to run every 10 seconds
     this.task = cron.schedule('*/10 * * * * *', async () => {
       await this.pollAllIoTDevices();
     });
@@ -2413,13 +2308,9 @@ class IoTService {
     this.isRunning = true;
     console.log('✅ IoT Service started');
 
-    // Initial poll immediately
     this.pollAllIoTDevices();
   }
 
-  /**
-   * Stop IoT service
-   */
   stop() {
     if (this.task) {
       this.task.stop();
@@ -2428,25 +2319,18 @@ class IoTService {
     }
   }
 
-  /**
-   * Poll all IoT devices
-   */
   async pollAllIoTDevices() {
     try {
-      // Get all active IoT devices
-      const devices = await IoTDevice.find({ 
-        isActive: true
-      });
+      const devices = await IoTDevice.find({});
 
       if (devices.length === 0) {
-        console.log('ℹ️ No active IoT devices to poll');
+        console.log('ℹ️ No IoT devices to poll');
         return;
       }
 
       console.log(`🔄 Polling ${devices.length} IoT devices...`);
 
-      // Poll devices in parallel
-      const pollPromises = devices.map(device => 
+      const pollPromises = devices.map(device =>
         this.pollDevice(device).catch(error => {
           console.error(`❌ Error polling device ${device.name}:`, error.message);
           return null;
@@ -2454,79 +2338,63 @@ class IoTService {
       );
 
       const results = await Promise.allSettled(pollPromises);
-      
+
       const successfulPolls = results.filter(r => r.status === 'fulfilled' && r.value).length;
       console.log(`✅ IoT polling completed: ${successfulPolls}/${devices.length} successful`);
       console.log(`✅ Updated at ${new Date().toLocaleTimeString()}`);
-      
     } catch (error) {
       console.error('❌ Error in pollAllIoTDevices:', error.message);
     }
   }
 
-  /**
-   * Poll single IoT device
-   */
   async pollDevice(device) {
     try {
       console.log(`📡 Polling device: ${device.name} (${device.apiEndpoint})`);
       const response = await axios.get(device.apiEndpoint, { timeout: 5000 });
-      
+
       if (response.data?.success === true) {
         const iotData = response.data.data;
-        
-        // Validate IoT data structure
+
         if (!this.isValidIoTData(iotData)) {
           throw new Error('Invalid IoT data structure');
         }
-        
-        // Check if data has changed
+
         const lastData = this.deviceLastData.get(device._id.toString());
         const hasChanged = this._hasDataChanged(lastData, iotData);
-        
-        // Save last data
+
         this.deviceLastData.set(device._id.toString(), iotData);
-        
-        // Update device status
+
         device.status = 'online';
         device.lastUpdate = new Date();
         await device.save();
-        
-        // Broadcast if data changed
+
         if (hasChanged || !lastData) {
           console.log(`🔄 Data changed for device ${device.name}, broadcasting...`);
-          
-          // Find rooms using this device
-          const rooms = await Room.find({ 
-            iotDeviceId: device._id.toString(),
-            isActive: true 
+
+          const rooms = await Room.find({
+            iotDeviceId: device._id.toString()
           });
-          
-          // Update and broadcast each room
+
           for (const room of rooms) {
             await this.updateRoomFromIoT(room, iotData, device.name);
           }
         } else {
           console.log(`ℹ️ No data change for device ${device.name}, skipping broadcast`);
         }
-        
+
         return { success: true, changed: hasChanged };
       }
     } catch (error) {
-      // Handle error
-      device.status = error.code === 'ECONNABORTED' ? 'offline' : 'error';
+      device.status = 'offline';
       await device.save();
-      
+
       console.error(`❌ Error polling device ${device.name}:`, error.message);
       return { success: false, error: error.message };
     }
   }
 
-  /**
-   * Validate IoT data structure
-   */
   isValidIoTData(data) {
-    return data && 
+    return data &&
            typeof data.aqi === 'number' &&
            typeof data.pm25 === 'number' &&
            typeof data.pm10 === 'number' &&
@@ -2535,12 +2403,9 @@ class IoTService {
            typeof data.humidity === 'number';
   }
 
-  /**
-   * Check if data has changed significantly
-   */
   _hasDataChanged(oldData, newData) {
     if (!oldData || !newData) return true;
-    
+
     const thresholds = {
       aqi: 1,
       pm25: 1.0,
@@ -2549,7 +2414,7 @@ class IoTService {
       temperature: 0.5,
       humidity: 1.0
     };
-    
+
     return (
       Math.abs(newData.aqi - (oldData.aqi || 0)) > thresholds.aqi ||
       Math.abs(newData.pm25 - (oldData.pm25 || 0)) > thresholds.pm25 ||
@@ -2560,12 +2425,8 @@ class IoTService {
     );
   }
 
-  /**
-   * Update room from IoT data
-   */
   async updateRoomFromIoT(room, iotData, deviceName) {
     try {
-      // Check if room data has changed
       const currentData = room.currentData;
       const hasRoomDataChanged = this._hasDataChanged(
         {
@@ -2578,15 +2439,14 @@ class IoTService {
         },
         iotData
       );
-      
+
       if (!hasRoomDataChanged) {
         console.log(`ℹ️ Room ${room.name} data unchanged, skipping update`);
         return;
       }
-      
-      // Update room data
+
       const aqiInfo = getAQICategory(iotData.aqi);
-      
+
       room.currentAQI = iotData.aqi;
       room.currentData = {
         pm25: iotData.pm25,
@@ -2597,10 +2457,9 @@ class IoTService {
         updatedAt: new Date()
       };
       room.updatedAt = new Date();
-      
+
       await room.save();
-      
-      // Save historical data
+
       const historicalData = new SensorData({
         roomId: room._id,
         roomName: room.name,
@@ -2609,22 +2468,17 @@ class IoTService {
         category: aqiInfo.category,
         timestamp: new Date()
       });
-      
+
       await historicalData.save();
-      
-      // Broadcast via WebSocket
+
       this.broadcastRoomUpdate(room, iotData, 'iot', deviceName);
-      
+
       console.log(`✅ Updated & broadcasted IoT room ${room.name}: AQI ${iotData.aqi}`);
-      
     } catch (error) {
       console.error(`❌ Error updating IoT room ${room.name}:`, error.message);
     }
   }
 
-  /**
-   * Broadcast room update via Socket.io
-   */
   broadcastRoomUpdate(room, data, source, deviceName = null) {
     if (this.io) {
       const updateData = {
@@ -2639,10 +2493,8 @@ class IoTService {
         deviceName: deviceName
       };
 
-      // Broadcast to room-specific channel
       this.io.to(room._id.toString()).emit('room-update', updateData);
-      
-      // Also broadcast to general updates channel for dashboard
+
       this.io.emit('dashboard-update', {
         type: 'room-data-updated',
         roomId: room._id,
@@ -2655,18 +2507,12 @@ class IoTService {
     }
   }
 
-  /**
-   * Manually trigger polling
-   */
   async forcePollAll() {
     console.log('🔄 Force polling all IoT devices...');
     await this.pollAllIoTDevices();
     return { success: true, message: 'Force poll completed' };
   }
 
-  /**
-   * Get IoT service status
-   */
   getStatus() {
     return {
       isRunning: this.isRunning,
@@ -2678,7 +2524,6 @@ class IoTService {
   }
 }
 
-// Create singleton instance
 const iotService = new IoTService();
 
 module.exports = iotService;
@@ -2697,12 +2542,9 @@ class SimulationService {
     this.isRunning = false;
     this.task = null;
     this.io = null;
-    this.updateInterval = 60000; // 1 menit
+    this.updateInterval = 60000;
   }
 
-  /**
-   * Start simulation service
-   */
   start(io) {
     if (this.isRunning) {
       console.log('⚠️ Simulation Service is already running');
@@ -2712,7 +2554,6 @@ class SimulationService {
     this.io = io;
     console.log(`🚀 Starting Simulation Service (update every ${this.updateInterval/1000}s)...`);
 
-    // Schedule task to run every 1 minute
     this.task = cron.schedule(`*/${this.updateInterval/1000} * * * * *`, async () => {
       await this.updateAllRooms();
     });
@@ -2720,13 +2561,9 @@ class SimulationService {
     this.isRunning = true;
     console.log('✅ Simulation Service started');
 
-    // Initial update immediately
     this.updateAllRooms();
   }
 
-  /**
-   * Stop simulation service
-   */
   stop() {
     if (this.task) {
       this.task.stop();
@@ -2735,16 +2572,9 @@ class SimulationService {
     }
   }
 
-  /**
-   * Update all rooms with simulation data
-   */
   async updateAllRooms() {
     try {
-      // Get all active rooms with simulation data source
-      const rooms = await Room.find({ 
-        isActive: true,
-        dataSource: 'simulation'
-      });
+      const rooms = await Room.find({ dataSource: 'simulation' });
 
       if (rooms.length === 0) {
         console.log('ℹ️ No active simulation rooms to update');
@@ -2753,35 +2583,28 @@ class SimulationService {
 
       console.log(`🔄 Updating ${rooms.length} simulation rooms...`);
 
-      // Update each room with simulation data
       for (const room of rooms) {
         await this.updateRoom(room);
       }
 
       console.log(`✅ Updated ${rooms.length} rooms at ${new Date().toLocaleTimeString()}`);
-
     } catch (error) {
       console.error('❌ Error in updateAllRooms:', error.message);
     }
   }
 
-  /**
-   * Update single room with simulation data
-   */
   async updateRoom(room) {
     try {
       const roomType = this.getRoomType(room.name);
       const sensorData = generateSensorData(roomType);
 
-      // Check if data has changed significantly
       const hasChanged = this._hasDataChanged(room, sensorData);
-      
+
       if (!hasChanged) {
         console.log(`ℹ️ Room ${room.name} data unchanged, skipping update`);
         return;
       }
 
-      // Update room data
       room.currentAQI = sensorData.aqi;
       room.currentData = {
         pm25: sensorData.pm25,
@@ -2795,7 +2618,6 @@ class SimulationService {
 
       await room.save();
 
-      // Save historical data
       const historicalData = new SensorData({
         roomId: room._id,
         roomName: room.name,
@@ -2812,21 +2634,15 @@ class SimulationService {
 
       await historicalData.save();
 
-      // Broadcast update via Socket.io
       this.broadcastRoomUpdate(room, sensorData);
-
     } catch (error) {
       console.error(`❌ Error updating room ${room.name}:`, error.message);
     }
   }
 
-  /**
-   * Check if data has changed significantly
-   */
   _hasDataChanged(room, newData) {
     const currentData = room.currentData;
-    
-    // Define thresholds for significant change
+
     const thresholds = {
       aqi: 1,
       pm25: 1.0,
@@ -2835,7 +2651,7 @@ class SimulationService {
       temperature: 0.5,
       humidity: 1.0
     };
-    
+
     return (
       Math.abs(newData.aqi - room.currentAQI) > thresholds.aqi ||
       Math.abs(newData.pm25 - (currentData.pm25 || 0)) > thresholds.pm25 ||
@@ -2846,9 +2662,6 @@ class SimulationService {
     );
   }
 
-  /**
-   * Broadcast room update via Socket.io
-   */
   broadcastRoomUpdate(room, data) {
     if (this.io) {
       const updateData = {
@@ -2862,10 +2675,8 @@ class SimulationService {
         source: 'simulation'
       };
 
-      // Broadcast to room-specific channel
       this.io.to(room._id.toString()).emit('room-update', updateData);
-      
-      // Also broadcast to general updates channel for dashboard
+
       this.io.emit('dashboard-update', {
         type: 'room-data-updated',
         roomId: room._id,
@@ -2878,12 +2689,9 @@ class SimulationService {
     }
   }
 
-  /**
-   * Determine room type based on name
-   */
   getRoomType(roomName) {
     const name = roomName.toLowerCase();
-    
+
     if (name.includes('lab') || name.includes('praktikum')) {
       return 'laboratory';
     } else if (name.includes('kelas') || name.includes('ruang') || name.includes('r.') || name.includes('gd.')) {
@@ -2893,22 +2701,16 @@ class SimulationService {
     } else if (name.includes('aula') || name.includes('auditorium') || name.includes('hall')) {
       return 'crowded';
     }
-    
+
     return 'normal';
   }
 
-  /**
-   * Manually trigger simulation update
-   */
   async forceUpdate() {
     console.log('🔄 Force updating all simulation rooms...');
     await this.updateAllRooms();
     return { success: true, message: 'Force simulation update completed' };
   }
 
-  /**
-   * Get service status
-   */
   getStatus() {
     return {
       isRunning: this.isRunning,
@@ -2920,7 +2722,6 @@ class SimulationService {
   }
 }
 
-// Create singleton instance
 const simulationService = new SimulationService();
 
 module.exports = simulationService;
@@ -3417,9 +3218,8 @@ const seedSampleData = async () => {
           const result = await Room.collection.insertOne({
             name: roomData.name,
             building: building._id,
-            buildingName: building.name, // Menggunakan nama building yang benar
+            buildingName: building.name,
             dataSource: roomData.dataSource,
-            isActive: true,
             currentAQI: 0,
             currentData: {
               pm25: 0,
@@ -10541,10 +10341,27 @@ class Helpers {
   }
 
   // Tambah method format baru untuk waktu update
-  static String formatLastUpdate(DateTime dateTime) {
-    // Konversi ke waktu lokal
+   static String formatLastUpdate(DateTime dateTime) {
     final localTime = dateTime.toLocal();
-    return '  ${_formatLocalTime(localTime)}';
+    final now = DateTime.now().toLocal();
+
+    // Hari ini → jam saja (perilaku lama, dengan padding 2 spasi)
+    if (localTime.year == now.year &&
+        localTime.month == now.month &&
+        localTime.day == now.day) {
+      return '  ${_formatLocalTime(localTime)}';
+    }
+
+    // Kemarin → "Kemarin HH:mm"
+    final yesterday = DateTime(now.year, now.month, now.day - 1);
+    if (localTime.year == yesterday.year &&
+        localTime.month == yesterday.month &&
+        localTime.day == yesterday.day) {
+      return 'Kemarin ${_formatLocalTime(localTime)}';
+    }
+
+    // Lebih lama → "dd/MM HH:mm" (tanggal + jam)
+    return DateFormat('dd/MM HH:mm').format(localTime);
   }
 
   static String formatLastUpdateWithDate(DateTime dateTime) {
@@ -11066,10 +10883,9 @@ class IoTDevice {
   final String id;
   final String name;
   final String? description;
-  final String apiEndpoint; // Hapus buildingId dan buildingName
-  final bool isActive;
+  final String apiEndpoint;
   final DateTime? lastUpdate;
-  final String status; // 'online', 'offline', 'error'
+  final String status;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -11078,7 +10894,6 @@ class IoTDevice {
     required this.name,
     this.description,
     required this.apiEndpoint,
-    required this.isActive,
     this.lastUpdate,
     required this.status,
     required this.createdAt,
@@ -11091,7 +10906,6 @@ class IoTDevice {
       name: json['name'],
       description: json['description'],
       apiEndpoint: json['apiEndpoint'],
-      isActive: json['isActive'] ?? true,
       lastUpdate: json['lastUpdate'] != null
           ? DateTime.parse(json['lastUpdate'])
           : null,
@@ -11107,7 +10921,6 @@ class IoTDevice {
       'name': name,
       'description': description,
       'apiEndpoint': apiEndpoint,
-      'isActive': isActive,
       'lastUpdate': lastUpdate?.toIso8601String(),
       'status': status,
       'createdAt': createdAt.toIso8601String(),
@@ -11116,29 +10929,11 @@ class IoTDevice {
   }
 
   String get displayStatus {
-    switch (status) {
-      case 'online':
-        return 'Online';
-      case 'offline':
-        return 'Offline';
-      case 'error':
-        return 'Error';
-      default:
-        return 'Unknown';
-    }
+    return status == 'online' ? 'Online' : 'Offline';
   }
 
   Color get statusColor {
-    switch (status) {
-      case 'online':
-        return Colors.green;
-      case 'offline':
-        return Colors.grey;
-      case 'error':
-        return Colors.red;
-      default:
-        return Colors.grey;
-    }
+    return status == 'online' ? Colors.green : Colors.grey;
   }
 
   bool get isOnline => status == 'online';
@@ -11152,9 +10947,8 @@ class Room {
   final String name;
   final String buildingId;
   final String buildingName;
-  final String dataSource; // 'simulation' or 'iot'
+  final String dataSource;
   final String? iotDeviceId;
-  final bool isActive;
   final int currentAQI;
   final RoomData currentData;
   final DateTime createdAt;
@@ -11167,7 +10961,6 @@ class Room {
     required this.buildingName,
     required this.dataSource,
     this.iotDeviceId,
-    required this.isActive,
     required this.currentAQI,
     required this.currentData,
     required this.createdAt,
@@ -11185,7 +10978,6 @@ class Room {
           (json['building'] is Map ? json['building']['name'] : 'Unknown'),
       dataSource: json['dataSource'] ?? 'simulation',
       iotDeviceId: json['iotDeviceId'],
-      isActive: json['isActive'] ?? true,
       currentAQI: json['currentAQI'] ?? 0,
       currentData: RoomData.fromJson(json['currentData'] ?? {}),
       createdAt: DateTime.parse(json['createdAt']),
@@ -11201,7 +10993,6 @@ class Room {
       'buildingName': buildingName,
       'dataSource': dataSource,
       'iotDeviceId': iotDeviceId,
-      'isActive': isActive,
       'currentAQI': currentAQI,
       'currentData': currentData.toJson(),
       'createdAt': createdAt.toIso8601String(),
@@ -11209,10 +11000,7 @@ class Room {
     };
   }
 
-  String get displayName {
-    return '$name - $buildingName';
-  }
-
+  String get displayName => '$name - $buildingName';
   bool get isSimulation => dataSource == 'simulation';
   bool get isIot => dataSource == 'iot';
 }
@@ -11921,27 +11709,26 @@ import '../../core/services/storage_service.dart';
 
 class IoTDeviceRepository {
   final StorageService _storage = StorageService();
-  
+
   Future<String?> _getToken() async {
     return _storage.getString('auth_token');
   }
-  
+
   Future<Map<String, String>> _getHeaders() async {
     final token = await _getToken();
-    
+
     final headers = {
       'Content-Type': 'application/json',
       'Accept': 'application/json',
     };
-    
+
     if (token != null) {
       headers['Authorization'] = 'Bearer $token';
     }
-    
+
     return headers;
   }
-  
-  // Get all IoT devices
+
   Future<List<IoTDevice>> getDevices() async {
     try {
       final headers = await _getHeaders();
@@ -11949,7 +11736,7 @@ class IoTDeviceRepository {
         Uri.parse('${AppConstants.apiBaseUrl}/iot-devices'),
         headers: headers,
       );
-      
+
       if (response.statusCode == 200) {
         final jsonResponse = jsonDecode(response.body);
         if (jsonResponse['success'] == true) {
@@ -11965,8 +11752,7 @@ class IoTDeviceRepository {
       rethrow;
     }
   }
-  
-  // Get device by ID
+
   Future<IoTDevice> getDeviceById(String id) async {
     try {
       final headers = await _getHeaders();
@@ -11974,7 +11760,7 @@ class IoTDeviceRepository {
         Uri.parse('${AppConstants.apiBaseUrl}/iot-devices/$id'),
         headers: headers,
       );
-      
+
       if (response.statusCode == 200) {
         final jsonResponse = jsonDecode(response.body);
         if (jsonResponse['success'] == true) {
@@ -11989,13 +11775,11 @@ class IoTDeviceRepository {
       rethrow;
     }
   }
-  
-  // Create device - HAPUS buildingId parameter
+
   Future<IoTDevice> createDevice({
     required String name,
     String? description,
     required String apiEndpoint,
-    bool isActive = true,
   }) async {
     try {
       final headers = await _getHeaders();
@@ -12003,15 +11787,14 @@ class IoTDeviceRepository {
         'name': name,
         'description': description,
         'apiEndpoint': apiEndpoint,
-        'isActive': isActive,
       });
-      
+
       final response = await http.post(
         Uri.parse('${AppConstants.apiBaseUrl}/iot-devices'),
         headers: headers,
         body: body,
       );
-      
+
       if (response.statusCode == 201) {
         final jsonResponse = jsonDecode(response.body);
         if (jsonResponse['success'] == true) {
@@ -12027,14 +11810,12 @@ class IoTDeviceRepository {
       rethrow;
     }
   }
-  
-  // Update device - HAPUS buildingId parameter
+
   Future<IoTDevice> updateDevice({
     required String id,
     required String name,
     String? description,
     required String apiEndpoint,
-    bool isActive = true,
   }) async {
     try {
       final headers = await _getHeaders();
@@ -12042,15 +11823,14 @@ class IoTDeviceRepository {
         'name': name,
         'description': description,
         'apiEndpoint': apiEndpoint,
-        'isActive': isActive,
       });
-      
+
       final response = await http.put(
         Uri.parse('${AppConstants.apiBaseUrl}/iot-devices/$id'),
         headers: headers,
         body: body,
       );
-      
+
       if (response.statusCode == 200) {
         final jsonResponse = jsonDecode(response.body);
         if (jsonResponse['success'] == true) {
@@ -12066,8 +11846,7 @@ class IoTDeviceRepository {
       rethrow;
     }
   }
-  
-  // Delete device
+
   Future<void> deleteDevice(String id) async {
     try {
       final headers = await _getHeaders();
@@ -12075,7 +11854,7 @@ class IoTDeviceRepository {
         Uri.parse('${AppConstants.apiBaseUrl}/iot-devices/$id'),
         headers: headers,
       );
-      
+
       if (response.statusCode != 200) {
         final error = jsonDecode(response.body);
         throw Exception(error['message'] ?? 'Failed to delete device');
@@ -12196,91 +11975,76 @@ import '../../core/services/storage_service.dart';
 
 class RoomRepository {
   final StorageService _storage = StorageService();
-  
+
   Future<String?> _getToken() async {
     return _storage.getString('auth_token');
   }
-  
+
   Future<Map<String, String>> _getHeaders() async {
     final token = await _getToken();
-    
+
     final headers = {
       'Content-Type': 'application/json',
       'Accept': 'application/json',
     };
-    
+
     if (token != null) {
       headers['Authorization'] = 'Bearer $token';
     }
-    
+
     return headers;
   }
-  
-  // Get all rooms
+
   Future<List<Room>> getRooms() async {
-  try {
-    print('📡 Fetching rooms from: ${AppConstants.apiBaseUrl}/rooms');
-    
-    // Coba dengan token terlebih dahulu (untuk admin)
-    final headers = await _getHeaders();
-    
-    print('🔑 Using token: ${headers.containsKey('Authorization') ? 'YES' : 'NO'}');
-    
-    final response = await http.get(
-      Uri.parse('${AppConstants.apiBaseUrl}/rooms'),
-      headers: headers,
-    );
-    
-    print('📊 API Status: ${response.statusCode}');
-    
-    if (response.statusCode == 200) {
-      final jsonResponse = jsonDecode(response.body);
-      print('✅ API Success: ${jsonResponse['success']}');
-      
-      if (jsonResponse['success'] == true) {
-        final List<dynamic> data = jsonResponse['data'];
-        final rooms = data.map((json) => Room.fromJson(json)).toList();
-        
-        print('🎯 Loaded ${rooms.length} rooms');
-        return rooms;
-      } else {
-        throw Exception(jsonResponse['message'] ?? 'Failed to fetch rooms');
-      }
-    } else if (response.statusCode == 401) {
-      print('⚠️ Token invalid or expired, trying without token...');
-      
-      // Coba tanpa token (untuk user mode)
-      final publicResponse = await http.get(
+    try {
+      print('📡 Fetching rooms from: ${AppConstants.apiBaseUrl}/rooms');
+
+      final headers = await _getHeaders();
+
+      final response = await http.get(
         Uri.parse('${AppConstants.apiBaseUrl}/rooms'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
+        headers: headers,
       );
-      
-      if (publicResponse.statusCode == 200) {
-        final jsonResponse = jsonDecode(publicResponse.body);
+
+      print('📊 API Status: ${response.statusCode}');
+
+      if (response.statusCode == 200) {
+        final jsonResponse = jsonDecode(response.body);
+
         if (jsonResponse['success'] == true) {
           final List<dynamic> data = jsonResponse['data'];
           final rooms = data.map((json) => Room.fromJson(json)).toList();
-          
-          print('🎯 Loaded ${rooms.length} rooms without token');
           return rooms;
+        } else {
+          throw Exception(jsonResponse['message'] ?? 'Failed to fetch rooms');
         }
+      } else if (response.statusCode == 401) {
+        final publicResponse = await http.get(
+          Uri.parse('${AppConstants.apiBaseUrl}/rooms'),
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+          },
+        );
+
+        if (publicResponse.statusCode == 200) {
+          final jsonResponse = jsonDecode(publicResponse.body);
+          if (jsonResponse['success'] == true) {
+            final List<dynamic> data = jsonResponse['data'];
+            return data.map((json) => Room.fromJson(json)).toList();
+          }
+        }
+
+        throw Exception('Access denied. Please login as admin or try user mode.');
+      } else {
+        throw Exception('Failed to fetch rooms: ${response.statusCode}');
       }
-      
-      throw Exception('Access denied. Please login as admin or try user mode.');
-    } else {
-      print('❌ API Error: ${response.statusCode} - ${response.body}');
-      throw Exception('Failed to fetch rooms: ${response.statusCode}');
+    } catch (e) {
+      print('❌ Room Repository Error: $e');
+      rethrow;
     }
-  } catch (e) {
-    print('❌ Room Repository Error: $e');
-    rethrow;
   }
-}
-  
-  // Get room by ID
+
   Future<Room> getRoomById(String id) async {
     try {
       final headers = await _getHeaders();
@@ -12288,7 +12052,7 @@ class RoomRepository {
         Uri.parse('${AppConstants.apiBaseUrl}/rooms/$id'),
         headers: headers,
       );
-      
+
       if (response.statusCode == 200) {
         final jsonResponse = jsonDecode(response.body);
         if (jsonResponse['success'] == true) {
@@ -12303,14 +12067,12 @@ class RoomRepository {
       rethrow;
     }
   }
-  
-  // Create room
+
   Future<Room> createRoom({
     required String name,
     required String buildingId,
     String dataSource = 'simulation',
     String? iotDeviceId,
-    bool isActive = true,
   }) async {
     try {
       final headers = await _getHeaders();
@@ -12319,15 +12081,14 @@ class RoomRepository {
         'buildingId': buildingId,
         'dataSource': dataSource,
         'iotDeviceId': iotDeviceId,
-        'isActive': isActive,
       });
-      
+
       final response = await http.post(
         Uri.parse('${AppConstants.apiBaseUrl}/rooms'),
         headers: headers,
         body: body,
       );
-      
+
       if (response.statusCode == 201) {
         final jsonResponse = jsonDecode(response.body);
         if (jsonResponse['success'] == true) {
@@ -12343,15 +12104,13 @@ class RoomRepository {
       rethrow;
     }
   }
-  
-  // Update room
+
   Future<Room> updateRoom({
     required String id,
     required String name,
     required String buildingId,
     String dataSource = 'simulation',
     String? iotDeviceId,
-    bool isActive = true,
   }) async {
     try {
       final headers = await _getHeaders();
@@ -12360,15 +12119,14 @@ class RoomRepository {
         'buildingId': buildingId,
         'dataSource': dataSource,
         'iotDeviceId': iotDeviceId,
-        'isActive': isActive,
       });
-      
+
       final response = await http.put(
         Uri.parse('${AppConstants.apiBaseUrl}/rooms/$id'),
         headers: headers,
         body: body,
       );
-      
+
       if (response.statusCode == 200) {
         final jsonResponse = jsonDecode(response.body);
         if (jsonResponse['success'] == true) {
@@ -12384,8 +12142,7 @@ class RoomRepository {
       rethrow;
     }
   }
-  
-  // Delete room
+
   Future<void> deleteRoom(String id) async {
     try {
       final headers = await _getHeaders();
@@ -12393,7 +12150,7 @@ class RoomRepository {
         Uri.parse('${AppConstants.apiBaseUrl}/rooms/$id'),
         headers: headers,
       );
-      
+
       if (response.statusCode != 200) {
         final error = jsonDecode(response.body);
         throw Exception(error['message'] ?? 'Failed to delete room');
@@ -13027,28 +12784,28 @@ class IoTManagementScreen extends StatefulWidget {
 class _IoTManagementScreenState extends State<IoTManagementScreen> {
   final IoTDeviceRepository _deviceRepository = IoTDeviceRepository();
   final TextEditingController _searchController = TextEditingController();
-  
+
   List<IoTDevice> _devices = [];
   List<IoTDevice> _filteredDevices = [];
   bool _isLoading = false;
   bool _hasError = false;
   String _errorMessage = '';
-  
+
   @override
   void initState() {
     super.initState();
     _loadData();
   }
-  
+
   Future<void> _loadData() async {
     setState(() {
       _isLoading = true;
       _hasError = false;
     });
-    
+
     try {
       final devices = await _deviceRepository.getDevices();
-      
+
       setState(() {
         _devices = devices;
         _filteredDevices = devices;
@@ -13063,7 +12820,7 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
       setState(() => _isLoading = false);
     }
   }
-  
+
   void _filterDevices(String query) {
     if (query.isEmpty) {
       setState(() => _filteredDevices = _devices);
@@ -13072,13 +12829,12 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
         final name = device.name.toLowerCase();
         final description = device.description?.toLowerCase() ?? '';
         final search = query.toLowerCase();
-        return name.contains(search) || 
-               description.contains(search);
+        return name.contains(search) || description.contains(search);
       }).toList();
       setState(() => _filteredDevices = filtered);
     }
   }
-  
+
   Future<void> _deleteDevice(String deviceId) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -13097,9 +12853,9 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
         ],
       ),
     );
-    
+
     if (confirmed != true) return;
-    
+
     try {
       await _deviceRepository.deleteDevice(deviceId);
       await _loadData();
@@ -13108,7 +12864,7 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
       Helpers.showSnackBar(context, 'Gagal menghapus device: $e', isError: true);
     }
   }
-  
+
   void _navigateToAddDevice() {
     Navigator.push(
       context,
@@ -13119,7 +12875,7 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
       ),
     );
   }
-  
+
   void _navigateToEditDevice(IoTDevice device) {
     Navigator.push(
       context,
@@ -13131,7 +12887,7 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
       ),
     );
   }
-  
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -13147,7 +12903,6 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
       ),
       body: Column(
         children: [
-          // Search Bar
           Padding(
             padding: const EdgeInsets.all(16),
             child: TextField(
@@ -13172,8 +12927,6 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
               onChanged: _filterDevices,
             ),
           ),
-          
-          // Add Button
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: SizedBox(
@@ -13188,35 +12941,22 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
               ),
             ),
           ),
-          
           const SizedBox(height: 16),
-          
-          // Loading State
           if (_isLoading)
             const Expanded(
-              child: Center(
-                child: CircularProgressIndicator(),
-              ),
+              child: Center(child: CircularProgressIndicator()),
             )
-          
-          // Error State
           else if (_hasError)
             Expanded(
               child: Center(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Icon(
-                      Icons.error_outline,
-                      size: 64,
-                      color: AppColors.error,
-                    ),
+                    const Icon(Icons.error_outline, size: 64, color: AppColors.error),
                     const SizedBox(height: 16),
-                    Text(
-                      'Error: $_errorMessage',
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(color: AppColors.error),
-                    ),
+                    Text('Error: $_errorMessage',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(color: AppColors.error)),
                     const SizedBox(height: 16),
                     ElevatedButton(
                       onPressed: _loadData,
@@ -13226,27 +12966,16 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
                 ),
               ),
             )
-          
-          // Empty State
           else if (_filteredDevices.isEmpty)
             Expanded(
               child: Center(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Icon(
-                      Icons.sensors_off,
-                      size: 64,
-                      color: Colors.grey,
-                    ),
+                    const Icon(Icons.sensors_off, size: 64, color: Colors.grey),
                     const SizedBox(height: 16),
-                    const Text(
-                      'Tidak ada device ditemukan',
-                      style: TextStyle(
-                        fontSize: 16,
-                        color: Colors.grey,
-                      ),
-                    ),
+                    const Text('Tidak ada device ditemukan',
+                        style: TextStyle(fontSize: 16, color: Colors.grey)),
                     const SizedBox(height: 8),
                     if (_searchController.text.isNotEmpty)
                       TextButton(
@@ -13260,8 +12989,6 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
                 ),
               ),
             )
-          
-          // Data State
           else
             Expanded(
               child: ListView.builder(
@@ -13273,28 +13000,19 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
                 },
               ),
             ),
-          
-          // Footer
           Container(
             padding: const EdgeInsets.all(16),
             child: Text(
               'Total: ${_filteredDevices.length} device',
-              style: const TextStyle(
-                fontSize: 14,
-                color: Colors.grey,
-              ),
+              style: const TextStyle(fontSize: 14, color: Colors.grey),
             ),
           ),
         ],
       ),
     );
   }
-  
-  Widget _buildDeviceCard(IoTDevice device) {
-    // final timeAgo = device.lastUpdate != null 
-        // ? Helpers.formatTimeAgo(device.lastUpdate!)
-        // : 'Belum pernah update';
-    
+
+    Widget _buildDeviceCard(IoTDevice device) {
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
       child: Padding(
@@ -13302,53 +13020,21 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        device.name,
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: device.statusColor.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: device.statusColor),
-                  ),
-                  child: Text(
-                    device.displayStatus,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: device.statusColor,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-              ],
+            Text(
+              device.name,
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+              ),
             ),
-            
             if (device.description != null && device.description!.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(top: 8),
                 child: Text(
                   device.description!,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey,
-                  ),
+                  style: const TextStyle(fontSize: 14, color: Colors.grey),
                 ),
               ),
-            
             Padding(
               padding: const EdgeInsets.only(top: 8),
               child: Text(
@@ -13361,44 +13047,7 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
                 overflow: TextOverflow.ellipsis,
               ),
             ),
-            
-            Padding(
-              padding: const EdgeInsets.only(top: 12),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.circle,
-                    size: 10,
-                    color: device.isActive ? Colors.green : Colors.grey,
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    device.isActive ? '● Aktif' : '○ Tidak Aktif',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: device.isActive ? Colors.green : Colors.grey,
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  const Icon(
-                    Icons.update,
-                    size: 14,
-                    color: Colors.grey,
-                  ),
-                  const SizedBox(width: 4),
-                  // Text(
-                  //   'Update: $timeAgo',
-                  //   style: const TextStyle(
-                  //     fontSize: 12,
-                  //     color: Colors.grey,
-                  //   ),
-                  // ),
-                ],
-              ),
-            ),
-            
             const SizedBox(height: 16),
-            
             Row(
               children: [
                 Expanded(
@@ -13435,15 +13084,15 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
 class AddEditIoTDeviceScreen extends StatefulWidget {
   final IoTDevice? device;
   final VoidCallback onDeviceSaved;
-  
+
   const AddEditIoTDeviceScreen({
     super.key,
     this.device,
     required this.onDeviceSaved,
   });
-  
+
   bool get isEditing => device != null;
-  
+
   @override
   State<AddEditIoTDeviceScreen> createState() => _AddEditIoTDeviceScreenState();
 }
@@ -13454,24 +13103,21 @@ class _AddEditIoTDeviceScreenState extends State<AddEditIoTDeviceScreen> {
   final _descriptionController = TextEditingController();
   final _endpointController = TextEditingController();
   final IoTDeviceRepository _deviceRepository = IoTDeviceRepository();
-  
-  bool _isActive = true;
+
   bool _isLoading = false;
-  
+
   @override
   void initState() {
     super.initState();
-    
-    // Prefill fields if editing
+
     if (widget.isEditing) {
       final device = widget.device!;
       _nameController.text = device.name;
       _descriptionController.text = device.description ?? '';
       _endpointController.text = device.apiEndpoint;
-      _isActive = device.isActive;
     }
   }
-  
+
   @override
   void dispose() {
     _nameController.dispose();
@@ -13479,34 +13125,36 @@ class _AddEditIoTDeviceScreenState extends State<AddEditIoTDeviceScreen> {
     _endpointController.dispose();
     super.dispose();
   }
-  
+
   Future<void> _saveDevice() async {
     if (!_formKey.currentState!.validate()) return;
-    
+
     setState(() => _isLoading = true);
-    
+
     try {
       if (widget.isEditing) {
         await _deviceRepository.updateDevice(
           id: widget.device!.id,
           name: _nameController.text.trim(),
-          description: _descriptionController.text.trim().isEmpty ? null : _descriptionController.text.trim(),
+          description: _descriptionController.text.trim().isEmpty
+              ? null
+              : _descriptionController.text.trim(),
           apiEndpoint: _endpointController.text.trim(),
-          isActive: _isActive,
         );
         Helpers.showSnackBar(context, 'Device berhasil diperbarui');
       } else {
         await _deviceRepository.createDevice(
           name: _nameController.text.trim(),
-          description: _descriptionController.text.trim().isEmpty ? null : _descriptionController.text.trim(),
+          description: _descriptionController.text.trim().isEmpty
+              ? null
+              : _descriptionController.text.trim(),
           apiEndpoint: _endpointController.text.trim(),
-          isActive: _isActive,
         );
         Helpers.showSnackBar(context, 'Device berhasil ditambahkan');
       }
-      
+
       widget.onDeviceSaved();
-      
+
       if (mounted) {
         Navigator.pop(context);
       }
@@ -13518,7 +13166,7 @@ class _AddEditIoTDeviceScreenState extends State<AddEditIoTDeviceScreen> {
       }
     }
   }
-  
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -13543,13 +13191,8 @@ class _AddEditIoTDeviceScreenState extends State<AddEditIoTDeviceScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'Nama Device*',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
+              const Text('Nama Device*',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
               const SizedBox(height: 8),
               TextFormField(
                 controller: _nameController,
@@ -13564,16 +13207,9 @@ class _AddEditIoTDeviceScreenState extends State<AddEditIoTDeviceScreen> {
                   return null;
                 },
               ),
-              
               const SizedBox(height: 16),
-              
-              const Text(
-                'Deskripsi',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
+              const Text('Deskripsi',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
               const SizedBox(height: 8),
               TextFormField(
                 controller: _descriptionController,
@@ -13583,16 +13219,9 @@ class _AddEditIoTDeviceScreenState extends State<AddEditIoTDeviceScreen> {
                 ),
                 maxLines: 2,
               ),
-              
               const SizedBox(height: 16),
-              
-              const Text(
-                'Endpoint API*',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
+              const Text('Endpoint API*',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
               const SizedBox(height: 8),
               TextFormField(
                 controller: _endpointController,
@@ -13604,7 +13233,6 @@ class _AddEditIoTDeviceScreenState extends State<AddEditIoTDeviceScreen> {
                   if (value == null || value.isEmpty) {
                     return 'Endpoint API wajib diisi';
                   }
-                  // Basic URL validation
                   try {
                     Uri.parse(value);
                   } catch (e) {
@@ -13613,40 +13241,7 @@ class _AddEditIoTDeviceScreenState extends State<AddEditIoTDeviceScreen> {
                   return null;
                 },
               ),
-              
-              const SizedBox(height: 16),
-              
-              // Status
-              Row(
-                children: [
-                  const Text(
-                    'Status: ',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  ChoiceChip(
-                    label: const Text('Aktif'),
-                    selected: _isActive,
-                    onSelected: (selected) {
-                      setState(() => _isActive = true);
-                    },
-                  ),
-                  const SizedBox(width: 8),
-                  ChoiceChip(
-                    label: const Text('Tidak Aktif'),
-                    selected: !_isActive,
-                    onSelected: (selected) {
-                      setState(() => _isActive = false);
-                    },
-                  ),
-                ],
-              ),
-              
               const SizedBox(height: 32),
-              
               SizedBox(
                 width: double.infinity,
                 height: 50,
@@ -14733,7 +14328,7 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
   final RoomRepository _roomRepository = RoomRepository();
   final BuildingRepository _buildingRepository = BuildingRepository();
   final TextEditingController _searchController = TextEditingController();
-  
+
   List<Room> _rooms = [];
   List<Room> _filteredRooms = [];
   List<Building> _buildings = [];
@@ -14741,60 +14336,54 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
   bool _isLoading = false;
   bool _hasError = false;
   String _errorMessage = '';
-  
+
   @override
   void initState() {
     super.initState();
     _loadData();
   }
-  
+
   Future<void> _loadData() async {
-  setState(() {
-    _isLoading = true;
-    _hasError = false;
-  });
-
-  try {
-    final List<Object> results = await Future.wait([
-      _roomRepository.getRooms(),
-      _buildingRepository.getBuildings(),
-    ]);
-
-    // Cast hasil ke tipe yang sesuai
-    final List<Room> rooms = results[0] as List<Room>;
-    final List<Building> buildings = results[1] as List<Building>;
-
     setState(() {
-      _rooms = rooms;
-      _buildings = buildings;
-      // 🔥 JANGAN set _filteredRooms = rooms di sini
+      _isLoading = true;
+      _hasError = false;
     });
 
-    // 🔥 Reapply filter aktif setelah data ter-load
-    _filterRooms();
+    try {
+      final List<Object> results = await Future.wait([
+        _roomRepository.getRooms(),
+        _buildingRepository.getBuildings(),
+      ]);
 
-  } catch (e) {
-    setState(() {
-      _hasError = true;
-      _errorMessage = e.toString();
-    });
-    Helpers.showSnackBar(context, 'Gagal memuat data ruangan: $e', isError: true);
-  } finally {
-    setState(() => _isLoading = false);
+      final List<Room> rooms = results[0] as List<Room>;
+      final List<Building> buildings = results[1] as List<Building>;
+
+      setState(() {
+        _rooms = rooms;
+        _buildings = buildings;
+      });
+
+      _filterRooms();
+    } catch (e) {
+      setState(() {
+        _hasError = true;
+        _errorMessage = e.toString();
+      });
+      Helpers.showSnackBar(context, 'Gagal memuat data ruangan: $e', isError: true);
+    } finally {
+      setState(() => _isLoading = false);
+    }
   }
-}
-  
+
   void _filterRooms() {
     List<Room> filtered = _rooms;
-    
-    // Filter by building
+
     if (_selectedBuildingFilter != 'Semua Gedung') {
-      filtered = filtered.where((room) => 
+      filtered = filtered.where((room) =>
         room.buildingName == _selectedBuildingFilter
       ).toList();
     }
-    
-    // Filter by search query
+
     if (_searchController.text.isNotEmpty) {
       final query = _searchController.text.toLowerCase();
       filtered = filtered.where((room) =>
@@ -14802,10 +14391,10 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
         room.buildingName.toLowerCase().contains(query)
       ).toList();
     }
-    
+
     setState(() => _filteredRooms = filtered);
   }
-  
+
   Future<void> _deleteRoom(String roomId) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -14824,9 +14413,9 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
         ],
       ),
     );
-    
+
     if (confirmed != true) return;
-    
+
     try {
       await _roomRepository.deleteRoom(roomId);
       await _loadData();
@@ -14836,8 +14425,6 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
     }
   }
 
-  
-  
   void _navigateToAddRoom() {
     Navigator.push(
       context,
@@ -14849,7 +14436,7 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
       ),
     );
   }
-  
+
   void _navigateToEditRoom(Room room) {
     Navigator.push(
       context,
@@ -14862,7 +14449,19 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
       ),
     );
   }
-  
+
+  // ============ HELPER WARNING ============
+  String? _getStaleDurationText(Room room) {
+    final lastUpdate = room.currentData.updatedAt.toLocal();
+    final diff = DateTime.now().difference(lastUpdate);
+
+    if (diff.inMinutes <= 5) return null;
+
+    if (diff.inMinutes < 60) return '${diff.inMinutes} menit';
+    if (diff.inHours < 24) return '${diff.inHours} jam';
+    return '${diff.inDays} hari';
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -14878,7 +14477,6 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
       ),
       body: Column(
         children: [
-          // Search and Filter
           Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
@@ -14938,8 +14536,6 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
               ],
             ),
           ),
-          
-          // Add Button
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: SizedBox(
@@ -14954,35 +14550,22 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
               ),
             ),
           ),
-          
           const SizedBox(height: 16),
-          
-          // Loading State
           if (_isLoading)
             const Expanded(
-              child: Center(
-                child: CircularProgressIndicator(),
-              ),
+              child: Center(child: CircularProgressIndicator()),
             )
-          
-          // Error State
           else if (_hasError)
             Expanded(
               child: Center(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Icon(
-                      Icons.error_outline,
-                      size: 64,
-                      color: AppColors.error,
-                    ),
+                    const Icon(Icons.error_outline, size: 64, color: AppColors.error),
                     const SizedBox(height: 16),
-                    Text(
-                      'Error: $_errorMessage',
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(color: AppColors.error),
-                    ),
+                    Text('Error: $_errorMessage',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(color: AppColors.error)),
                     const SizedBox(height: 16),
                     ElevatedButton(
                       onPressed: _loadData,
@@ -14992,27 +14575,16 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
                 ),
               ),
             )
-          
-          // Empty State
           else if (_filteredRooms.isEmpty)
             Expanded(
               child: Center(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Icon(
-                      Icons.meeting_room_outlined,
-                      size: 64,
-                      color: Colors.grey,
-                    ),
+                    const Icon(Icons.meeting_room_outlined, size: 64, color: Colors.grey),
                     const SizedBox(height: 16),
-                    const Text(
-                      'Tidak ada ruangan ditemukan',
-                      style: TextStyle(
-                        fontSize: 16,
-                        color: Colors.grey,
-                      ),
-                    ),
+                    const Text('Tidak ada ruangan ditemukan',
+                        style: TextStyle(fontSize: 16, color: Colors.grey)),
                     const SizedBox(height: 8),
                     if (_searchController.text.isNotEmpty || _selectedBuildingFilter != 'Semua Gedung')
                       TextButton(
@@ -15027,8 +14599,6 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
                 ),
               ),
             )
-          
-          // Data State
           else
             Expanded(
               child: ListView.builder(
@@ -15040,27 +14610,22 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
                 },
               ),
             ),
-          
-          // Footer
           Container(
             padding: const EdgeInsets.all(16),
             child: Text(
               'Total: ${_filteredRooms.length} ruangan',
-              style: const TextStyle(
-                fontSize: 14,
-                color: Colors.grey,
-              ),
+              style: const TextStyle(fontSize: 14, color: Colors.grey),
             ),
           ),
         ],
       ),
     );
   }
-  
+
   Widget _buildRoomCard(Room room) {
     final aqiColor = Helpers.getAQIColor(room.currentAQI);
-    // final timeAgo = Helpers.formatTimeAgo(room.currentData.updatedAt);
-    
+    final staleDuration = _getStaleDurationText(room);
+
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
       child: Padding(
@@ -15068,6 +14633,7 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // === Info ruangan: nama, sumber, AQI ===
             Row(
               children: [
                 Expanded(
@@ -15082,33 +14648,9 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
                         ),
                       ),
                       const SizedBox(height: 4),
-                      Row(
-                        children: [
-                          Container(
-                            width: 8,
-                            height: 8,
-                            decoration: BoxDecoration(
-                              color: room.isActive ? Colors.green : Colors.grey,
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            room.isActive ? '● Aktif' : '○ Tidak Aktif',
-                            style: TextStyle(
-                              color: room.isActive ? Colors.green : Colors.grey,
-                              fontSize: 12,
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Text(
-                            'Sumber: ${room.dataSource == 'iot' ? 'Device IoT' : 'Simulasi'}',
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey,
-                            ),
-                          ),
-                        ],
+                      Text(
+                        'Sumber: ${room.dataSource == 'iot' ? 'Device IoT' : 'Simulasi'}',
+                        style: const TextStyle(fontSize: 12, color: Colors.grey),
                       ),
                     ],
                   ),
@@ -15131,20 +14673,39 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
                 ),
               ],
             ),
-            
-            const SizedBox(height: 12),
-            
-            // Last Update
-            // Text(
-            //   'Update: $timeAgo',
-            //   style: const TextStyle(
-            //     fontSize: 12,
-            //     color: Colors.grey,
-            //   ),
-            // ),
-            
+
+            // === Warning di antara "Sumber" dan tombol ===
+            if (staleDuration != null) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.orange.withOpacity(0.6)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.warning_amber_rounded,
+                        color: Colors.orange, size: 22),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Ruangan ini belum memperbarui data selama $staleDuration',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Colors.orange,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+
             const SizedBox(height: 16),
-            
+
             Row(
               children: [
                 Expanded(
@@ -15182,61 +14743,54 @@ class AddEditRoomScreen extends StatefulWidget {
   final Room? room;
   final List<Building> buildings;
   final VoidCallback onRoomSaved;
-  
+
   const AddEditRoomScreen({
     super.key,
     this.room,
     required this.buildings,
     required this.onRoomSaved,
   });
-  
+
   bool get isEditing => room != null;
-  
+
   @override
   State<AddEditRoomScreen> createState() => _AddEditRoomScreenState();
 }
-
 
 class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final RoomRepository _roomRepository = RoomRepository();
   final IoTDeviceRepository _iotDeviceRepository = IoTDeviceRepository();
-  
+
   String? _selectedBuildingId;
   String _selectedDataSource = 'simulation';
   String? _selectedIotDeviceId;
-  bool _isActive = true;
   bool _isLoading = false;
   List<IoTDevice> _iotDevices = [];
-  
+
   @override
   void initState() {
     super.initState();
-    
-    // Prefill fields if editing
+
     if (widget.isEditing) {
       final room = widget.room!;
       _nameController.text = room.name;
-      
-      // ✅ Validasi: pastikan buildingId masih ada di list
+
       final buildingExists = widget.buildings.any((b) => b.id == room.buildingId);
-      _selectedBuildingId = buildingExists 
-          ? room.buildingId 
+      _selectedBuildingId = buildingExists
+          ? room.buildingId
           : (widget.buildings.isNotEmpty ? widget.buildings.first.id : null);
-      
+
       _selectedDataSource = room.dataSource;
       _selectedIotDeviceId = room.iotDeviceId;
-      _isActive = room.isActive;
     } else if (widget.buildings.isNotEmpty) {
-      // Default to first building
       _selectedBuildingId = widget.buildings.first.id;
     }
-    
-    // Load IoT devices
+
     _loadIoTDevices();
   }
-  
+
   Future<void> _loadIoTDevices() async {
     try {
       final devices = await _iotDeviceRepository.getDevices();
@@ -15245,28 +14799,27 @@ class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
       print('Error loading IoT devices: $e');
     }
   }
-  
+
   @override
   void dispose() {
     _nameController.dispose();
     super.dispose();
   }
-  
+
   Future<void> _saveRoom() async {
     if (!_formKey.currentState!.validate()) return;
     if (_selectedBuildingId == null) {
       Helpers.showSnackBar(context, 'Pilih gedung terlebih dahulu', isError: true);
       return;
     }
-    
-    // Validasi khusus untuk IoT data source
+
     if (_selectedDataSource == 'iot' && _selectedIotDeviceId == null) {
       Helpers.showSnackBar(context, 'Pilih device IoT terlebih dahulu', isError: true);
       return;
     }
-    
+
     setState(() => _isLoading = true);
-    
+
     try {
       if (widget.isEditing) {
         await _roomRepository.updateRoom(
@@ -15275,7 +14828,6 @@ class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
           buildingId: _selectedBuildingId!,
           dataSource: _selectedDataSource,
           iotDeviceId: _selectedDataSource == 'iot' ? _selectedIotDeviceId : null,
-          isActive: _isActive,
         );
         Helpers.showSnackBar(context, 'Ruangan berhasil diperbarui');
       } else {
@@ -15284,13 +14836,12 @@ class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
           buildingId: _selectedBuildingId!,
           dataSource: _selectedDataSource,
           iotDeviceId: _selectedDataSource == 'iot' ? _selectedIotDeviceId : null,
-          isActive: _isActive,
         );
         Helpers.showSnackBar(context, 'Ruangan berhasil ditambahkan');
       }
-      
+
       widget.onRoomSaved();
-      
+
       if (mounted) {
         Navigator.pop(context);
       }
@@ -15302,7 +14853,7 @@ class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
       }
     }
   }
-  
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -15327,13 +14878,8 @@ class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'Nama Ruangan*',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
+              const Text('Nama Ruangan*',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
               const SizedBox(height: 8),
               TextFormField(
                 controller: _nameController,
@@ -15348,16 +14894,9 @@ class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
                   return null;
                 },
               ),
-              
               const SizedBox(height: 16),
-              
-              const Text(
-                'Gedung*',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
+              const Text('Gedung*',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
               const SizedBox(height: 8),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -15384,20 +14923,12 @@ class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
                   ),
                 ),
               ),
-              
               const SizedBox(height: 16),
-              
-              const Text(
-                'Sumber Data',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
+              const Text('Sumber Data',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
               const SizedBox(height: 8),
               Column(
                 children: [
-                  // Simulation Option
                   ListTile(
                     contentPadding: EdgeInsets.zero,
                     leading: Radio(
@@ -15411,8 +14942,6 @@ class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
                     subtitle: const Text('Data acak setiap 1 menit'),
                     dense: true,
                   ),
-                  
-                  // IoT Option
                   ListTile(
                     contentPadding: EdgeInsets.zero,
                     leading: Radio(
@@ -15426,21 +14955,15 @@ class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
                     subtitle: const Text('Data dari sensor fisik'),
                     dense: true,
                   ),
-                  
-                  // IoT Device Selection (only show if IoT is selected)
                   if (_selectedDataSource == 'iot')
                     Padding(
                       padding: const EdgeInsets.only(left: 40, top: 8),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text(
-                            'Pilih Device IoT:',
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
+                          const Text('Pilih Device IoT:',
+                              style: TextStyle(
+                                  fontSize: 14, fontWeight: FontWeight.w500)),
                           const SizedBox(height: 8),
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -15467,15 +14990,12 @@ class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
                               ),
                             ),
                           ),
-                          if (_selectedDataSource == 'iot' && _selectedIotDeviceId == null)
+                          if (_selectedIotDeviceId == null)
                             const Padding(
                               padding: EdgeInsets.only(top: 4),
                               child: Text(
                                 'Device IoT wajib dipilih untuk sumber data IoT',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.red,
-                                ),
+                                style: TextStyle(fontSize: 12, color: Colors.red),
                               ),
                             ),
                         ],
@@ -15483,40 +15003,7 @@ class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
                     ),
                 ],
               ),
-              
-              const SizedBox(height: 16),
-              
-              // Status
-              Row(
-                children: [
-                  const Text(
-                    'Status: ',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  ChoiceChip(
-                    label: const Text('Aktif'),
-                    selected: _isActive,
-                    onSelected: (selected) {
-                      setState(() => _isActive = true);
-                    },
-                  ),
-                  const SizedBox(width: 8),
-                  ChoiceChip(
-                    label: const Text('Tidak Aktif'),
-                    selected: !_isActive,
-                    onSelected: (selected) {
-                      setState(() => _isActive = false);
-                    },
-                  ),
-                ],
-              ),
-              
               const SizedBox(height: 32),
-              
               SizedBox(
                 width: double.infinity,
                 height: 50,
@@ -17559,7 +17046,6 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
             buildingName: _currentRoomData.buildingName,
             dataSource: _currentRoomData.dataSource,
             iotDeviceId: _currentRoomData.iotDeviceId,
-            isActive: _currentRoomData.isActive,
             currentAQI: _currentRoomData.currentAQI,
             currentData: _currentRoomData.currentData,
             createdAt: _currentRoomData.createdAt,
@@ -17588,7 +17074,6 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
                 buildingName: _currentRoomData.buildingName,
                 dataSource: _currentRoomData.dataSource,
                 iotDeviceId: _currentRoomData.iotDeviceId,
-                isActive: _currentRoomData.isActive,
                 currentAQI: _currentRoomData.currentAQI,
                 currentData: _currentRoomData.currentData,
                 createdAt: _currentRoomData.createdAt,
@@ -17612,18 +17097,17 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
 
         setState(() {
           _currentRoomData = Room(
-            id: _currentRoomData.id,
-            name: _currentRoomData.name,
-            buildingId: _currentRoomData.buildingId,
-            buildingName: newBuildingName,
-            dataSource: _currentRoomData.dataSource,
-            iotDeviceId: _currentRoomData.iotDeviceId,
-            isActive: _currentRoomData.isActive,
-            currentAQI: _currentRoomData.currentAQI,
-            currentData: _currentRoomData.currentData,
-            createdAt: _currentRoomData.createdAt,
-            updatedAt: _currentRoomData.updatedAt,
-          );
+  id: _currentRoomData.id,
+  name: _currentRoomData.name,
+  buildingId: _currentRoomData.buildingId,
+  buildingName: newBuildingName,
+  dataSource: _currentRoomData.dataSource,
+  iotDeviceId: _currentRoomData.iotDeviceId,
+  currentAQI: _currentRoomData.currentAQI,
+  currentData: _currentRoomData.currentData,
+  createdAt: _currentRoomData.createdAt,
+  updatedAt: _currentRoomData.updatedAt,
+);
         });
 
         _showNotification('Nama gedung diperbarui: $newBuildingName', 'info');
@@ -17659,27 +17143,26 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
       final nameChanged = oldName != newName;
 
       setState(() {
-        _currentRoomData = Room(
-          id: _currentRoomData.id,
-          name: newName,
-          buildingId: _currentRoomData.buildingId,
-          buildingName: _currentRoomData.buildingName,
-          dataSource: _currentRoomData.dataSource,
-          iotDeviceId: _currentRoomData.iotDeviceId,
-          isActive: _currentRoomData.isActive,
-          currentAQI: roomData['currentAQI'],
-          currentData: RoomData(
-            pm25: roomData['currentData']['pm25'].toDouble(),
-            pm10: roomData['currentData']['pm10'].toDouble(),
-            co2: roomData['currentData']['co2'].toDouble(),
-            temperature: roomData['currentData']['temperature'].toDouble(),
-            humidity: roomData['currentData']['humidity'].toDouble(),
-            updatedAt: DateTime.parse(roomData['currentData']['updatedAt']),
-          ),
-          createdAt: _currentRoomData.createdAt,
-          updatedAt: DateTime.parse(roomData['updatedAt']),
-        );
-      });
+  _currentRoomData = Room(
+    id: _currentRoomData.id,
+    name: newName,
+    buildingId: _currentRoomData.buildingId,
+    buildingName: _currentRoomData.buildingName,
+    dataSource: _currentRoomData.dataSource,
+    iotDeviceId: _currentRoomData.iotDeviceId,
+    currentAQI: roomData['currentAQI'],
+    currentData: RoomData(
+      pm25: roomData['currentData']['pm25'].toDouble(),
+      pm10: roomData['currentData']['pm10'].toDouble(),
+      co2: roomData['currentData']['co2'].toDouble(),
+      temperature: roomData['currentData']['temperature'].toDouble(),
+      humidity: roomData['currentData']['humidity'].toDouble(),
+      updatedAt: DateTime.parse(roomData['currentData']['updatedAt']),
+    ),
+    createdAt: _currentRoomData.createdAt,
+    updatedAt: DateTime.parse(roomData['updatedAt']),
+  );
+});
 
       if (nameChanged) {
         _showNotification('Nama ruangan diperbarui: $oldName -> $newName', 'info');
@@ -18701,34 +18184,29 @@ import 'package:unila_aqi/data/repositories/room_repository.dart';
 import 'package:unila_aqi/core/services/socket_service.dart';
 import 'package:unila_aqi/core/services/storage_service.dart';
 import '../../data/models/room.dart';
- 
+
 class RoomProvider with ChangeNotifier {
   final RoomRepository _roomRepository = RoomRepository();
   final SocketService _socketService = SocketService();
   final StorageService _storageService = StorageService();
- 
+
   List<Room> _rooms = [];
   List<Room> _filteredRooms = [];
   String _selectedBuilding = 'Semua Gedung';
   String _sortBy = 'Terbaru';
   String _searchQuery = '';
- 
+
   bool _isLoading = false;
   bool _hasError = false;
   String _errorMessage = '';
   bool _socketConnected = false;
   bool _isRefreshing = false;
- 
-  // Timer for periodic refresh
-  // Timer? _refreshTimer;
-  // final Duration _refreshInterval = Duration(seconds: 60); // Refresh every 60 seconds
+
   DateTime _lastUpdate = DateTime.now();
- 
-  // Stream subscriptions
+
   StreamSubscription? _socketSubscription;
   StreamSubscription? _dataSubscription;
- 
-  // Getters
+
   List<Room> get rooms => _filteredRooms;
   List<Room> get allRooms => _rooms;
   bool get isLoading => _isLoading;
@@ -18740,412 +18218,302 @@ class RoomProvider with ChangeNotifier {
   String get searchQuery => _searchQuery;
   bool get socketConnected => _socketConnected;
   DateTime get lastUpdate => _lastUpdate;
- 
-  // Get unique buildings for filter
+
   List<String> get buildings {
     final buildingSet = <String>{'Semua Gedung'};
- 
     for (final room in _rooms) {
       if (room.buildingName.isNotEmpty) {
         buildingSet.add(room.buildingName);
       }
     }
- 
     return buildingSet.toList();
   }
- 
-  // Initialize socket connection and start periodic refresh
+
   Future<void> initSocket() async {
-  try {
-    // Get auth token
-    final token = await _storageService.getString('auth_token');
-    
-    // Connect to WebSocket
-    await _socketService.connect(token: token);
-    
-    // Setup connection listener
-    _socketSubscription = _socketService.connectionStream.listen((connected) {
-      _socketConnected = connected;
+    try {
+      final token = await _storageService.getString('auth_token');
+      await _socketService.connect(token: token);
+
+      _socketSubscription = _socketService.connectionStream.listen((connected) {
+        _socketConnected = connected;
+        notifyListeners();
+      });
+
+      _dataSubscription = _socketService.dataStream.listen(_handleSocketData);
+
+      _setupSocketListeners();
+
+      _socketConnected = _socketService.isConnected;
+      await _storageService.setSocketConnected(_socketConnected);
+
       notifyListeners();
-    });
-    
-    // Setup data listener
-    _dataSubscription = _socketService.dataStream.listen(_handleSocketData);
-    
-    // Setup listeners
-    _setupSocketListeners();
-    
-    // Update status
-    _socketConnected = _socketService.isConnected;
-    await _storageService.setSocketConnected(_socketConnected);
-    
-    if (_socketConnected) {
-      print('✅ Socket.io initialized and connected');
+    } catch (e) {
+      print('❌ Error initializing socket: $e');
+      _socketConnected = false;
     }
-    
-    notifyListeners();
-  } catch (e) {
-    print('❌ Error initializing socket: $e');
-    _socketConnected = false;
   }
-}
 
-void _handleRoomDeleted(dynamic data) {
-  try {
-    final roomId = data['roomId'];
-    final roomName = data['roomName'];
-    
-    print('🗑️ Processing room deletion: $roomName ($roomId)');
-    
-    final initialLength = _rooms.length;
-    _rooms.removeWhere((room) => room.id == roomId);
-    
-    if (_rooms.length < initialLength) {
-      // Update last update time
-      _lastUpdate = DateTime.now();
-      
-      // Reapply filters — ini juga akan otomatis reset _selectedBuilding
-      // jika gedung sudah tidak punya ruangan (dari fix sebelumnya)
-      _applyFilters();
-      
-      // Notify listeners untuk update UI
-      notifyListeners();
-      
-      print('✅ Room removed from dashboard: $roomName');
-    } else {
-      print('⚠️ Room not found in local list: $roomId');
-    }
-  } catch (e) {
-    print('❌ Error handling room deletion: $e');
-  }
-}
+  void _handleRoomDeleted(dynamic data) {
+    try {
+      final roomId = data['roomId'];
+      final roomName = data['roomName'];
 
-void _handleDashboardRoomUpdated(dynamic data) {
-  try {
-    final action = data['action'];
-    final roomData = data['room'];
+      print('🗑️ Processing room deletion: $roomName ($roomId)');
 
-    // Kita hanya handle 'created' di sini.
-    // 'updated' & 'deleted' sudah dihandle oleh listener lain.
-    if (action != 'created' || roomData == null) return;
+      final initialLength = _rooms.length;
+      _rooms.removeWhere((room) => room.id == roomId);
 
-    final roomId = roomData['id']?.toString();
-    if (roomId == null) return;
-
-    // Cek duplikat — penting untuk avoid race condition
-    if (_rooms.any((r) => r.id == roomId)) {
-      print('ℹ️ Room already exists in list, skipping: $roomId');
-      return;
-    }
-
-    // Bangun objek Room dari payload broadcast backend
-    // NOTE: backend mengirim 'id' (bukan '_id') dan 'buildingId' (bukan 'building')
-    final newRoom = Room(
-      id: roomId,
-      name: roomData['name']?.toString() ?? 'Unknown',
-      buildingId: roomData['buildingId']?.toString() ?? '',
-      buildingName: roomData['buildingName']?.toString() ?? 'Unknown',
-      dataSource: roomData['dataSource']?.toString() ?? 'simulation',
-      iotDeviceId: roomData['iotDeviceId']?.toString(),
-      isActive: roomData['isActive'] == true,
-      currentAQI: (roomData['currentAQI'] as num?)?.toInt() ?? 0,
-      currentData: RoomData.fromJson(
-        Map<String, dynamic>.from(roomData['currentData'] ?? {}),
-      ),
-      createdAt: roomData['createdAt'] != null
-          ? DateTime.parse(roomData['createdAt'].toString())
-          : DateTime.now(),
-      updatedAt: roomData['updatedAt'] != null
-          ? DateTime.parse(roomData['updatedAt'].toString())
-          : DateTime.now(),
-    );
-
-    _rooms.add(newRoom);
-    _lastUpdate = DateTime.now();
-
-    // Reapply filters — _validateSelectedBuilding di dalam _applyFilters
-    // akan otomatis aman kalau building baru tidak terpilih.
-    _applyFilters();
-    notifyListeners();
-
-    print('✅ Room added to dashboard: ${newRoom.name} (${newRoom.buildingName})');
-  } catch (e) {
-    print('❌ Error handling dashboard-room-updated: $e');
-  }
-}
-
-void _setupSocketListeners() {
-  _socketService.on('room-update', _handleRoomUpdate);
-  _socketService.on('dashboard-update', _handleDashboardUpdate);
-  _socketService.on('dashboard-room-updated', _handleDashboardRoomUpdated);
-  _socketService.on('room-name-changed', (data) {
-    handleRoomNameChanged(data);
-  });
-  _socketService.on('room-building-changed', (data) {
-    handleBuildingNameChanged(data);
-  });
-  _socketService.on('room-deleted', _handleRoomDeleted);
-}
-
-
- 
-  // Start periodic refresh timer
-  // void _startPeriodicRefresh() {
-  //   if (_refreshTimer != null && _refreshTimer!.isActive) {
-  //     _refreshTimer!.cancel();
-  //   }
- 
-  //   _refreshTimer = Timer.periodic(_refreshInterval, (timer) {
-  //     if (_socketConnected) {
-  //       // Use socket for real-time updates
-  //       _socketService.requestRefresh();
-  //     } else {
-  //       // Fallback to API refresh
-  //       _refreshData();
-  //     }
-  //   });
- 
-  //   print('🔄 Started periodic refresh every ${_refreshInterval.inSeconds}s');
-  // }
- 
-  // Stop periodic refresh timer
-  // void _stopPeriodicRefresh() {
-  //   if (_refreshTimer != null) {
-  //     _refreshTimer!.cancel();
-  //     _refreshTimer = null;
-  //     print('⏹️ Stopped periodic refresh');
-  //   }
-  // }
-
-  // Validasi apakah _selectedBuilding masih ada
-void _validateSelectedBuilding() {
-  final availableBuildings = buildings; // getter
-  if (!availableBuildings.contains(_selectedBuilding)) {
-    _selectedBuilding = 'Semua Gedung';
-  }
-}
- 
-  // Handle socket data stream
-  void _handleSocketData(Map<String, dynamic> data) {
-  final type = data['type'];
-  final payload = data['data'];
-
-  switch (type) {
-    case 'room-update':
-      _handleRoomUpdate(payload);
-      break;
-    case 'dashboard-update':
-      _handleDashboardUpdate(payload);
-      break;
-    case 'room-deleted': // 
-      _handleRoomDeleted(payload);
-      break;
-      case 'dashboard-room-updated': // 
-      _handleDashboardRoomUpdated(payload);
-      break;
-  }
-}
- 
-  // Handle room update from WebSocket
-  void _handleRoomUpdate(dynamic data) {
-  try {
-    final roomId = data['roomId'];
-    final roomData = data['data'];
-    final source = data['source'] ?? 'unknown';
-    final action = data['action']; //  Tambah handling untuk action
-
-    print('🔄 Processing ${source.toUpperCase()} update for room: $roomId (action: ${action})');
-
-    // Jika ada action 'updated' dan ada oldData, cek apakah nama berubah
-    if (action == 'updated' && data['oldData'] != null) {
-      final oldData = data['oldData'];
-      final newName = roomData['name'];
-      final oldName = oldData['name'];
-      
-      if (newName != oldName) {
-        print('🔄 Detected name change in update: $oldName -> $newName');
-        // Panggil handleRoomNameChanged untuk update nama
-        handleRoomNameChanged({
-          'roomId': roomId,
-          'newName': newName,
-          'oldName': oldName,
-          'buildingName': roomData['buildingName']
-        });
-        return; // Keluar karena sudah dihandle oleh handleRoomNameChanged
+      if (_rooms.length < initialLength) {
+        _lastUpdate = DateTime.now();
+        _applyFilters();
+        notifyListeners();
+        print('✅ Room removed from dashboard: $roomName');
       }
+    } catch (e) {
+      print('❌ Error handling room deletion: $e');
     }
+  }
 
-    // Find room index
-    final roomIndex = _rooms.indexWhere((room) => room.id == roomId);
+  void _handleDashboardRoomUpdated(dynamic data) {
+    try {
+      final action = data['action'];
+      final roomData = data['room'];
 
-    if (roomIndex != -1) {
-      // Create updated room data
-      final updatedRoom = Room(
-        id: _rooms[roomIndex].id,
-        name: roomData['name'] ?? _rooms[roomIndex].name, //  Ambil nama dari data baru
-        buildingId: _rooms[roomIndex].buildingId,
-        buildingName: roomData['buildingName'] ?? _rooms[roomIndex].buildingName, //  Ambil buildingName dari data baru
-        dataSource: _rooms[roomIndex].dataSource,
-        iotDeviceId: _rooms[roomIndex].iotDeviceId,
-        isActive: _rooms[roomIndex].isActive,
-        currentAQI: roomData['currentAQI'],
-        currentData: RoomData(
-          pm25: roomData['currentData']['pm25'].toDouble(),
-          pm10: roomData['currentData']['pm10'].toDouble(),
-          co2: roomData['currentData']['co2'].toDouble(),
-          temperature: roomData['currentData']['temperature'].toDouble(),
-          humidity: roomData['currentData']['humidity'].toDouble(),
-          updatedAt: DateTime.parse(roomData['currentData']['updatedAt']),
+      if (action != 'created' || roomData == null) return;
+
+      final roomId = roomData['id']?.toString();
+      if (roomId == null) return;
+
+      if (_rooms.any((r) => r.id == roomId)) {
+        print('ℹ️ Room already exists in list, skipping: $roomId');
+        return;
+      }
+
+      final newRoom = Room(
+        id: roomId,
+        name: roomData['name']?.toString() ?? 'Unknown',
+        buildingId: roomData['buildingId']?.toString() ?? '',
+        buildingName: roomData['buildingName']?.toString() ?? 'Unknown',
+        dataSource: roomData['dataSource']?.toString() ?? 'simulation',
+        iotDeviceId: roomData['iotDeviceId']?.toString(),
+        currentAQI: (roomData['currentAQI'] as num?)?.toInt() ?? 0,
+        currentData: RoomData.fromJson(
+          Map<String, dynamic>.from(roomData['currentData'] ?? {}),
         ),
-        createdAt: _rooms[roomIndex].createdAt,
-        updatedAt: DateTime.parse(roomData['updatedAt']),
+        createdAt: roomData['createdAt'] != null
+            ? DateTime.parse(roomData['createdAt'].toString())
+            : DateTime.now(),
+        updatedAt: roomData['updatedAt'] != null
+            ? DateTime.parse(roomData['updatedAt'].toString())
+            : DateTime.now(),
       );
 
-      // Update room in list
-      _rooms[roomIndex] = updatedRoom;
-
-      // Update last update time
+      _rooms.add(newRoom);
       _lastUpdate = DateTime.now();
-
-      // Reapply filters
       _applyFilters();
-
-      // Notify listeners
       notifyListeners();
 
-      print('✅ Room ${_rooms[roomIndex].name} updated via ${source.toUpperCase()}: AQI ${updatedRoom.currentAQI}');
+      print('✅ Room added to dashboard: ${newRoom.name} (${newRoom.buildingName})');
+    } catch (e) {
+      print('❌ Error handling dashboard-room-updated: $e');
     }
-  } catch (e) {
-    print('❌ Error handling room update: $e');
   }
-}
- 
-  // Handle dashboard update
-  void _handleDashboardUpdate(dynamic data) {
-  try {
+
+  void _setupSocketListeners() {
+    _socketService.on('room-update', _handleRoomUpdate);
+    _socketService.on('dashboard-update', _handleDashboardUpdate);
+    _socketService.on('dashboard-room-updated', _handleDashboardRoomUpdated);
+    _socketService.on('room-name-changed', (data) {
+      handleRoomNameChanged(data);
+    });
+    _socketService.on('room-building-changed', (data) {
+      handleBuildingNameChanged(data);
+    });
+    _socketService.on('room-deleted', _handleRoomDeleted);
+  }
+
+  void _validateSelectedBuilding() {
+    final availableBuildings = buildings;
+    if (!availableBuildings.contains(_selectedBuilding)) {
+      _selectedBuilding = 'Semua Gedung';
+    }
+  }
+
+  void _handleSocketData(Map<String, dynamic> data) {
     final type = data['type'];
-    
+    final payload = data['data'];
+
     switch (type) {
-      case 'room-data-updated':
-        // Trigger a refresh of all data
+      case 'room-update':
+        _handleRoomUpdate(payload);
+        break;
+      case 'dashboard-update':
+        _handleDashboardUpdate(payload);
+        break;
+      case 'room-deleted':
+        _handleRoomDeleted(payload);
+        break;
+      case 'dashboard-room-updated':
+        _handleDashboardRoomUpdated(payload);
+        break;
+    }
+  }
+
+  void _handleRoomUpdate(dynamic data) {
+    try {
+      final roomId = data['roomId'];
+      final roomData = data['data'];
+      final source = data['source'] ?? 'unknown';
+      final action = data['action'];
+
+      print('🔄 Processing ${source.toUpperCase()} update for room: $roomId (action: $action)');
+
+      if (action == 'updated' && data['oldData'] != null) {
+        final oldData = data['oldData'];
+        final newName = roomData['name'];
+        final oldName = oldData['name'];
+
+        if (newName != oldName) {
+          handleRoomNameChanged({
+            'roomId': roomId,
+            'newName': newName,
+            'oldName': oldName,
+            'buildingName': roomData['buildingName']
+          });
+          return;
+        }
+      }
+
+      final roomIndex = _rooms.indexWhere((room) => room.id == roomId);
+
+      if (roomIndex != -1) {
+        final updatedRoom = Room(
+          id: _rooms[roomIndex].id,
+          name: roomData['name'] ?? _rooms[roomIndex].name,
+          buildingId: _rooms[roomIndex].buildingId,
+          buildingName: roomData['buildingName'] ?? _rooms[roomIndex].buildingName,
+          dataSource: _rooms[roomIndex].dataSource,
+          iotDeviceId: _rooms[roomIndex].iotDeviceId,
+          currentAQI: roomData['currentAQI'],
+          currentData: RoomData(
+            pm25: roomData['currentData']['pm25'].toDouble(),
+            pm10: roomData['currentData']['pm10'].toDouble(),
+            co2: roomData['currentData']['co2'].toDouble(),
+            temperature: roomData['currentData']['temperature'].toDouble(),
+            humidity: roomData['currentData']['humidity'].toDouble(),
+            updatedAt: DateTime.parse(roomData['currentData']['updatedAt']),
+          ),
+          createdAt: _rooms[roomIndex].createdAt,
+          updatedAt: DateTime.parse(roomData['updatedAt']),
+        );
+
+        _rooms[roomIndex] = updatedRoom;
+        _lastUpdate = DateTime.now();
+        _applyFilters();
+        notifyListeners();
+
+        print('✅ Room ${_rooms[roomIndex].name} updated via ${source.toUpperCase()}: AQI ${updatedRoom.currentAQI}');
+      }
+    } catch (e) {
+      print('❌ Error handling room update: $e');
+    }
+  }
+
+  void _handleDashboardUpdate(dynamic data) {
+    try {
+      final type = data['type'];
+
+      switch (type) {
+        case 'room-data-updated':
+          _refreshData();
+          break;
+        case 'building-name-changed':
+          handleBuildingNameChanged(data);
+          break;
+        case 'room-name-changed':
+          handleRoomNameChanged(data);
+          break;
+        default:
+          print('ℹ️ Unknown dashboard update type: $type');
+      }
+    } catch (e) {
+      print('❌ Error handling dashboard update: $e');
+    }
+  }
+
+  void handleRoomNameChanged(Map<String, dynamic> data) {
+    try {
+      final roomId = data['roomId'];
+      final newName = data['newName'];
+      final oldName = data['oldName'];
+      final buildingName = data['buildingName'];
+
+      print('🔄 Processing room name change: $oldName -> $newName ($roomId)');
+
+      final roomIndex = _rooms.indexWhere((room) => room.id == roomId);
+
+      if (roomIndex != -1) {
+        final updatedRoom = Room(
+          id: _rooms[roomIndex].id,
+          name: newName,
+          buildingId: _rooms[roomIndex].buildingId,
+          buildingName: buildingName,
+          dataSource: _rooms[roomIndex].dataSource,
+          iotDeviceId: _rooms[roomIndex].iotDeviceId,
+          currentAQI: _rooms[roomIndex].currentAQI,
+          currentData: _rooms[roomIndex].currentData,
+          createdAt: _rooms[roomIndex].createdAt,
+          updatedAt: DateTime.now(),
+        );
+
+        _rooms[roomIndex] = updatedRoom;
+        _applyFilters();
+        _lastUpdate = DateTime.now();
+        notifyListeners();
+
+        print('✅ Room name updated: $oldName -> $newName');
+      } else {
+        print('⚠️ Room not found in local list: $roomId');
         _refreshData();
-        break;
-      
-      case 'building-name-changed':
-        // Handle building name change
-        handleBuildingNameChanged(data);
-        break;
-        
-      case 'room-name-changed':
-        //  Handle room name change
-        handleRoomNameChanged(data);
-        break;
-        
-      default:
-        print('ℹ️ Unknown dashboard update type: $type');
+      }
+    } catch (e) {
+      print('❌ Error handling room name change: $e');
     }
-  } catch (e) {
-    print('❌ Error handling dashboard update: $e');
   }
-}
 
-
-
-// Handle room name change
-void handleRoomNameChanged(Map<String, dynamic> data) {
-  try {
-    final roomId = data['roomId'];
-    final newName = data['newName'];
-    final oldName = data['oldName'];
-    final buildingName = data['buildingName'];
-    
-    print('🔄 Processing room name change: $oldName -> $newName ($roomId)');
-    
-    // Cari room di list
-    final roomIndex = _rooms.indexWhere((room) => room.id == roomId);
-    
-    if (roomIndex != -1) {
-      // Update room dengan nama baru
-      final updatedRoom = Room(
-        id: _rooms[roomIndex].id,
-        name: newName, // Update nama room
-        buildingId: _rooms[roomIndex].buildingId,
-        buildingName: buildingName,
-        dataSource: _rooms[roomIndex].dataSource,
-        iotDeviceId: _rooms[roomIndex].iotDeviceId,
-        isActive: _rooms[roomIndex].isActive,
-        currentAQI: _rooms[roomIndex].currentAQI,
-        currentData: _rooms[roomIndex].currentData,
-        createdAt: _rooms[roomIndex].createdAt,
-        updatedAt: DateTime.now(),
-      );
-      
-      _rooms[roomIndex] = updatedRoom;
-      
-      // Reapply filters
-      _applyFilters();
-      
-      // Update last update time
-      _lastUpdate = DateTime.now();
-      
-      // Notify listeners
-      notifyListeners();
-      
-      print('✅ Room name updated: $oldName -> $newName');
-    } else {
-      print('⚠️ Room not found in local list: $roomId');
-      // Jika room tidak ditemukan, refresh data
-      _refreshData();
-    }
-  } catch (e) {
-    print('❌ Error handling room name change: $e');
-  }
-}
- 
-  // Join room for real-time updates
   void joinRoom(String roomId) {
     _socketService.joinRoom(roomId);
     _storageService.addSubscribedRoom(roomId);
   }
- 
-  // Leave room
+
   void leaveRoom(String roomId) {
     _socketService.leaveRoom(roomId);
     _storageService.removeSubscribedRoom(roomId);
   }
- 
-  // Check socket connection
+
   Future<void> checkSocketConnection() async {
     final isConnected = await _socketService.checkConnection();
     _socketConnected = isConnected;
     await _storageService.setSocketConnected(isConnected);
     notifyListeners();
   }
- 
-  // Reconnect socket
+
   Future<void> reconnectSocket() async {
     await initSocket();
   }
- 
-  // Initialize and load rooms
+
   Future<void> loadRooms() async {
     _isLoading = true;
     _hasError = false;
     notifyListeners();
- 
+
     try {
-      print('🔄 Loading rooms from database...');
- 
-      // Initialize socket on first load
       if (!_socketConnected) {
         await initSocket();
       }
- 
+
       _rooms = await _roomRepository.getRooms();
       _applyFilters();
- 
-      print('✅ Loaded ${_rooms.length} rooms from database');
- 
     } catch (e) {
       _hasError = true;
       _errorMessage = e.toString();
@@ -19155,45 +18523,31 @@ void handleRoomNameChanged(Map<String, dynamic> data) {
       notifyListeners();
     }
   }
- 
-  // Refresh data with loading indicator
+
   Future<void> refresh() async {
     if (_isRefreshing) return;
- 
+
     _isRefreshing = true;
     _hasError = false;
     notifyListeners();
- 
+
     try {
-      print('🔄 Manual refresh initiated');
- 
-      // Force refresh from API
       _rooms = await _roomRepository.getRooms();
       _applyFilters();
- 
-      // Update last update time
       _lastUpdate = DateTime.now();
- 
-      print('✅ Manual refresh completed: ${_rooms.length} rooms');
- 
     } catch (e) {
       _hasError = true;
       _errorMessage = e.toString();
-      print('❌ Error during refresh: $e');
     } finally {
       _isRefreshing = false;
       notifyListeners();
     }
   }
- 
-  // Internal refresh without loading indicator (for periodic updates)
+
   Future<void> _refreshData() async {
     try {
-      print('🔄 Background refresh initiated');
- 
       final newRooms = await _roomRepository.getRooms();
- 
-      // Check if data has actually changed
+
       bool hasChanges = false;
       if (newRooms.length != _rooms.length) {
         hasChanges = true;
@@ -19206,35 +18560,27 @@ void handleRoomNameChanged(Map<String, dynamic> data) {
           }
         }
       }
- 
+
       if (hasChanges) {
         _rooms = newRooms;
         _applyFilters();
         _lastUpdate = DateTime.now();
- 
-        print('✅ Background refresh completed with changes');
         notifyListeners();
-      } else {
-        print('ℹ️ Background refresh: no changes detected');
       }
- 
     } catch (e) {
       print('❌ Error during background refresh: $e');
     }
   }
- 
-  // Apply all filters and sorting
-  void _applyFilters() {
-  // ✅ Validasi dulu sebelum filter
-  _validateSelectedBuilding();
-  
-  List<Room> result = List.from(_rooms);
 
-  if (_selectedBuilding != 'Semua Gedung') {
-    result = result.where((room) => room.buildingName == _selectedBuilding).toList();
-  }
- 
-    // Apply search query
+  void _applyFilters() {
+    _validateSelectedBuilding();
+
+    List<Room> result = List.from(_rooms);
+
+    if (_selectedBuilding != 'Semua Gedung') {
+      result = result.where((room) => room.buildingName == _selectedBuilding).toList();
+    }
+
     if (_searchQuery.isNotEmpty) {
       final query = _searchQuery.toLowerCase();
       result = result.where((room) =>
@@ -19242,8 +18588,7 @@ void handleRoomNameChanged(Map<String, dynamic> data) {
         room.buildingName.toLowerCase().contains(query)
       ).toList();
     }
- 
-    // Apply sorting
+
     switch (_sortBy) {
       case 'Terbaru':
         result.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
@@ -19258,33 +18603,31 @@ void handleRoomNameChanged(Map<String, dynamic> data) {
         result.sort((a, b) => b.currentAQI.compareTo(a.currentAQI));
         break;
     }
- 
+
     _filteredRooms = result;
   }
- 
-  // Update filters
+
   void updateBuildingFilter(String building) {
     _selectedBuilding = building;
     _applyFilters();
     notifyListeners();
   }
- 
+
   void updateSort(String sortBy) {
     _sortBy = sortBy;
     _applyFilters();
     notifyListeners();
   }
- 
+
   void updateSearchQuery(String query) {
     _searchQuery = query;
     _applyFilters();
     notifyListeners();
   }
- 
-  // Get rooms by building
+
   Map<String, List<Room>> get roomsByBuilding {
     final Map<String, List<Room>> result = {};
- 
+
     for (final room in _filteredRooms) {
       final buildingName = room.buildingName;
       if (!result.containsKey(buildingName)) {
@@ -19292,11 +18635,10 @@ void handleRoomNameChanged(Map<String, dynamic> data) {
       }
       result[buildingName]!.add(room);
     }
- 
+
     return result;
   }
- 
-  // Clear filters
+
   void clearFilters() {
     _selectedBuilding = 'Semua Gedung';
     _sortBy = 'Terbaru';
@@ -19304,8 +18646,7 @@ void handleRoomNameChanged(Map<String, dynamic> data) {
     _applyFilters();
     notifyListeners();
   }
- 
-  // Get room by ID
+
   Room? getRoomById(String roomId) {
     try {
       return _rooms.firstWhere((room) => room.id == roomId);
@@ -19315,79 +18656,54 @@ void handleRoomNameChanged(Map<String, dynamic> data) {
   }
 
   void handleBuildingNameChanged(Map<String, dynamic> data) {
-  try {
-    final buildingId = data['buildingId'];
-    final newBuildingName = data['newBuildingName'];
-    final affectedRooms = List<String>.from(data['affectedRooms'] ?? []);
-    
-    print('🔄 Processing building name change: $buildingId -> $newBuildingName');
-    print('📋 Affected rooms: $affectedRooms');
-    
-    // Update all rooms that belong to this building
-    bool hasChanges = false;
-    for (int i = 0; i < _rooms.length; i++) {
-      if (_rooms[i].buildingId == buildingId) {
-        // Create updated room
-        final updatedRoom = Room(
-          id: _rooms[i].id,
-          name: _rooms[i].name,
-          buildingId: _rooms[i].buildingId,
-          buildingName: newBuildingName, // Update building name
-          dataSource: _rooms[i].dataSource,
-          iotDeviceId: _rooms[i].iotDeviceId,
-          isActive: _rooms[i].isActive,
-          currentAQI: _rooms[i].currentAQI,
-          currentData: _rooms[i].currentData,
-          createdAt: _rooms[i].createdAt,
-          updatedAt: DateTime.now(),
-        );
-        
-        _rooms[i] = updatedRoom;
-        hasChanges = true;
-        
-        print('✅ Updated room ${_rooms[i].name}: building name -> $newBuildingName');
-      }
-    }
-    
-    if (hasChanges) {
-      // Reapply filters
-      _applyFilters();
-      
-      // Update last update time
-      _lastUpdate = DateTime.now();
+    try {
+      final buildingId = data['buildingId'];
+      final newBuildingName = data['newBuildingName'];
 
-      _applyFilters();
-      
-      // Notify listeners
-      notifyListeners();
-      
-      print('🎯 Building name update completed. Affected rooms updated.');
+      print('🔄 Processing building name change: $buildingId -> $newBuildingName');
+
+      bool hasChanges = false;
+      for (int i = 0; i < _rooms.length; i++) {
+        if (_rooms[i].buildingId == buildingId) {
+          final updatedRoom = Room(
+            id: _rooms[i].id,
+            name: _rooms[i].name,
+            buildingId: _rooms[i].buildingId,
+            buildingName: newBuildingName,
+            dataSource: _rooms[i].dataSource,
+            iotDeviceId: _rooms[i].iotDeviceId,
+            currentAQI: _rooms[i].currentAQI,
+            currentData: _rooms[i].currentData,
+            createdAt: _rooms[i].createdAt,
+            updatedAt: DateTime.now(),
+          );
+
+          _rooms[i] = updatedRoom;
+          hasChanges = true;
+
+          print('✅ Updated room ${_rooms[i].name}: building name -> $newBuildingName');
+        }
+      }
+
+      if (hasChanges) {
+        _applyFilters();
+        _lastUpdate = DateTime.now();
+        notifyListeners();
+      }
+    } catch (e) {
+      print('❌ Error handling building name change: $e');
     }
-  } catch (e) {
-    print('❌ Error handling building name change: $e');
   }
-}
- 
-  // Dispose
+
   @override
   void dispose() {
-    // Stop refresh timer
-    // _stopPeriodicRefresh();
- 
-    // Cancel subscriptions
     _socketSubscription?.cancel();
     _dataSubscription?.cancel();
- 
-    // Disconnect socket
     _socketService.disconnect();
- 
-    // Remove event listeners
     _socketService.off('room-update');
     _socketService.off('dashboard-update');
     _socketService.off('dashboard-room-updated');
-     _socketService.off('room-deleted');
-     
- 
+    _socketService.off('room-deleted');
     super.dispose();
   }
 }
@@ -20429,8 +19745,7 @@ import '../../../core/utils/helpers.dart';
 class RoomCard extends StatelessWidget {
   final Room room;
   final VoidCallback? onTap;
-  
-  
+
   const RoomCard({
     super.key,
     required this.room,
@@ -20441,7 +19756,7 @@ class RoomCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final aqiColor = Helpers.getAQIColor(room.currentAQI);
     final aqiLabel = Helpers.getAQILabel(room.currentAQI);
-    
+
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 0),
       elevation: 2,
@@ -20504,20 +19819,26 @@ class RoomCard extends StatelessWidget {
                   ),
                 ],
               ),
-              
+
               const SizedBox(height: 16),
-              
-              // AQI Large Display - CENTERED
-              Center(
+
+              // AQI Large Display - dengan background warna AQI
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: aqiColor,
+                  borderRadius: BorderRadius.circular(16),
+                ),
                 child: Column(
                   children: [
                     // Large AQI number
                     Text(
                       room.currentAQI.toString(),
-                      style: TextStyle(
+                      style: const TextStyle(
                         fontSize: 64,
                         fontWeight: FontWeight.w800,
-                        color: aqiColor,
+                        color: Colors.white,
                         height: 0.9,
                       ),
                     ),
@@ -20526,12 +19847,12 @@ class RoomCard extends StatelessWidget {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
                       decoration: BoxDecoration(
-                        color: aqiColor,
+                        color: Colors.white.withOpacity(0.2),
                         borderRadius: BorderRadius.circular(20),
                       ),
-                      child: Text(
+                      child: const Text(
                         'INDEKS KUALITAS UDARA',
-                        style: const TextStyle(
+                        style: TextStyle(
                           color: Colors.white,
                           fontWeight: FontWeight.w700,
                           fontSize: 12,
@@ -20542,9 +19863,9 @@ class RoomCard extends StatelessWidget {
                   ],
                 ),
               ),
-              
+
               const SizedBox(height: 20),
-              
+
               // Parameter Grid - 2 rows, 3 columns
               GridView.count(
                 physics: const NeverScrollableScrollPhysics(),
@@ -20557,48 +19878,48 @@ class RoomCard extends StatelessWidget {
                   // PM2.5
                   _buildParameterCell(
                     label: 'PM2.5',
-                    value: '${room.currentData.pm25.toStringAsFixed(1)}',
+                    value: room.currentData.pm25.toStringAsFixed(1),
                     unit: 'µg/m³',
                     status: Helpers.getPM25Status(room.currentData.pm25),
                     color: Helpers.getPM25Color(room.currentData.pm25),
                   ),
-                  
+
                   // PM10
                   _buildParameterCell(
                     label: 'PM10',
-                    value: '${room.currentData.pm10.toStringAsFixed(1)}',
+                    value: room.currentData.pm10.toStringAsFixed(1),
                     unit: 'µg/m³',
-                    status: Helpers.getPM25Status(room.currentData.pm10),
-                    color: Helpers.getPM25Color(room.currentData.pm10),
+                    status: Helpers.getPM10Status(room.currentData.pm10),
+                    color: Helpers.getPM10Color(room.currentData.pm10),
                   ),
-                  
+
                   // CO2
                   _buildParameterCell(
                     label: 'CO₂',
-                    value: '${room.currentData.co2.round()}',
+                    value: room.currentData.co2.round().toString(),
                     unit: 'ppm',
                     status: Helpers.getCO2Status(room.currentData.co2),
                     color: Helpers.getCO2Color(room.currentData.co2),
                   ),
-                  
+
                   // Temperature
                   _buildParameterCell(
                     label: 'SUHU',
-                    value: '${room.currentData.temperature.toStringAsFixed(1)}',
+                    value: room.currentData.temperature.toStringAsFixed(1),
                     unit: '°C',
                     status: Helpers.getTemperatureStatus(room.currentData.temperature),
                     color: Helpers.getTemperatureColor(room.currentData.temperature),
                   ),
-                  
+
                   // Humidity
                   _buildParameterCell(
                     label: 'LEMBAB',
-                    value: '${room.currentData.humidity.round()}',
+                    value: room.currentData.humidity.round().toString(),
                     unit: '%',
                     status: Helpers.getHumidityStatus(room.currentData.humidity),
                     color: Helpers.getHumidityColor(room.currentData.humidity),
                   ),
-                  
+
                   // Last Update
                   Container(
                     decoration: BoxDecoration(
@@ -20611,7 +19932,6 @@ class RoomCard extends StatelessWidget {
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          
                           const SizedBox(height: 4),
                           Text(
                             'UPDATE',
@@ -20623,36 +19943,34 @@ class RoomCard extends StatelessWidget {
                           ),
                           const SizedBox(height: 4),
                           Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.baseline,
-              textBaseline: TextBaseline.alphabetic,
-              children: [
-                Text(
-                  Helpers.formatLastUpdate(room.currentData.updatedAt),
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFF212529),
-                  ),
-                ),
-                const SizedBox(width: 2),
-              ],
-            ),
-                         
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.baseline,
+                            textBaseline: TextBaseline.alphabetic,
+                            children: [
+                              Text(
+                                Helpers.formatLastUpdate(room.currentData.updatedAt),
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w700,
+                                  color: Color(0xFF212529),
+                                ),
+                              ),
+                              const SizedBox(width: 2),
+                            ],
+                          ),
                         ],
                       ),
                     ),
                   ),
                 ],
               ),
-              
+
               const SizedBox(height: 12),
-              
-              // Footer - Data source and additional info
+
+              // Footer - Data source
               Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                mainAxisAlignment: MainAxisAlignment.start,
                 children: [
-                  // Data source indicator
                   if (room.isIot)
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -20707,39 +20025,6 @@ class RoomCard extends StatelessWidget {
                         ],
                       ),
                     ),
-                  
-                  // Room status
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: room.isActive 
-                          ? const Color(0xFFE8F5E9) 
-                          : const Color(0xFFF5F5F5),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(
-                          width: 6,
-                          height: 6,
-                          decoration: BoxDecoration(
-                            color: room.isActive ? Colors.green : Colors.grey,
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          room.isActive ? 'Aktif' : 'Nonaktif',
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w600,
-                            color: room.isActive ? Colors.green : Colors.grey,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
                 ],
               ),
             ],
@@ -20748,7 +20033,7 @@ class RoomCard extends StatelessWidget {
       ),
     );
   }
-  
+
   Widget _buildParameterCell({
     required String label,
     required String value,
@@ -20758,9 +20043,15 @@ class RoomCard extends StatelessWidget {
   }) {
     return Container(
       decoration: BoxDecoration(
-        color: const Color(0xFFF8F9FA),
+        color: color,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE9ECEF)),
+        boxShadow: const [
+          BoxShadow(
+            color: Colors.black12,
+            blurRadius: 4,
+            offset: Offset(0, 2),
+          ),
+        ],
       ),
       child: Padding(
         padding: const EdgeInsets.all(10),
@@ -20773,12 +20064,12 @@ class RoomCard extends StatelessWidget {
               style: TextStyle(
                 fontSize: 10,
                 fontWeight: FontWeight.w600,
-                color: Colors.grey[700],
+                color: Colors.white.withOpacity(0.9),
               ),
             ),
-            
+
             const SizedBox(height: 4),
-            
+
             // Value and Unit
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -20790,7 +20081,7 @@ class RoomCard extends StatelessWidget {
                   style: const TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w700,
-                    color: Color(0xFF212529),
+                    color: Colors.white,
                   ),
                 ),
                 const SizedBox(width: 2),
@@ -20798,27 +20089,27 @@ class RoomCard extends StatelessWidget {
                   unit,
                   style: TextStyle(
                     fontSize: 9,
-                    color: Colors.grey[600],
+                    color: Colors.white.withOpacity(0.8),
                   ),
                 ),
               ],
             ),
-            
+
             const SizedBox(height: 6),
-            
+
             // Status chip
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
               decoration: BoxDecoration(
-                color: color.withOpacity(0.1),
+                color: Colors.white.withOpacity(0.2),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Text(
                 status.length > 10 ? '${status.substring(0, 10)}...' : status,
-                style: TextStyle(
+                style: const TextStyle(
                   fontSize: 9,
                   fontWeight: FontWeight.w600,
-                  color: color,
+                  color: Colors.white,
                 ),
                 overflow: TextOverflow.ellipsis,
                 maxLines: 1,

@@ -10,22 +10,17 @@ const iotDeviceSchema = new mongoose.Schema({
     type: String,
     trim: true
   },
-  // HAPUS field building dan buildingName
   apiEndpoint: {
     type: String,
     required: true,
     trim: true
-  },
-  isActive: {
-    type: Boolean,
-    default: true
   },
   lastUpdate: {
     type: Date
   },
   status: {
     type: String,
-    enum: ['online', 'offline', 'error'],
+    enum: ['online', 'offline'],
     default: 'offline'
   },
   createdAt: {

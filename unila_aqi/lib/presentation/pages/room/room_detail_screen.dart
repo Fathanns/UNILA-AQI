@@ -57,7 +57,6 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
             buildingName: _currentRoomData.buildingName,
             dataSource: _currentRoomData.dataSource,
             iotDeviceId: _currentRoomData.iotDeviceId,
-            isActive: _currentRoomData.isActive,
             currentAQI: _currentRoomData.currentAQI,
             currentData: _currentRoomData.currentData,
             createdAt: _currentRoomData.createdAt,
@@ -86,7 +85,6 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
                 buildingName: _currentRoomData.buildingName,
                 dataSource: _currentRoomData.dataSource,
                 iotDeviceId: _currentRoomData.iotDeviceId,
-                isActive: _currentRoomData.isActive,
                 currentAQI: _currentRoomData.currentAQI,
                 currentData: _currentRoomData.currentData,
                 createdAt: _currentRoomData.createdAt,
@@ -110,18 +108,17 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
 
         setState(() {
           _currentRoomData = Room(
-            id: _currentRoomData.id,
-            name: _currentRoomData.name,
-            buildingId: _currentRoomData.buildingId,
-            buildingName: newBuildingName,
-            dataSource: _currentRoomData.dataSource,
-            iotDeviceId: _currentRoomData.iotDeviceId,
-            isActive: _currentRoomData.isActive,
-            currentAQI: _currentRoomData.currentAQI,
-            currentData: _currentRoomData.currentData,
-            createdAt: _currentRoomData.createdAt,
-            updatedAt: _currentRoomData.updatedAt,
-          );
+  id: _currentRoomData.id,
+  name: _currentRoomData.name,
+  buildingId: _currentRoomData.buildingId,
+  buildingName: newBuildingName,
+  dataSource: _currentRoomData.dataSource,
+  iotDeviceId: _currentRoomData.iotDeviceId,
+  currentAQI: _currentRoomData.currentAQI,
+  currentData: _currentRoomData.currentData,
+  createdAt: _currentRoomData.createdAt,
+  updatedAt: _currentRoomData.updatedAt,
+);
         });
 
         _showNotification('Nama gedung diperbarui: $newBuildingName', 'info');
@@ -157,27 +154,26 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
       final nameChanged = oldName != newName;
 
       setState(() {
-        _currentRoomData = Room(
-          id: _currentRoomData.id,
-          name: newName,
-          buildingId: _currentRoomData.buildingId,
-          buildingName: _currentRoomData.buildingName,
-          dataSource: _currentRoomData.dataSource,
-          iotDeviceId: _currentRoomData.iotDeviceId,
-          isActive: _currentRoomData.isActive,
-          currentAQI: roomData['currentAQI'],
-          currentData: RoomData(
-            pm25: roomData['currentData']['pm25'].toDouble(),
-            pm10: roomData['currentData']['pm10'].toDouble(),
-            co2: roomData['currentData']['co2'].toDouble(),
-            temperature: roomData['currentData']['temperature'].toDouble(),
-            humidity: roomData['currentData']['humidity'].toDouble(),
-            updatedAt: DateTime.parse(roomData['currentData']['updatedAt']),
-          ),
-          createdAt: _currentRoomData.createdAt,
-          updatedAt: DateTime.parse(roomData['updatedAt']),
-        );
-      });
+  _currentRoomData = Room(
+    id: _currentRoomData.id,
+    name: newName,
+    buildingId: _currentRoomData.buildingId,
+    buildingName: _currentRoomData.buildingName,
+    dataSource: _currentRoomData.dataSource,
+    iotDeviceId: _currentRoomData.iotDeviceId,
+    currentAQI: roomData['currentAQI'],
+    currentData: RoomData(
+      pm25: roomData['currentData']['pm25'].toDouble(),
+      pm10: roomData['currentData']['pm10'].toDouble(),
+      co2: roomData['currentData']['co2'].toDouble(),
+      temperature: roomData['currentData']['temperature'].toDouble(),
+      humidity: roomData['currentData']['humidity'].toDouble(),
+      updatedAt: DateTime.parse(roomData['currentData']['updatedAt']),
+    ),
+    createdAt: _currentRoomData.createdAt,
+    updatedAt: DateTime.parse(roomData['updatedAt']),
+  );
+});
 
       if (nameChanged) {
         _showNotification('Nama ruangan diperbarui: $oldName -> $newName', 'info');

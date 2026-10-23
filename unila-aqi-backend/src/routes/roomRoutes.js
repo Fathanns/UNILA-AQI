@@ -1,15 +1,13 @@
-// File: src/routes/roomRoutes.js
 const express = require('express');
 const router = express.Router();
 const Room = require('../models/Room');
 const Building = require('../models/Building');
 const { authMiddleware, adminMiddleware } = require('../middleware/authMiddleware');
 
-// Helper untuk broadcast room update - DIPERBAIKI LENGKAP
 const broadcastRoomUpdate = (io, room, action, oldData = null) => {
   if (io) {
     const updateData = {
-      action: action, // 'created', 'updated', 'deleted'
+      action: action,
       room: {
         id: room._id,
         name: room.name,
@@ -17,28 +15,22 @@ const broadcastRoomUpdate = (io, room, action, oldData = null) => {
         buildingName: room.buildingName,
         dataSource: room.dataSource,
         iotDeviceId: room.iotDeviceId,
-        isActive: room.isActive,
         currentAQI: room.currentAQI,
         currentData: room.currentData,
         createdAt: room.createdAt,
         updatedAt: room.updatedAt
       },
-      oldData: oldData, // Untuk tracking perubahan
+      oldData: oldData,
       timestamp: new Date()
     };
-    
-    // Broadcast ke channel spesifik room
+
     io.to(room._id.toString()).emit('room-updated', updateData);
-    
-    // Broadcast ke semua client di dashboard
     io.emit('dashboard-room-updated', updateData);
-    
-    // 🔥 PERBAIKAN UTAMA: Broadcast perubahan spesifik jika ada
+
     if (oldData) {
-      // Jika nama berubah
       if (oldData.name !== room.name) {
         console.log(`🔄 Broadcasting room name change: ${oldData.name} -> ${room.name}`);
-        
+
         io.emit('room-name-changed', {
           roomId: room._id,
           oldName: oldData.name,
@@ -46,8 +38,7 @@ const broadcastRoomUpdate = (io, room, action, oldData = null) => {
           buildingName: room.buildingName,
           timestamp: new Date()
         });
-        
-        // Juga broadcast ke channel spesifik room
+
         io.to(room._id.toString()).emit('room-name-updated', {
           roomId: room._id,
           oldName: oldData.name,
@@ -56,8 +47,7 @@ const broadcastRoomUpdate = (io, room, action, oldData = null) => {
           timestamp: new Date()
         });
       }
-      
-      // Jika building berubah
+
       if (oldData.buildingId !== room.building.toString()) {
         io.emit('room-building-changed', {
           roomId: room._id,
@@ -68,20 +58,8 @@ const broadcastRoomUpdate = (io, room, action, oldData = null) => {
           timestamp: new Date()
         });
       }
-      
-      // Jika status aktif berubah
-      if (oldData.isActive !== room.isActive) {
-        io.emit('room-status-changed', {
-          roomId: room._id,
-          oldStatus: oldData.isActive,
-          newStatus: room.isActive,
-          roomName: room.name,
-          buildingName: room.buildingName,
-          timestamp: new Date()
-        });
-      }
     }
-    
+
     console.log(`📢 Broadcast room ${action}: ${room.name} (${room._id})`);
   }
 };
@@ -92,7 +70,7 @@ router.get('/', async (req, res) => {
     const rooms = await Room.find()
       .populate('building', 'name code')
       .sort({ name: 1 });
-    
+
     res.json({
       success: true,
       count: rooms.length,
@@ -112,14 +90,14 @@ router.get('/:id', async (req, res) => {
   try {
     const room = await Room.findById(req.params.id)
       .populate('building', 'name code');
-    
+
     if (!room) {
       return res.status(404).json({
         success: false,
         message: 'Room not found'
       });
     }
-    
+
     res.json({
       success: true,
       data: room
@@ -136,25 +114,23 @@ router.get('/:id', async (req, res) => {
 // POST create room (admin only)
 router.post('/', authMiddleware, adminMiddleware, async (req, res) => {
   try {
-    const { name, buildingId, dataSource, iotDeviceId, isActive } = req.body;
+    const { name, buildingId, dataSource, iotDeviceId } = req.body;
     const io = req.app.get('socketio');
-    
-    // Validate required fields
+
     if (!name) {
       return res.status(400).json({
         success: false,
         message: 'Room name is required'
       });
     }
-    
+
     if (!buildingId) {
       return res.status(400).json({
         success: false,
         message: 'Building ID is required'
       });
     }
-    
-    // Check if building exists
+
     const building = await Building.findById(buildingId);
     if (!building) {
       return res.status(404).json({
@@ -162,8 +138,7 @@ router.post('/', authMiddleware, adminMiddleware, async (req, res) => {
         message: 'Building not found'
       });
     }
-    
-    // Validate dataSource
+
     const validDataSources = ['simulation', 'iot'];
     if (dataSource && !validDataSources.includes(dataSource)) {
       return res.status(400).json({
@@ -171,36 +146,32 @@ router.post('/', authMiddleware, adminMiddleware, async (req, res) => {
         message: 'Invalid data source. Must be "simulation" or "iot"'
       });
     }
-    
-    // For IoT source, iotDeviceId is required
+
     if (dataSource === 'iot' && !iotDeviceId) {
       return res.status(400).json({
         success: false,
         message: 'IoT Device ID is required for IoT data source'
       });
     }
-    
-    // Check if room name already exists in the same building
+
     const existingRoom = await Room.findOne({
       name: name.trim(),
       building: buildingId
     });
-    
+
     if (existingRoom) {
       return res.status(400).json({
         success: false,
         message: 'Room name already exists in this building'
       });
     }
-    
-    // Create room with synced building name
+
     const room = new Room({
       name: name.trim(),
       building: buildingId,
-      buildingName: building.name, // Get building name from Building collection
+      buildingName: building.name,
       dataSource: dataSource || 'simulation',
       iotDeviceId: dataSource === 'iot' ? iotDeviceId : null,
-      isActive: isActive !== undefined ? isActive : true,
       currentAQI: 0,
       currentData: {
         pm25: 0,
@@ -213,18 +184,16 @@ router.post('/', authMiddleware, adminMiddleware, async (req, res) => {
       createdAt: new Date(),
       updatedAt: new Date()
     });
-    
+
     await room.save();
-    
-    // Update building room count
+
     building.roomCount = await Room.countDocuments({ building: buildingId });
     await building.save();
-    
-    // 🔥 PERBAIKAN: Broadcast room creation
+
     if (io) {
       broadcastRoomUpdate(io, room, 'created');
     }
-    
+
     res.status(201).json({
       success: true,
       message: 'Room created successfully',
@@ -239,37 +208,32 @@ router.post('/', authMiddleware, adminMiddleware, async (req, res) => {
   }
 });
 
-// PUT update room (admin only) - PERBAIKAN UTAMA LENGKAP
+// PUT update room (admin only)
 router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
   try {
-    const { name, buildingId, dataSource, iotDeviceId, isActive } = req.body;
+    const { name, buildingId, dataSource, iotDeviceId } = req.body;
     const io = req.app.get('socketio');
-    
+
     const room = await Room.findById(req.params.id)
       .populate('building', 'name');
-    
+
     if (!room) {
       return res.status(404).json({
         success: false,
         message: 'Room not found'
       });
     }
-    
-    // 🔥 SIMPAN DATA LAMA UNTUK PERBANDINGAN
+
     const oldData = {
       name: room.name,
       buildingId: room.building._id ? room.building._id.toString() : room.building.toString(),
       buildingName: room.buildingName,
       dataSource: room.dataSource,
-      isActive: room.isActive,
       iotDeviceId: room.iotDeviceId
     };
-    
+
     console.log(`🔄 Room update request for: ${room.name}`);
-    console.log(`   Old data:`, oldData);
-    console.log(`   New data:`, { name, buildingId, dataSource, iotDeviceId, isActive });
-    
-    // Validate dataSource if provided
+
     const validDataSources = ['simulation', 'iot'];
     if (dataSource && !validDataSources.includes(dataSource)) {
       return res.status(400).json({
@@ -277,20 +241,18 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
         message: 'Invalid data source. Must be "simulation" or "iot"'
       });
     }
-    
-    // For IoT source, iotDeviceId is required
+
     if (dataSource === 'iot' && !iotDeviceId) {
       return res.status(400).json({
         success: false,
         message: 'IoT Device ID is required for IoT data source'
       });
     }
-    
+
     let buildingChanged = false;
     let oldBuildingId = null;
     let newBuilding = null;
-    
-    // If building is being changed
+
     if (buildingId && buildingId !== room.building.toString()) {
       newBuilding = await Building.findById(buildingId);
       if (!newBuilding) {
@@ -299,34 +261,31 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
           message: 'Building not found'
         });
       }
-      
-      // Check if room name already exists in the new building
+
       const existingRoom = await Room.findOne({
         name: name || room.name,
         building: buildingId,
         _id: { $ne: room._id }
       });
-      
+
       if (existingRoom) {
         return res.status(400).json({
           success: false,
           message: 'Room name already exists in the new building'
         });
       }
-      
+
       oldBuildingId = room.building;
       room.building = buildingId;
-      room.buildingName = newBuilding.name; // Update building name from new building
+      room.buildingName = newBuilding.name;
       buildingChanged = true;
-      console.log(`   Building changed: ${oldData.buildingName} -> ${newBuilding.name}`);
     } else if (name && name !== room.name) {
-      // Check if room name already exists in the same building
       const existingRoom = await Room.findOne({
         name: name,
         building: room.building,
         _id: { $ne: room._id }
       });
-      
+
       if (existingRoom) {
         return res.status(400).json({
           success: false,
@@ -334,47 +293,35 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
         });
       }
     }
-    
-    // Update fields
+
     if (name) {
-      console.log(`   Name changed: ${room.name} -> ${name}`);
       room.name = name.trim();
     }
     if (dataSource !== undefined) {
-      console.log(`   Data source changed: ${room.dataSource} -> ${dataSource}`);
       room.dataSource = dataSource;
       room.iotDeviceId = dataSource === 'iot' ? iotDeviceId : null;
     }
     if (iotDeviceId !== undefined && dataSource === 'iot') {
       room.iotDeviceId = iotDeviceId;
     }
-    if (isActive !== undefined) {
-      console.log(`   Status changed: ${room.isActive} -> ${isActive}`);
-      room.isActive = isActive;
-    }
     room.updatedAt = new Date();
-    
-    // If building didn't change, ensure buildingName is synced
+
     if (!buildingChanged) {
       const currentBuilding = await Building.findById(room.building);
       if (currentBuilding && room.buildingName !== currentBuilding.name) {
-        console.log(`   Syncing building name: ${room.buildingName} -> ${currentBuilding.name}`);
         room.buildingName = currentBuilding.name;
       }
     }
-    
+
     await room.save();
-    
-    // Update building room counts if building changed
+
     if (buildingChanged) {
-      // Update old building count
       if (oldBuildingId) {
         const oldBuilding = await Building.findById(oldBuildingId);
         if (oldBuilding) {
           oldBuilding.roomCount = await Room.countDocuments({ building: oldBuildingId });
           await oldBuilding.save();
-          
-          // Broadcast old building update
+
           if (io) {
             io.emit('building-updated', {
               action: 'room-removed',
@@ -386,13 +333,11 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
           }
         }
       }
-      
-      // Update new building count
+
       if (newBuilding) {
         newBuilding.roomCount = await Room.countDocuments({ building: buildingId });
         await newBuilding.save();
-        
-        // Broadcast new building update
+
         if (io) {
           io.emit('building-updated', {
             action: 'room-added',
@@ -404,24 +349,17 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
         }
       }
     } else {
-      // Update current building count
       const currentBuilding = await Building.findById(room.building);
       if (currentBuilding) {
         currentBuilding.roomCount = await Room.countDocuments({ building: room.building });
         await currentBuilding.save();
       }
     }
-    
-    // 🔥 PERBAIKAN UTAMA: Broadcast room update melalui WebSocket
+
     if (io) {
-      console.log(`📢 Broadcasting room update via WebSocket...`);
       broadcastRoomUpdate(io, room, 'updated', oldData);
-      
-      // Special handling for name changes
+
       if (name && name !== oldData.name) {
-        console.log(`   🚀 Sending room-name-changed event`);
-        
-        // Additional broadcast for immediate UI update
         io.emit('room-name-changed-immediate', {
           roomId: room._id,
           oldName: oldData.name,
@@ -431,17 +369,13 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
         });
       }
     }
-    
-    // Log perubahan
+
     const changes = {
       nameChanged: name && name !== oldData.name,
       buildingChanged: buildingChanged,
-      dataSourceChanged: dataSource && dataSource !== oldData.dataSource,
-      statusChanged: isActive !== undefined && isActive !== oldData.isActive
+      dataSourceChanged: dataSource && dataSource !== oldData.dataSource
     };
-    
-    console.log(`✅ Room updated successfully. Changes:`, changes);
-    
+
     res.json({
       success: true,
       message: 'Room updated successfully',
@@ -463,30 +397,28 @@ router.delete('/:id', authMiddleware, adminMiddleware, async (req, res) => {
   try {
     const io = req.app.get('socketio');
     const room = await Room.findById(req.params.id);
-    
+
     if (!room) {
       return res.status(404).json({
         success: false,
         message: 'Room not found'
       });
     }
-    
+
     const buildingId = room.building;
     const roomData = {
       id: room._id,
       name: room.name,
       buildingName: room.buildingName
     };
-    
+
     await room.deleteOne();
-    
-    // Update building room count
+
     const building = await Building.findById(buildingId);
     if (building) {
       building.roomCount = await Room.countDocuments({ building: buildingId });
       await building.save();
-      
-      // Broadcast building update
+
       if (io) {
         io.emit('building-updated', {
           action: 'room-deleted',
@@ -496,8 +428,7 @@ router.delete('/:id', authMiddleware, adminMiddleware, async (req, res) => {
         });
       }
     }
-    
-    // Broadcast room deletion
+
     if (io) {
       io.emit('room-deleted', {
         roomId: room._id,
@@ -505,15 +436,14 @@ router.delete('/:id', authMiddleware, adminMiddleware, async (req, res) => {
         buildingName: room.buildingName,
         timestamp: new Date()
       });
-      
-      // Juga kirim ke channel spesifik room
+
       io.to(room._id.toString()).emit('room-updated', {
         action: 'deleted',
         room: roomData,
         timestamp: new Date()
       });
     }
-    
+
     res.json({
       success: true,
       message: 'Room deleted successfully'
@@ -527,32 +457,31 @@ router.delete('/:id', authMiddleware, adminMiddleware, async (req, res) => {
   }
 });
 
-// 🔥 BARU: Endpoint untuk force refresh room data
+// Force refresh
 router.post('/:id/force-refresh', authMiddleware, adminMiddleware, async (req, res) => {
   try {
     const io = req.app.get('socketio');
     const room = await Room.findById(req.params.id);
-    
+
     if (!room) {
       return res.status(404).json({
         success: false,
         message: 'Room not found'
       });
     }
-    
+
     if (io) {
-      // Broadcast refresh event
       io.emit('room-force-refresh', {
         roomId: room._id,
         roomName: room.name,
         timestamp: new Date()
       });
-      
+
       io.to(room._id.toString()).emit('room-refresh-requested', {
         timestamp: new Date()
       });
     }
-    
+
     res.json({
       success: true,
       message: 'Force refresh broadcasted',
@@ -568,28 +497,27 @@ router.post('/:id/force-refresh', authMiddleware, adminMiddleware, async (req, r
   }
 });
 
-// 🔥 BARU: Endpoint untuk sync room dengan building name
+// Sync building name
 router.post('/:id/sync-building', authMiddleware, adminMiddleware, async (req, res) => {
   try {
     const io = req.app.get('socketio');
     const room = await Room.findById(req.params.id).populate('building', 'name');
-    
+
     if (!room) {
       return res.status(404).json({
         success: false,
         message: 'Room not found'
       });
     }
-    
+
     const oldBuildingName = room.buildingName;
     const newBuildingName = room.building.name;
-    
+
     if (oldBuildingName !== newBuildingName) {
       room.buildingName = newBuildingName;
       room.updatedAt = new Date();
       await room.save();
-      
-      // Broadcast update
+
       if (io) {
         io.emit('room-building-synced', {
           roomId: room._id,
@@ -598,7 +526,7 @@ router.post('/:id/sync-building', authMiddleware, adminMiddleware, async (req, r
           timestamp: new Date()
         });
       }
-      
+
       res.json({
         success: true,
         message: 'Building name synced',

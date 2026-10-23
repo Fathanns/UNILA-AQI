@@ -21,10 +21,10 @@ tambahan feature:
 
 *STATUS AKTIF RUANGAN DAN ALAT IOT*
 
-perjelas mengenasi sebenarnya status aktif dan tidak aktif itu buat apa, dan yang menandakan status aktif atau tidak aktif nya itu kan alat iot, bukan ruangan nya, jadi dibuat terintegrasi:
-- ketika ruangan dinonaktifkan maka akan menampilkan ruangan itu nonaktif
-- tapi ketika yang dinonaktifkan adalah alatnya, maka seluruh ruangan yang memakai alat itu maupun di halaman kelola ruangan dan dashboard ya menjadi nonaktif dan tidak bisa di aktifkan
-- pikirkan pengaruh hidup matinya server backend dan iot terhadap aktif nonaktifnya ruangan/alat iot
+~~perjelas mengenasi sebenarnya status aktif dan tidak aktif itu buat apa, dan yang menandakan status aktif atau tidak aktif nya itu kan alat iot, bukan ruangan nya, jadi dibuat terintegrasi:~~
+- ~~ketika ruangan dinonaktifkan maka akan menampilkan ruangan itu nonaktif~~
+- ~~tapi ketika yang dinonaktifkan adalah alatnya, maka seluruh ruangan yang memakai alat itu maupun di halaman kelola ruangan dan dashboard ya menjadi nonaktif dan tidak bisa di aktifkan~~
+- ~~pikirkan pengaruh hidup matinya server backend dan iot terhadap aktif nonaktifnya ruangan/alat iot~~
 
 *AUTH ADMIN*
 - ~~hilangkan warn ketika password tidak sesuai di auth admin~~
@@ -49,7 +49,6 @@ PENGUNJUNG
 
 2. dashboard
     - saat klik refresh tampilkan catch snack bar, konten tetap ada
-    - status tiap ruangan 
 
 ADMIN
 
@@ -65,10 +64,45 @@ ADMIN
 
 4. dashboard
     - saat refresh
-    - status ruangan
+
+5. room detil
+    - saat klik tombol refresh
+    - saat klik tombol refresh grafik
+
+6. building management
+    - saat klik rombol refresh
+    - saat klik tombol simpan gedung
+    - saat klik tombol hapus gedung (masih ada ruangan yang terkait juga)
+    - saat klik tombol simpan perubahan
+
+7. room management
+    - saat klik tombol refresh
+    - saat klik sombol simpan ruangan
+    - saat klik tombol simpan perubahan
+    - saat klik tombol hapus
+
+8. iot device management
+    - saat klik tombol refresh
+    - saat klik sombol simpan device
+    - saat klik tombol simpan perubahan
+    - saat klik tombol hapus
+
+9. profil admin
+    - saat klik tombol simpan perubahan
+    - saat klik tombol ganti passwrord
 
 *FITUR*
 
 - perlengkap ambang batas tiap partikel, perbaiki jadi lebih bagus
 - perbaiki ambang batas simuasi pada siang dan malam
 - tambah halaman yang dapat mengetahui aktif atau tidak nya server atau alat iot yang ada
+- hilangkan drawer di kanan atas pada dashboard
+
+*REFRESH*
+
+- perbaiki ketika device pada ruangan diganti, ketika klik tombol refresh tidak langsung mengganti data, harus tunggu 30 detik dulu
+- katana refresh pada room detil tidak bekerja
+
+*SORTING*
+
+- perbaiki sorting alphabet pada dashbaord

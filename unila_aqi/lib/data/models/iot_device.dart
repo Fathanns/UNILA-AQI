@@ -4,10 +4,9 @@ class IoTDevice {
   final String id;
   final String name;
   final String? description;
-  final String apiEndpoint; // Hapus buildingId dan buildingName
-  final bool isActive;
+  final String apiEndpoint;
   final DateTime? lastUpdate;
-  final String status; // 'online', 'offline', 'error'
+  final String status;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -16,7 +15,6 @@ class IoTDevice {
     required this.name,
     this.description,
     required this.apiEndpoint,
-    required this.isActive,
     this.lastUpdate,
     required this.status,
     required this.createdAt,
@@ -29,7 +27,6 @@ class IoTDevice {
       name: json['name'],
       description: json['description'],
       apiEndpoint: json['apiEndpoint'],
-      isActive: json['isActive'] ?? true,
       lastUpdate: json['lastUpdate'] != null
           ? DateTime.parse(json['lastUpdate'])
           : null,
@@ -45,7 +42,6 @@ class IoTDevice {
       'name': name,
       'description': description,
       'apiEndpoint': apiEndpoint,
-      'isActive': isActive,
       'lastUpdate': lastUpdate?.toIso8601String(),
       'status': status,
       'createdAt': createdAt.toIso8601String(),
@@ -54,29 +50,11 @@ class IoTDevice {
   }
 
   String get displayStatus {
-    switch (status) {
-      case 'online':
-        return 'Online';
-      case 'offline':
-        return 'Offline';
-      case 'error':
-        return 'Error';
-      default:
-        return 'Unknown';
-    }
+    return status == 'online' ? 'Online' : 'Offline';
   }
 
   Color get statusColor {
-    switch (status) {
-      case 'online':
-        return Colors.green;
-      case 'offline':
-        return Colors.grey;
-      case 'error':
-        return Colors.red;
-      default:
-        return Colors.grey;
-    }
+    return status == 'online' ? Colors.green : Colors.grey;
   }
 
   bool get isOnline => status == 'online';

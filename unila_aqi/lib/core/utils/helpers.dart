@@ -122,10 +122,27 @@ class Helpers {
   }
 
   // Tambah method format baru untuk waktu update
-  static String formatLastUpdate(DateTime dateTime) {
-    // Konversi ke waktu lokal
+   static String formatLastUpdate(DateTime dateTime) {
     final localTime = dateTime.toLocal();
-    return '  ${_formatLocalTime(localTime)}';
+    final now = DateTime.now().toLocal();
+
+    // Hari ini → jam saja (perilaku lama, dengan padding 2 spasi)
+    if (localTime.year == now.year &&
+        localTime.month == now.month &&
+        localTime.day == now.day) {
+      return '  ${_formatLocalTime(localTime)}';
+    }
+
+    // Kemarin → "Kemarin HH:mm"
+    final yesterday = DateTime(now.year, now.month, now.day - 1);
+    if (localTime.year == yesterday.year &&
+        localTime.month == yesterday.month &&
+        localTime.day == yesterday.day) {
+      return 'Kemarin ${_formatLocalTime(localTime)}';
+    }
+
+    // Lebih lama → "dd/MM HH:mm" (tanggal + jam)
+    return DateFormat('dd/MM HH:mm').format(localTime);
   }
 
   static String formatLastUpdateWithDate(DateTime dateTime) {

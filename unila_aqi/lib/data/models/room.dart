@@ -3,9 +3,8 @@ class Room {
   final String name;
   final String buildingId;
   final String buildingName;
-  final String dataSource; // 'simulation' or 'iot'
+  final String dataSource;
   final String? iotDeviceId;
-  final bool isActive;
   final int currentAQI;
   final RoomData currentData;
   final DateTime createdAt;
@@ -18,7 +17,6 @@ class Room {
     required this.buildingName,
     required this.dataSource,
     this.iotDeviceId,
-    required this.isActive,
     required this.currentAQI,
     required this.currentData,
     required this.createdAt,
@@ -36,7 +34,6 @@ class Room {
           (json['building'] is Map ? json['building']['name'] : 'Unknown'),
       dataSource: json['dataSource'] ?? 'simulation',
       iotDeviceId: json['iotDeviceId'],
-      isActive: json['isActive'] ?? true,
       currentAQI: json['currentAQI'] ?? 0,
       currentData: RoomData.fromJson(json['currentData'] ?? {}),
       createdAt: DateTime.parse(json['createdAt']),
@@ -52,7 +49,6 @@ class Room {
       'buildingName': buildingName,
       'dataSource': dataSource,
       'iotDeviceId': iotDeviceId,
-      'isActive': isActive,
       'currentAQI': currentAQI,
       'currentData': currentData.toJson(),
       'createdAt': createdAt.toIso8601String(),
@@ -60,10 +56,7 @@ class Room {
     };
   }
 
-  String get displayName {
-    return '$name - $buildingName';
-  }
-
+  String get displayName => '$name - $buildingName';
   bool get isSimulation => dataSource == 'simulation';
   bool get isIot => dataSource == 'iot';
 }

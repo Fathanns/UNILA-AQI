@@ -227,11 +227,10 @@ class RoomCard extends StatelessWidget {
 
               const SizedBox(height: 12),
 
-              // Footer - Data source and additional info
+              // Footer - Data source
               Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                mainAxisAlignment: MainAxisAlignment.start,
                 children: [
-                  // Data source indicator
                   if (room.isIot)
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -286,39 +285,6 @@ class RoomCard extends StatelessWidget {
                         ],
                       ),
                     ),
-
-                  // Room status
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: room.isActive
-                          ? const Color(0xFFE8F5E9)
-                          : const Color(0xFFF5F5F5),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(
-                          width: 6,
-                          height: 6,
-                          decoration: BoxDecoration(
-                            color: room.isActive ? Colors.green : Colors.grey,
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          room.isActive ? 'Aktif' : 'Nonaktif',
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w600,
-                            color: room.isActive ? Colors.green : Colors.grey,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
                 ],
               ),
             ],

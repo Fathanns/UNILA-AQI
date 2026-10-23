@@ -6,27 +6,26 @@ import '../../core/services/storage_service.dart';
 
 class IoTDeviceRepository {
   final StorageService _storage = StorageService();
-  
+
   Future<String?> _getToken() async {
     return _storage.getString('auth_token');
   }
-  
+
   Future<Map<String, String>> _getHeaders() async {
     final token = await _getToken();
-    
+
     final headers = {
       'Content-Type': 'application/json',
       'Accept': 'application/json',
     };
-    
+
     if (token != null) {
       headers['Authorization'] = 'Bearer $token';
     }
-    
+
     return headers;
   }
-  
-  // Get all IoT devices
+
   Future<List<IoTDevice>> getDevices() async {
     try {
       final headers = await _getHeaders();
@@ -34,7 +33,7 @@ class IoTDeviceRepository {
         Uri.parse('${AppConstants.apiBaseUrl}/iot-devices'),
         headers: headers,
       );
-      
+
       if (response.statusCode == 200) {
         final jsonResponse = jsonDecode(response.body);
         if (jsonResponse['success'] == true) {
@@ -50,8 +49,7 @@ class IoTDeviceRepository {
       rethrow;
     }
   }
-  
-  // Get device by ID
+
   Future<IoTDevice> getDeviceById(String id) async {
     try {
       final headers = await _getHeaders();
@@ -59,7 +57,7 @@ class IoTDeviceRepository {
         Uri.parse('${AppConstants.apiBaseUrl}/iot-devices/$id'),
         headers: headers,
       );
-      
+
       if (response.statusCode == 200) {
         final jsonResponse = jsonDecode(response.body);
         if (jsonResponse['success'] == true) {
@@ -74,13 +72,11 @@ class IoTDeviceRepository {
       rethrow;
     }
   }
-  
-  // Create device - HAPUS buildingId parameter
+
   Future<IoTDevice> createDevice({
     required String name,
     String? description,
     required String apiEndpoint,
-    bool isActive = true,
   }) async {
     try {
       final headers = await _getHeaders();
@@ -88,15 +84,14 @@ class IoTDeviceRepository {
         'name': name,
         'description': description,
         'apiEndpoint': apiEndpoint,
-        'isActive': isActive,
       });
-      
+
       final response = await http.post(
         Uri.parse('${AppConstants.apiBaseUrl}/iot-devices'),
         headers: headers,
         body: body,
       );
-      
+
       if (response.statusCode == 201) {
         final jsonResponse = jsonDecode(response.body);
         if (jsonResponse['success'] == true) {
@@ -112,14 +107,12 @@ class IoTDeviceRepository {
       rethrow;
     }
   }
-  
-  // Update device - HAPUS buildingId parameter
+
   Future<IoTDevice> updateDevice({
     required String id,
     required String name,
     String? description,
     required String apiEndpoint,
-    bool isActive = true,
   }) async {
     try {
       final headers = await _getHeaders();
@@ -127,15 +120,14 @@ class IoTDeviceRepository {
         'name': name,
         'description': description,
         'apiEndpoint': apiEndpoint,
-        'isActive': isActive,
       });
-      
+
       final response = await http.put(
         Uri.parse('${AppConstants.apiBaseUrl}/iot-devices/$id'),
         headers: headers,
         body: body,
       );
-      
+
       if (response.statusCode == 200) {
         final jsonResponse = jsonDecode(response.body);
         if (jsonResponse['success'] == true) {
@@ -151,8 +143,7 @@ class IoTDeviceRepository {
       rethrow;
     }
   }
-  
-  // Delete device
+
   Future<void> deleteDevice(String id) async {
     try {
       final headers = await _getHeaders();
@@ -160,7 +151,7 @@ class IoTDeviceRepository {
         Uri.parse('${AppConstants.apiBaseUrl}/iot-devices/$id'),
         headers: headers,
       );
-      
+
       if (response.statusCode != 200) {
         final error = jsonDecode(response.body);
         throw Exception(error['message'] ?? 'Failed to delete device');

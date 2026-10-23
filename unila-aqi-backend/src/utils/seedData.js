@@ -101,9 +101,8 @@ const seedSampleData = async () => {
           const result = await Room.collection.insertOne({
             name: roomData.name,
             building: building._id,
-            buildingName: building.name, // Menggunakan nama building yang benar
+            buildingName: building.name,
             dataSource: roomData.dataSource,
-            isActive: true,
             currentAQI: 0,
             currentData: {
               pm25: 0,

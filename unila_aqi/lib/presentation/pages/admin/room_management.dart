@@ -19,7 +19,7 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
   final RoomRepository _roomRepository = RoomRepository();
   final BuildingRepository _buildingRepository = BuildingRepository();
   final TextEditingController _searchController = TextEditingController();
-  
+
   List<Room> _rooms = [];
   List<Room> _filteredRooms = [];
   List<Building> _buildings = [];
@@ -27,60 +27,54 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
   bool _isLoading = false;
   bool _hasError = false;
   String _errorMessage = '';
-  
+
   @override
   void initState() {
     super.initState();
     _loadData();
   }
-  
+
   Future<void> _loadData() async {
-  setState(() {
-    _isLoading = true;
-    _hasError = false;
-  });
-
-  try {
-    final List<Object> results = await Future.wait([
-      _roomRepository.getRooms(),
-      _buildingRepository.getBuildings(),
-    ]);
-
-    // Cast hasil ke tipe yang sesuai
-    final List<Room> rooms = results[0] as List<Room>;
-    final List<Building> buildings = results[1] as List<Building>;
-
     setState(() {
-      _rooms = rooms;
-      _buildings = buildings;
-      // 🔥 JANGAN set _filteredRooms = rooms di sini
+      _isLoading = true;
+      _hasError = false;
     });
 
-    // 🔥 Reapply filter aktif setelah data ter-load
-    _filterRooms();
+    try {
+      final List<Object> results = await Future.wait([
+        _roomRepository.getRooms(),
+        _buildingRepository.getBuildings(),
+      ]);
 
-  } catch (e) {
-    setState(() {
-      _hasError = true;
-      _errorMessage = e.toString();
-    });
-    Helpers.showSnackBar(context, 'Gagal memuat data ruangan: $e', isError: true);
-  } finally {
-    setState(() => _isLoading = false);
+      final List<Room> rooms = results[0] as List<Room>;
+      final List<Building> buildings = results[1] as List<Building>;
+
+      setState(() {
+        _rooms = rooms;
+        _buildings = buildings;
+      });
+
+      _filterRooms();
+    } catch (e) {
+      setState(() {
+        _hasError = true;
+        _errorMessage = e.toString();
+      });
+      Helpers.showSnackBar(context, 'Gagal memuat data ruangan: $e', isError: true);
+    } finally {
+      setState(() => _isLoading = false);
+    }
   }
-}
-  
+
   void _filterRooms() {
     List<Room> filtered = _rooms;
-    
-    // Filter by building
+
     if (_selectedBuildingFilter != 'Semua Gedung') {
-      filtered = filtered.where((room) => 
+      filtered = filtered.where((room) =>
         room.buildingName == _selectedBuildingFilter
       ).toList();
     }
-    
-    // Filter by search query
+
     if (_searchController.text.isNotEmpty) {
       final query = _searchController.text.toLowerCase();
       filtered = filtered.where((room) =>
@@ -88,10 +82,10 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
         room.buildingName.toLowerCase().contains(query)
       ).toList();
     }
-    
+
     setState(() => _filteredRooms = filtered);
   }
-  
+
   Future<void> _deleteRoom(String roomId) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -110,9 +104,9 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
         ],
       ),
     );
-    
+
     if (confirmed != true) return;
-    
+
     try {
       await _roomRepository.deleteRoom(roomId);
       await _loadData();
@@ -122,8 +116,6 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
     }
   }
 
-  
-  
   void _navigateToAddRoom() {
     Navigator.push(
       context,
@@ -135,7 +127,7 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
       ),
     );
   }
-  
+
   void _navigateToEditRoom(Room room) {
     Navigator.push(
       context,
@@ -148,7 +140,19 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
       ),
     );
   }
-  
+
+  // ============ HELPER WARNING ============
+  String? _getStaleDurationText(Room room) {
+    final lastUpdate = room.currentData.updatedAt.toLocal();
+    final diff = DateTime.now().difference(lastUpdate);
+
+    if (diff.inMinutes <= 5) return null;
+
+    if (diff.inMinutes < 60) return '${diff.inMinutes} menit';
+    if (diff.inHours < 24) return '${diff.inHours} jam';
+    return '${diff.inDays} hari';
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -164,7 +168,6 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
       ),
       body: Column(
         children: [
-          // Search and Filter
           Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
@@ -224,8 +227,6 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
               ],
             ),
           ),
-          
-          // Add Button
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: SizedBox(
@@ -240,35 +241,22 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
               ),
             ),
           ),
-          
           const SizedBox(height: 16),
-          
-          // Loading State
           if (_isLoading)
             const Expanded(
-              child: Center(
-                child: CircularProgressIndicator(),
-              ),
+              child: Center(child: CircularProgressIndicator()),
             )
-          
-          // Error State
           else if (_hasError)
             Expanded(
               child: Center(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Icon(
-                      Icons.error_outline,
-                      size: 64,
-                      color: AppColors.error,
-                    ),
+                    const Icon(Icons.error_outline, size: 64, color: AppColors.error),
                     const SizedBox(height: 16),
-                    Text(
-                      'Error: $_errorMessage',
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(color: AppColors.error),
-                    ),
+                    Text('Error: $_errorMessage',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(color: AppColors.error)),
                     const SizedBox(height: 16),
                     ElevatedButton(
                       onPressed: _loadData,
@@ -278,27 +266,16 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
                 ),
               ),
             )
-          
-          // Empty State
           else if (_filteredRooms.isEmpty)
             Expanded(
               child: Center(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Icon(
-                      Icons.meeting_room_outlined,
-                      size: 64,
-                      color: Colors.grey,
-                    ),
+                    const Icon(Icons.meeting_room_outlined, size: 64, color: Colors.grey),
                     const SizedBox(height: 16),
-                    const Text(
-                      'Tidak ada ruangan ditemukan',
-                      style: TextStyle(
-                        fontSize: 16,
-                        color: Colors.grey,
-                      ),
-                    ),
+                    const Text('Tidak ada ruangan ditemukan',
+                        style: TextStyle(fontSize: 16, color: Colors.grey)),
                     const SizedBox(height: 8),
                     if (_searchController.text.isNotEmpty || _selectedBuildingFilter != 'Semua Gedung')
                       TextButton(
@@ -313,8 +290,6 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
                 ),
               ),
             )
-          
-          // Data State
           else
             Expanded(
               child: ListView.builder(
@@ -326,27 +301,22 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
                 },
               ),
             ),
-          
-          // Footer
           Container(
             padding: const EdgeInsets.all(16),
             child: Text(
               'Total: ${_filteredRooms.length} ruangan',
-              style: const TextStyle(
-                fontSize: 14,
-                color: Colors.grey,
-              ),
+              style: const TextStyle(fontSize: 14, color: Colors.grey),
             ),
           ),
         ],
       ),
     );
   }
-  
+
   Widget _buildRoomCard(Room room) {
     final aqiColor = Helpers.getAQIColor(room.currentAQI);
-    // final timeAgo = Helpers.formatTimeAgo(room.currentData.updatedAt);
-    
+    final staleDuration = _getStaleDurationText(room);
+
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
       child: Padding(
@@ -354,6 +324,7 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // === Info ruangan: nama, sumber, AQI ===
             Row(
               children: [
                 Expanded(
@@ -368,33 +339,9 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
                         ),
                       ),
                       const SizedBox(height: 4),
-                      Row(
-                        children: [
-                          Container(
-                            width: 8,
-                            height: 8,
-                            decoration: BoxDecoration(
-                              color: room.isActive ? Colors.green : Colors.grey,
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            room.isActive ? '● Aktif' : '○ Tidak Aktif',
-                            style: TextStyle(
-                              color: room.isActive ? Colors.green : Colors.grey,
-                              fontSize: 12,
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Text(
-                            'Sumber: ${room.dataSource == 'iot' ? 'Device IoT' : 'Simulasi'}',
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey,
-                            ),
-                          ),
-                        ],
+                      Text(
+                        'Sumber: ${room.dataSource == 'iot' ? 'Device IoT' : 'Simulasi'}',
+                        style: const TextStyle(fontSize: 12, color: Colors.grey),
                       ),
                     ],
                   ),
@@ -417,20 +364,39 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
                 ),
               ],
             ),
-            
-            const SizedBox(height: 12),
-            
-            // Last Update
-            // Text(
-            //   'Update: $timeAgo',
-            //   style: const TextStyle(
-            //     fontSize: 12,
-            //     color: Colors.grey,
-            //   ),
-            // ),
-            
+
+            // === Warning di antara "Sumber" dan tombol ===
+            if (staleDuration != null) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.orange.withOpacity(0.6)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.warning_amber_rounded,
+                        color: Colors.orange, size: 22),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Ruangan ini belum memperbarui data selama $staleDuration',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Colors.orange,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+
             const SizedBox(height: 16),
-            
+
             Row(
               children: [
                 Expanded(
@@ -468,61 +434,54 @@ class AddEditRoomScreen extends StatefulWidget {
   final Room? room;
   final List<Building> buildings;
   final VoidCallback onRoomSaved;
-  
+
   const AddEditRoomScreen({
     super.key,
     this.room,
     required this.buildings,
     required this.onRoomSaved,
   });
-  
+
   bool get isEditing => room != null;
-  
+
   @override
   State<AddEditRoomScreen> createState() => _AddEditRoomScreenState();
 }
-
 
 class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final RoomRepository _roomRepository = RoomRepository();
   final IoTDeviceRepository _iotDeviceRepository = IoTDeviceRepository();
-  
+
   String? _selectedBuildingId;
   String _selectedDataSource = 'simulation';
   String? _selectedIotDeviceId;
-  bool _isActive = true;
   bool _isLoading = false;
   List<IoTDevice> _iotDevices = [];
-  
+
   @override
   void initState() {
     super.initState();
-    
-    // Prefill fields if editing
+
     if (widget.isEditing) {
       final room = widget.room!;
       _nameController.text = room.name;
-      
-      // ✅ Validasi: pastikan buildingId masih ada di list
+
       final buildingExists = widget.buildings.any((b) => b.id == room.buildingId);
-      _selectedBuildingId = buildingExists 
-          ? room.buildingId 
+      _selectedBuildingId = buildingExists
+          ? room.buildingId
           : (widget.buildings.isNotEmpty ? widget.buildings.first.id : null);
-      
+
       _selectedDataSource = room.dataSource;
       _selectedIotDeviceId = room.iotDeviceId;
-      _isActive = room.isActive;
     } else if (widget.buildings.isNotEmpty) {
-      // Default to first building
       _selectedBuildingId = widget.buildings.first.id;
     }
-    
-    // Load IoT devices
+
     _loadIoTDevices();
   }
-  
+
   Future<void> _loadIoTDevices() async {
     try {
       final devices = await _iotDeviceRepository.getDevices();
@@ -531,28 +490,27 @@ class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
       print('Error loading IoT devices: $e');
     }
   }
-  
+
   @override
   void dispose() {
     _nameController.dispose();
     super.dispose();
   }
-  
+
   Future<void> _saveRoom() async {
     if (!_formKey.currentState!.validate()) return;
     if (_selectedBuildingId == null) {
       Helpers.showSnackBar(context, 'Pilih gedung terlebih dahulu', isError: true);
       return;
     }
-    
-    // Validasi khusus untuk IoT data source
+
     if (_selectedDataSource == 'iot' && _selectedIotDeviceId == null) {
       Helpers.showSnackBar(context, 'Pilih device IoT terlebih dahulu', isError: true);
       return;
     }
-    
+
     setState(() => _isLoading = true);
-    
+
     try {
       if (widget.isEditing) {
         await _roomRepository.updateRoom(
@@ -561,7 +519,6 @@ class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
           buildingId: _selectedBuildingId!,
           dataSource: _selectedDataSource,
           iotDeviceId: _selectedDataSource == 'iot' ? _selectedIotDeviceId : null,
-          isActive: _isActive,
         );
         Helpers.showSnackBar(context, 'Ruangan berhasil diperbarui');
       } else {
@@ -570,13 +527,12 @@ class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
           buildingId: _selectedBuildingId!,
           dataSource: _selectedDataSource,
           iotDeviceId: _selectedDataSource == 'iot' ? _selectedIotDeviceId : null,
-          isActive: _isActive,
         );
         Helpers.showSnackBar(context, 'Ruangan berhasil ditambahkan');
       }
-      
+
       widget.onRoomSaved();
-      
+
       if (mounted) {
         Navigator.pop(context);
       }
@@ -588,7 +544,7 @@ class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
       }
     }
   }
-  
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -613,13 +569,8 @@ class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'Nama Ruangan*',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
+              const Text('Nama Ruangan*',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
               const SizedBox(height: 8),
               TextFormField(
                 controller: _nameController,
@@ -634,16 +585,9 @@ class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
                   return null;
                 },
               ),
-              
               const SizedBox(height: 16),
-              
-              const Text(
-                'Gedung*',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
+              const Text('Gedung*',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
               const SizedBox(height: 8),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -670,20 +614,12 @@ class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
                   ),
                 ),
               ),
-              
               const SizedBox(height: 16),
-              
-              const Text(
-                'Sumber Data',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
+              const Text('Sumber Data',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
               const SizedBox(height: 8),
               Column(
                 children: [
-                  // Simulation Option
                   ListTile(
                     contentPadding: EdgeInsets.zero,
                     leading: Radio(
@@ -697,8 +633,6 @@ class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
                     subtitle: const Text('Data acak setiap 1 menit'),
                     dense: true,
                   ),
-                  
-                  // IoT Option
                   ListTile(
                     contentPadding: EdgeInsets.zero,
                     leading: Radio(
@@ -712,21 +646,15 @@ class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
                     subtitle: const Text('Data dari sensor fisik'),
                     dense: true,
                   ),
-                  
-                  // IoT Device Selection (only show if IoT is selected)
                   if (_selectedDataSource == 'iot')
                     Padding(
                       padding: const EdgeInsets.only(left: 40, top: 8),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text(
-                            'Pilih Device IoT:',
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
+                          const Text('Pilih Device IoT:',
+                              style: TextStyle(
+                                  fontSize: 14, fontWeight: FontWeight.w500)),
                           const SizedBox(height: 8),
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -753,15 +681,12 @@ class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
                               ),
                             ),
                           ),
-                          if (_selectedDataSource == 'iot' && _selectedIotDeviceId == null)
+                          if (_selectedIotDeviceId == null)
                             const Padding(
                               padding: EdgeInsets.only(top: 4),
                               child: Text(
                                 'Device IoT wajib dipilih untuk sumber data IoT',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.red,
-                                ),
+                                style: TextStyle(fontSize: 12, color: Colors.red),
                               ),
                             ),
                         ],
@@ -769,40 +694,7 @@ class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
                     ),
                 ],
               ),
-              
-              const SizedBox(height: 16),
-              
-              // Status
-              Row(
-                children: [
-                  const Text(
-                    'Status: ',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  ChoiceChip(
-                    label: const Text('Aktif'),
-                    selected: _isActive,
-                    onSelected: (selected) {
-                      setState(() => _isActive = true);
-                    },
-                  ),
-                  const SizedBox(width: 8),
-                  ChoiceChip(
-                    label: const Text('Tidak Aktif'),
-                    selected: !_isActive,
-                    onSelected: (selected) {
-                      setState(() => _isActive = false);
-                    },
-                  ),
-                ],
-              ),
-              
               const SizedBox(height: 32),
-              
               SizedBox(
                 width: double.infinity,
                 height: 50,

@@ -14,28 +14,28 @@ class IoTManagementScreen extends StatefulWidget {
 class _IoTManagementScreenState extends State<IoTManagementScreen> {
   final IoTDeviceRepository _deviceRepository = IoTDeviceRepository();
   final TextEditingController _searchController = TextEditingController();
-  
+
   List<IoTDevice> _devices = [];
   List<IoTDevice> _filteredDevices = [];
   bool _isLoading = false;
   bool _hasError = false;
   String _errorMessage = '';
-  
+
   @override
   void initState() {
     super.initState();
     _loadData();
   }
-  
+
   Future<void> _loadData() async {
     setState(() {
       _isLoading = true;
       _hasError = false;
     });
-    
+
     try {
       final devices = await _deviceRepository.getDevices();
-      
+
       setState(() {
         _devices = devices;
         _filteredDevices = devices;
@@ -50,7 +50,7 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
       setState(() => _isLoading = false);
     }
   }
-  
+
   void _filterDevices(String query) {
     if (query.isEmpty) {
       setState(() => _filteredDevices = _devices);
@@ -59,13 +59,12 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
         final name = device.name.toLowerCase();
         final description = device.description?.toLowerCase() ?? '';
         final search = query.toLowerCase();
-        return name.contains(search) || 
-               description.contains(search);
+        return name.contains(search) || description.contains(search);
       }).toList();
       setState(() => _filteredDevices = filtered);
     }
   }
-  
+
   Future<void> _deleteDevice(String deviceId) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -84,9 +83,9 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
         ],
       ),
     );
-    
+
     if (confirmed != true) return;
-    
+
     try {
       await _deviceRepository.deleteDevice(deviceId);
       await _loadData();
@@ -95,7 +94,7 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
       Helpers.showSnackBar(context, 'Gagal menghapus device: $e', isError: true);
     }
   }
-  
+
   void _navigateToAddDevice() {
     Navigator.push(
       context,
@@ -106,7 +105,7 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
       ),
     );
   }
-  
+
   void _navigateToEditDevice(IoTDevice device) {
     Navigator.push(
       context,
@@ -118,7 +117,7 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
       ),
     );
   }
-  
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -134,7 +133,6 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
       ),
       body: Column(
         children: [
-          // Search Bar
           Padding(
             padding: const EdgeInsets.all(16),
             child: TextField(
@@ -159,8 +157,6 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
               onChanged: _filterDevices,
             ),
           ),
-          
-          // Add Button
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: SizedBox(
@@ -175,35 +171,22 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
               ),
             ),
           ),
-          
           const SizedBox(height: 16),
-          
-          // Loading State
           if (_isLoading)
             const Expanded(
-              child: Center(
-                child: CircularProgressIndicator(),
-              ),
+              child: Center(child: CircularProgressIndicator()),
             )
-          
-          // Error State
           else if (_hasError)
             Expanded(
               child: Center(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Icon(
-                      Icons.error_outline,
-                      size: 64,
-                      color: AppColors.error,
-                    ),
+                    const Icon(Icons.error_outline, size: 64, color: AppColors.error),
                     const SizedBox(height: 16),
-                    Text(
-                      'Error: $_errorMessage',
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(color: AppColors.error),
-                    ),
+                    Text('Error: $_errorMessage',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(color: AppColors.error)),
                     const SizedBox(height: 16),
                     ElevatedButton(
                       onPressed: _loadData,
@@ -213,27 +196,16 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
                 ),
               ),
             )
-          
-          // Empty State
           else if (_filteredDevices.isEmpty)
             Expanded(
               child: Center(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Icon(
-                      Icons.sensors_off,
-                      size: 64,
-                      color: Colors.grey,
-                    ),
+                    const Icon(Icons.sensors_off, size: 64, color: Colors.grey),
                     const SizedBox(height: 16),
-                    const Text(
-                      'Tidak ada device ditemukan',
-                      style: TextStyle(
-                        fontSize: 16,
-                        color: Colors.grey,
-                      ),
-                    ),
+                    const Text('Tidak ada device ditemukan',
+                        style: TextStyle(fontSize: 16, color: Colors.grey)),
                     const SizedBox(height: 8),
                     if (_searchController.text.isNotEmpty)
                       TextButton(
@@ -247,8 +219,6 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
                 ),
               ),
             )
-          
-          // Data State
           else
             Expanded(
               child: ListView.builder(
@@ -260,28 +230,19 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
                 },
               ),
             ),
-          
-          // Footer
           Container(
             padding: const EdgeInsets.all(16),
             child: Text(
               'Total: ${_filteredDevices.length} device',
-              style: const TextStyle(
-                fontSize: 14,
-                color: Colors.grey,
-              ),
+              style: const TextStyle(fontSize: 14, color: Colors.grey),
             ),
           ),
         ],
       ),
     );
   }
-  
-  Widget _buildDeviceCard(IoTDevice device) {
-    // final timeAgo = device.lastUpdate != null 
-        // ? Helpers.formatTimeAgo(device.lastUpdate!)
-        // : 'Belum pernah update';
-    
+
+    Widget _buildDeviceCard(IoTDevice device) {
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
       child: Padding(
@@ -289,53 +250,21 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        device.name,
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: device.statusColor.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: device.statusColor),
-                  ),
-                  child: Text(
-                    device.displayStatus,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: device.statusColor,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-              ],
+            Text(
+              device.name,
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+              ),
             ),
-            
             if (device.description != null && device.description!.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(top: 8),
                 child: Text(
                   device.description!,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey,
-                  ),
+                  style: const TextStyle(fontSize: 14, color: Colors.grey),
                 ),
               ),
-            
             Padding(
               padding: const EdgeInsets.only(top: 8),
               child: Text(
@@ -348,44 +277,7 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
                 overflow: TextOverflow.ellipsis,
               ),
             ),
-            
-            Padding(
-              padding: const EdgeInsets.only(top: 12),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.circle,
-                    size: 10,
-                    color: device.isActive ? Colors.green : Colors.grey,
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    device.isActive ? '● Aktif' : '○ Tidak Aktif',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: device.isActive ? Colors.green : Colors.grey,
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  const Icon(
-                    Icons.update,
-                    size: 14,
-                    color: Colors.grey,
-                  ),
-                  const SizedBox(width: 4),
-                  // Text(
-                  //   'Update: $timeAgo',
-                  //   style: const TextStyle(
-                  //     fontSize: 12,
-                  //     color: Colors.grey,
-                  //   ),
-                  // ),
-                ],
-              ),
-            ),
-            
             const SizedBox(height: 16),
-            
             Row(
               children: [
                 Expanded(
@@ -422,15 +314,15 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
 class AddEditIoTDeviceScreen extends StatefulWidget {
   final IoTDevice? device;
   final VoidCallback onDeviceSaved;
-  
+
   const AddEditIoTDeviceScreen({
     super.key,
     this.device,
     required this.onDeviceSaved,
   });
-  
+
   bool get isEditing => device != null;
-  
+
   @override
   State<AddEditIoTDeviceScreen> createState() => _AddEditIoTDeviceScreenState();
 }
@@ -441,24 +333,21 @@ class _AddEditIoTDeviceScreenState extends State<AddEditIoTDeviceScreen> {
   final _descriptionController = TextEditingController();
   final _endpointController = TextEditingController();
   final IoTDeviceRepository _deviceRepository = IoTDeviceRepository();
-  
-  bool _isActive = true;
+
   bool _isLoading = false;
-  
+
   @override
   void initState() {
     super.initState();
-    
-    // Prefill fields if editing
+
     if (widget.isEditing) {
       final device = widget.device!;
       _nameController.text = device.name;
       _descriptionController.text = device.description ?? '';
       _endpointController.text = device.apiEndpoint;
-      _isActive = device.isActive;
     }
   }
-  
+
   @override
   void dispose() {
     _nameController.dispose();
@@ -466,34 +355,36 @@ class _AddEditIoTDeviceScreenState extends State<AddEditIoTDeviceScreen> {
     _endpointController.dispose();
     super.dispose();
   }
-  
+
   Future<void> _saveDevice() async {
     if (!_formKey.currentState!.validate()) return;
-    
+
     setState(() => _isLoading = true);
-    
+
     try {
       if (widget.isEditing) {
         await _deviceRepository.updateDevice(
           id: widget.device!.id,
           name: _nameController.text.trim(),
-          description: _descriptionController.text.trim().isEmpty ? null : _descriptionController.text.trim(),
+          description: _descriptionController.text.trim().isEmpty
+              ? null
+              : _descriptionController.text.trim(),
           apiEndpoint: _endpointController.text.trim(),
-          isActive: _isActive,
         );
         Helpers.showSnackBar(context, 'Device berhasil diperbarui');
       } else {
         await _deviceRepository.createDevice(
           name: _nameController.text.trim(),
-          description: _descriptionController.text.trim().isEmpty ? null : _descriptionController.text.trim(),
+          description: _descriptionController.text.trim().isEmpty
+              ? null
+              : _descriptionController.text.trim(),
           apiEndpoint: _endpointController.text.trim(),
-          isActive: _isActive,
         );
         Helpers.showSnackBar(context, 'Device berhasil ditambahkan');
       }
-      
+
       widget.onDeviceSaved();
-      
+
       if (mounted) {
         Navigator.pop(context);
       }
@@ -505,7 +396,7 @@ class _AddEditIoTDeviceScreenState extends State<AddEditIoTDeviceScreen> {
       }
     }
   }
-  
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -530,13 +421,8 @@ class _AddEditIoTDeviceScreenState extends State<AddEditIoTDeviceScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'Nama Device*',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
+              const Text('Nama Device*',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
               const SizedBox(height: 8),
               TextFormField(
                 controller: _nameController,
@@ -551,16 +437,9 @@ class _AddEditIoTDeviceScreenState extends State<AddEditIoTDeviceScreen> {
                   return null;
                 },
               ),
-              
               const SizedBox(height: 16),
-              
-              const Text(
-                'Deskripsi',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
+              const Text('Deskripsi',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
               const SizedBox(height: 8),
               TextFormField(
                 controller: _descriptionController,
@@ -570,16 +449,9 @@ class _AddEditIoTDeviceScreenState extends State<AddEditIoTDeviceScreen> {
                 ),
                 maxLines: 2,
               ),
-              
               const SizedBox(height: 16),
-              
-              const Text(
-                'Endpoint API*',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
+              const Text('Endpoint API*',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
               const SizedBox(height: 8),
               TextFormField(
                 controller: _endpointController,
@@ -591,7 +463,6 @@ class _AddEditIoTDeviceScreenState extends State<AddEditIoTDeviceScreen> {
                   if (value == null || value.isEmpty) {
                     return 'Endpoint API wajib diisi';
                   }
-                  // Basic URL validation
                   try {
                     Uri.parse(value);
                   } catch (e) {
@@ -600,40 +471,7 @@ class _AddEditIoTDeviceScreenState extends State<AddEditIoTDeviceScreen> {
                   return null;
                 },
               ),
-              
-              const SizedBox(height: 16),
-              
-              // Status
-              Row(
-                children: [
-                  const Text(
-                    'Status: ',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  ChoiceChip(
-                    label: const Text('Aktif'),
-                    selected: _isActive,
-                    onSelected: (selected) {
-                      setState(() => _isActive = true);
-                    },
-                  ),
-                  const SizedBox(width: 8),
-                  ChoiceChip(
-                    label: const Text('Tidak Aktif'),
-                    selected: !_isActive,
-                    onSelected: (selected) {
-                      setState(() => _isActive = false);
-                    },
-                  ),
-                ],
-              ),
-              
               const SizedBox(height: 32),
-              
               SizedBox(
                 width: double.infinity,
                 height: 50,
