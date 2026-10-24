@@ -118,7 +118,9 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
 
       if (roomMap['id'] != widget.room.id) return;
 
-      if (map['action'] == 'updated' && map['oldData'] != null && map['oldData'] is Map) {
+      if (map['action'] == 'updated' &&
+          map['oldData'] != null &&
+          map['oldData'] is Map) {
         final oldMap = Map<String, dynamic>.from(map['oldData'] as Map);
         final newName = roomMap['name'];
         final oldName = oldMap['name'];
@@ -140,8 +142,7 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
           });
 
           _showNotification(
-              'Nama ruangan diperbarui: $oldName -> $newName',
-              'info');
+              'Nama ruangan diperbarui: $oldName -> $newName', 'info');
         }
       }
     });
@@ -173,8 +174,7 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
         );
       });
 
-      _showNotification('Nama gedung diperbarui: $newBuildingName',
-          'info');
+      _showNotification('Nama gedung diperbarui: $newBuildingName', 'info');
     });
   }
 
@@ -316,8 +316,7 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
     setState(() => _isRefreshing = true);
 
     try {
-      final freshRoom =
-          await _roomRepository.getRoomById(widget.room.id);
+      final freshRoom = await _roomRepository.getRoomById(widget.room.id);
       if (_isMounted) {
         setState(() {
           _currentRoomData = freshRoom;
@@ -343,7 +342,7 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
   }
 
   // ------------------------------------------------------------
-  // UI BUILDING METHODS (tidak berubah dari versi sebelumnya)
+  // UI BUILDING METHODS
   // ------------------------------------------------------------
 
   Widget _buildAQICard() {
@@ -392,8 +391,8 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
                 ],
               ),
               Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 8, vertical: 4),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
                   color: Colors.white.withOpacity(0.2),
                   borderRadius: BorderRadius.circular(10),
@@ -504,8 +503,7 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
           ),
           const SizedBox(height: 8),
           Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
               color: Colors.white.withOpacity(0.2),
               borderRadius: BorderRadius.circular(12),
@@ -563,8 +561,8 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
               ),
               const Spacer(),
               Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 8, vertical: 4),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
                   color: Colors.blue.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(6),
@@ -829,133 +827,125 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
         ],
       ),
       backgroundColor: const Color(0xFFF8FAFC),
-      body: RefreshIndicator(
-        onRefresh: _refreshData,
-        color: AppColors.primary,
-        child: SingleChildScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildRoomInfoHeader(),
-              const SizedBox(height: 16),
-              _buildAQICard(),
-              const SizedBox(height: 16),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildRoomInfoHeader(),
+            const SizedBox(height: 16),
+            _buildAQICard(),
+            const SizedBox(height: 16),
 
-              Row(
-                children: [
-                  Expanded(
-                    child: _buildParameterCard(
-                      'PM2.5',
-                      _currentRoomData.currentData.pm25
-                          .toStringAsFixed(1),
-                      Helpers.getPM25Status(
-                          _currentRoomData.currentData.pm25),
-                      Helpers.getPM25Color(
-                          _currentRoomData.currentData.pm25),
-                    ),
+            Row(
+              children: [
+                Expanded(
+                  child: _buildParameterCard(
+                    'PM2.5',
+                    _currentRoomData.currentData.pm25.toStringAsFixed(1),
+                    Helpers.getPM25Status(
+                        _currentRoomData.currentData.pm25),
+                    Helpers.getPM25Color(
+                        _currentRoomData.currentData.pm25),
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _buildParameterCard(
-                      'PM10',
-                      _currentRoomData.currentData.pm10
-                          .toStringAsFixed(1),
-                      Helpers.getPM10Status(
-                          _currentRoomData.currentData.pm10),
-                      Helpers.getPM10Color(
-                          _currentRoomData.currentData.pm10),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _buildParameterCard(
-                      'CO₂',
-                      '${_currentRoomData.currentData.co2.round()}',
-                      Helpers.getCO2Status(
-                          _currentRoomData.currentData.co2),
-                      Helpers.getCO2Color(
-                          _currentRoomData.currentData.co2),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: _buildParameterCard(
-                      'SUHU',
-                      '${_currentRoomData.currentData.temperature.toStringAsFixed(1)}°C',
-                      Helpers.getTemperatureStatus(
-                          _currentRoomData.currentData.temperature),
-                      Helpers.getTemperatureColor(
-                          _currentRoomData.currentData.temperature),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _buildParameterCard(
-                      'KELEMBABAN',
-                      '${_currentRoomData.currentData.humidity.round()}%',
-                      Helpers.getHumidityStatus(
-                          _currentRoomData.currentData.humidity),
-                      Helpers.getHumidityColor(
-                          _currentRoomData.currentData.humidity),
-                    ),
-                  ),
-                  const Spacer(),
-                ],
-              ),
-              const SizedBox(height: 24),
-
-              _buildHealthRecommendations(),
-              const SizedBox(height: 24),
-
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.05),
-                      blurRadius: 8,
-                      offset: const Offset(0, 3),
-                    ),
-                  ],
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Row(
-                      children: [
-                        Icon(Icons.timeline,
-                            color: Colors.blue, size: 18),
-                        SizedBox(width: 6),
-                        Text(
-                          'GRAFIK HISTORIS',
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                          ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _buildParameterCard(
+                    'PM10',
+                    _currentRoomData.currentData.pm10.toStringAsFixed(1),
+                    Helpers.getPM10Status(
+                        _currentRoomData.currentData.pm10),
+                    Helpers.getPM10Color(
+                        _currentRoomData.currentData.pm10),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _buildParameterCard(
+                    'CO₂',
+                    '${_currentRoomData.currentData.co2.round()}',
+                    Helpers.getCO2Status(
+                        _currentRoomData.currentData.co2),
+                    Helpers.getCO2Color(
+                        _currentRoomData.currentData.co2),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: _buildParameterCard(
+                    'SUHU',
+                    '${_currentRoomData.currentData.temperature.toStringAsFixed(1)}°C',
+                    Helpers.getTemperatureStatus(
+                        _currentRoomData.currentData.temperature),
+                    Helpers.getTemperatureColor(
+                        _currentRoomData.currentData.temperature),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _buildParameterCard(
+                    'KELEMBABAN',
+                    '${_currentRoomData.currentData.humidity.round()}%',
+                    Helpers.getHumidityStatus(
+                        _currentRoomData.currentData.humidity),
+                    Helpers.getHumidityColor(
+                        _currentRoomData.currentData.humidity),
+                  ),
+                ),
+                const Spacer(),
+              ],
+            ),
+            const SizedBox(height: 24),
+
+            _buildHealthRecommendations(),
+            const SizedBox(height: 24),
+
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.05),
+                    blurRadius: 8,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Row(
+                    children: [
+                      Icon(Icons.timeline, color: Colors.blue, size: 18),
+                      SizedBox(width: 6),
+                      Text(
+                        'GRAFIK HISTORIS',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
                         ),
-                        Spacer(),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    HistoryChart(
-                      roomId: _currentRoomData.id,
-                      roomName: _currentRoomData.name,
-                      buildingName: _currentRoomData.buildingName,
-                    ),
-                  ],
-                ),
+                      ),
+                      Spacer(),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  HistoryChart(
+                    roomId: _currentRoomData.id,
+                    roomName: _currentRoomData.name,
+                    buildingName: _currentRoomData.buildingName,
+                  ),
+                ],
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

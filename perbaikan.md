@@ -106,7 +106,7 @@ tambahan feature:
 
 *SORTING*
 
-- perbaiki sorting alphabet pada dashbaord
+- ~~perbaiki sorting alphabet pada dashbaord~~
 
 ~~*DASHBOARD*~~
 
