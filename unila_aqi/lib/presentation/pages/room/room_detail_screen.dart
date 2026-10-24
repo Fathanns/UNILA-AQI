@@ -42,6 +42,20 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
     });
   }
 
+  // FIXED: helper untuk validasi payload socket.
+  Map<String, dynamic>? _asMap(dynamic data) {
+    if (data == null) return null;
+    if (data is Map<String, dynamic>) return data;
+    if (data is Map) {
+      try {
+        return Map<String, dynamic>.from(data);
+      } catch (_) {
+        return null;
+      }
+    }
+    return null;
+  }
+
   void _ensureSocketConnected() {
     if (!_socketService.isConnected && _isMounted) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -62,86 +76,105 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
     }
   }
 
+  // FIXED: guard data + nested access (data['room'] bisa null).
   void _setupRoomNameUpdateListener() {
     _socketService.on('room-name-updated', (data) {
-      if (_isMounted && data['roomId'] == widget.room.id) {
-        final newName = data['newName'];
-        final oldName = data['oldName'];
+      if (!_isMounted) return;
+      final map = _asMap(data);
+      if (map == null) return;
+      if (map['roomId'] != widget.room.id) return;
 
-        setState(() {
-          _currentRoomData = Room(
-            id: _currentRoomData.id,
-            name: newName,
-            buildingId: _currentRoomData.buildingId,
-            buildingName: _currentRoomData.buildingName,
-            dataSource: _currentRoomData.dataSource,
-            iotDeviceId: _currentRoomData.iotDeviceId,
-            currentAQI: _currentRoomData.currentAQI,
-            currentData: _currentRoomData.currentData,
-            createdAt: _currentRoomData.createdAt,
-            updatedAt: DateTime.now(),
-          );
-        });
+      final newName = map['newName']?.toString();
+      final oldName = map['oldName']?.toString();
+      if (newName == null) return;
 
-        _showNotification(
-            'Nama ruangan diperbarui: $oldName -> $newName', 'info');
-      }
+      setState(() {
+        _currentRoomData = Room(
+          id: _currentRoomData.id,
+          name: newName,
+          buildingId: _currentRoomData.buildingId,
+          buildingName: _currentRoomData.buildingName,
+          dataSource: _currentRoomData.dataSource,
+          iotDeviceId: _currentRoomData.iotDeviceId,
+          currentAQI: _currentRoomData.currentAQI,
+          currentData: _currentRoomData.currentData,
+          createdAt: _currentRoomData.createdAt,
+          updatedAt: DateTime.now(),
+        );
+      });
+
+      _showNotification(
+          'Nama ruangan diperbarui: ${oldName ?? '-'} -> $newName', 'info');
     });
 
     _socketService.on('room-updated', (data) {
-      if (_isMounted && data['room']['id'] == widget.room.id) {
-        if (data['action'] == 'updated' && data['oldData'] != null) {
-          final newName = data['room']['name'];
-          final oldName = data['oldData']['name'];
+      if (!_isMounted) return;
+      final map = _asMap(data);
+      if (map == null) return;
 
-          if (newName != oldName) {
-            setState(() {
-              _currentRoomData = Room(
-                id: _currentRoomData.id,
-                name: newName,
-                buildingId: _currentRoomData.buildingId,
-                buildingName: _currentRoomData.buildingName,
-                dataSource: _currentRoomData.dataSource,
-                iotDeviceId: _currentRoomData.iotDeviceId,
-                currentAQI: _currentRoomData.currentAQI,
-                currentData: _currentRoomData.currentData,
-                createdAt: _currentRoomData.createdAt,
-                updatedAt: DateTime.now(),
-              );
-            });
+      final roomData = map['room'];
+      if (roomData is! Map) return;
+      final roomMap = Map<String, dynamic>.from(roomData);
 
-            _showNotification(
-                'Nama ruangan diperbarui: $oldName -> $newName',
-                'info');
-          }
+      if (roomMap['id'] != widget.room.id) return;
+
+      if (map['action'] == 'updated' && map['oldData'] != null && map['oldData'] is Map) {
+        final oldMap = Map<String, dynamic>.from(map['oldData'] as Map);
+        final newName = roomMap['name'];
+        final oldName = oldMap['name'];
+
+        if (newName != oldName) {
+          setState(() {
+            _currentRoomData = Room(
+              id: _currentRoomData.id,
+              name: newName?.toString() ?? _currentRoomData.name,
+              buildingId: _currentRoomData.buildingId,
+              buildingName: _currentRoomData.buildingName,
+              dataSource: _currentRoomData.dataSource,
+              iotDeviceId: _currentRoomData.iotDeviceId,
+              currentAQI: _currentRoomData.currentAQI,
+              currentData: _currentRoomData.currentData,
+              createdAt: _currentRoomData.createdAt,
+              updatedAt: DateTime.now(),
+            );
+          });
+
+          _showNotification(
+              'Nama ruangan diperbarui: $oldName -> $newName',
+              'info');
         }
       }
     });
   }
 
+  // FIXED: guard data.
   void _setupBuildingUpdateListener() {
     _socketService.on('room-building-updated', (data) {
-      if (_isMounted && data['buildingId'] == widget.room.buildingId) {
-        final newBuildingName = data['newBuildingName'];
+      if (!_isMounted) return;
+      final map = _asMap(data);
+      if (map == null) return;
+      if (map['buildingId'] != widget.room.buildingId) return;
 
-        setState(() {
-          _currentRoomData = Room(
-            id: _currentRoomData.id,
-            name: _currentRoomData.name,
-            buildingId: _currentRoomData.buildingId,
-            buildingName: newBuildingName,
-            dataSource: _currentRoomData.dataSource,
-            iotDeviceId: _currentRoomData.iotDeviceId,
-            currentAQI: _currentRoomData.currentAQI,
-            currentData: _currentRoomData.currentData,
-            createdAt: _currentRoomData.createdAt,
-            updatedAt: _currentRoomData.updatedAt,
-          );
-        });
+      final newBuildingName = map['newBuildingName']?.toString();
+      if (newBuildingName == null) return;
 
-        _showNotification('Nama gedung diperbarui: $newBuildingName',
-            'info');
-      }
+      setState(() {
+        _currentRoomData = Room(
+          id: _currentRoomData.id,
+          name: _currentRoomData.name,
+          buildingId: _currentRoomData.buildingId,
+          buildingName: newBuildingName,
+          dataSource: _currentRoomData.dataSource,
+          iotDeviceId: _currentRoomData.iotDeviceId,
+          currentAQI: _currentRoomData.currentAQI,
+          currentData: _currentRoomData.currentData,
+          createdAt: _currentRoomData.createdAt,
+          updatedAt: _currentRoomData.updatedAt,
+        );
+      });
+
+      _showNotification('Nama gedung diperbarui: $newBuildingName',
+          'info');
     });
   }
 
@@ -149,25 +182,45 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
     _socketService.joinRoom(widget.room.id);
   }
 
+  // FIXED: guard data sebelum dispatch.
   void _setupRealtimeListener() {
     _socketService.on('room-update', (data) {
-      if (_isMounted && data['roomId'] == widget.room.id) {
-        _handleRoomUpdate(data);
-      }
+      if (!_isMounted) return;
+      final map = _asMap(data);
+      if (map == null) return;
+      if (map['roomId'] != widget.room.id) return;
+
+      _handleRoomUpdate(map);
     });
 
     _socketService.on('notification', (data) {
-      if (_isMounted) {
-        _showNotification(data['message'], data['type'] ?? 'info');
-      }
+      if (!_isMounted) return;
+      final map = _asMap(data);
+      if (map == null) return;
+
+      _showNotification(
+        map['message']?.toString() ?? '',
+        map['type']?.toString() ?? 'info',
+      );
     });
   }
 
+  // FIXED: defensive null checks pada nested field currentData.
   void _handleRoomUpdate(dynamic data) {
     try {
-      final roomData = data['data'];
+      final map = _asMap(data);
+      if (map == null) return;
+
+      final roomData = map['data'];
+      if (roomData is! Map) return;
+      final roomMap = Map<String, dynamic>.from(roomData);
+
+      final currentData = roomMap['currentData'];
+      if (currentData is! Map) return;
+      final cdMap = Map<String, dynamic>.from(currentData);
+
       final oldName = _currentRoomData.name;
-      final newName = roomData['name'] ?? _currentRoomData.name;
+      final newName = roomMap['name']?.toString() ?? _currentRoomData.name;
       final nameChanged = oldName != newName;
 
       setState(() {
@@ -178,19 +231,22 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
           buildingName: _currentRoomData.buildingName,
           dataSource: _currentRoomData.dataSource,
           iotDeviceId: _currentRoomData.iotDeviceId,
-          currentAQI: roomData['currentAQI'],
+          currentAQI: (roomMap['currentAQI'] as num?)?.toInt() ??
+              _currentRoomData.currentAQI,
           currentData: RoomData(
-            pm25: roomData['currentData']['pm25'].toDouble(),
-            pm10: roomData['currentData']['pm10'].toDouble(),
-            co2: roomData['currentData']['co2'].toDouble(),
-            temperature:
-                roomData['currentData']['temperature'].toDouble(),
-            humidity: roomData['currentData']['humidity'].toDouble(),
-            updatedAt: DateTime.parse(
-                roomData['currentData']['updatedAt']),
+            pm25: (cdMap['pm25'] as num?)?.toDouble() ?? 0,
+            pm10: (cdMap['pm10'] as num?)?.toDouble() ?? 0,
+            co2: (cdMap['co2'] as num?)?.toDouble() ?? 0,
+            temperature: (cdMap['temperature'] as num?)?.toDouble() ?? 0,
+            humidity: (cdMap['humidity'] as num?)?.toDouble() ?? 0,
+            updatedAt: cdMap['updatedAt'] != null
+                ? DateTime.parse(cdMap['updatedAt'].toString())
+                : DateTime.now(),
           ),
           createdAt: _currentRoomData.createdAt,
-          updatedAt: DateTime.parse(roomData['updatedAt']),
+          updatedAt: roomMap['updatedAt'] != null
+              ? DateTime.parse(roomMap['updatedAt'].toString())
+              : DateTime.now(),
         );
       });
 
@@ -204,6 +260,7 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
   }
 
   void _showNotification(String message, String type) {
+    if (!_isMounted) return;
     Color backgroundColor;
     IconData icon;
 
@@ -763,7 +820,10 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
                     size: 22,
                     color: AppColors.textSecondary,
                   ),
-            onPressed: _refreshData,
+            onPressed: () {
+              ServerStatusIndicator.checkNow();
+              _refreshData();
+            },
             splashRadius: 20,
           ),
         ],

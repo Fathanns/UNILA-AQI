@@ -234,6 +234,19 @@ const requestEmailChangeCode = async (req, res) => {
       console.log(`✅ Email change code sent to ${email}`);
     } catch (emailError) {
       console.error('❌ Email send error:', emailError);
+
+      // FIXED: rollback — hapus semua field verifikasi agar user bisa
+      // request ulang tanpa status "pendingEmail" yang menggantung.
+      try {
+        user.pendingEmail = undefined;
+        user.emailChangeCode = undefined;
+        user.emailChangeCodeExpiry = undefined;
+        await user.save();
+        console.log('↩️  Email change state rolled back');
+      } catch (rollbackError) {
+        console.error('❌ Rollback email change failed:', rollbackError.message);
+      }
+
       return res.status(500).json({
         success: false,
         message: 'Gagal mengirim email. Periksa koneksi server atau coba lagi.'
@@ -496,6 +509,17 @@ const requestPasswordReset = async (req, res) => {
       console.log(`✅ Reset code sent to ${user.email}`);
     } catch (emailError) {
       console.error('❌ Email send error:', emailError);
+
+      // FIXED: rollback kode reset agar tidak menggantung saat email gagal.
+      try {
+        user.resetPasswordCode = undefined;
+        user.resetPasswordCodeExpiry = undefined;
+        await user.save();
+        console.log('↩️  Reset password state rolled back');
+      } catch (rollbackError) {
+        console.error('❌ Rollback reset password failed:', rollbackError.message);
+      }
+
       return res.status(500).json({
         success: false,
         message: 'Gagal mengirim email. Periksa koneksi server atau coba lagi.',
@@ -633,6 +657,17 @@ const resendResetCode = async (req, res) => {
       console.log(`✅ Reset code resent to ${user.email}`);
     } catch (emailError) {
       console.error('❌ Email send error:', emailError);
+
+      // FIXED: rollback kode reset agar tidak menggantung saat email gagal.
+      try {
+        user.resetPasswordCode = undefined;
+        user.resetPasswordCodeExpiry = undefined;
+        await user.save();
+        console.log('↩️  Resend reset code state rolled back');
+      } catch (rollbackError) {
+        console.error('❌ Rollback resend failed:', rollbackError.message);
+      }
+
       return res.status(500).json({
         success: false,
         message: 'Gagal mengirim email. Coba lagi nanti.',

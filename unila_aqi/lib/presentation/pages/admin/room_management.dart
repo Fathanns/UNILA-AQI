@@ -23,8 +23,7 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
   final StorageService _storage = StorageService();
   final TextEditingController _searchController = TextEditingController();
 
-  static const String _cacheRoomsKey = 'cache_rooms';
-  static const String _cacheBuildingsKey = 'cache_buildings';
+  static const String _cacheKey = 'cache_rooms';
 
   List<Room> _rooms = [];
   List<Room> _filteredRooms = [];
@@ -41,32 +40,25 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
   }
 
   Future<void> _loadCacheThenFetch() async {
-    // Cache rooms
+    Map<String, dynamic>? cached;
     try {
-      final cachedRooms = _storage.getJson(_cacheRoomsKey);
-      if (cachedRooms != null && cachedRooms['data'] is List) {
-        final list = (cachedRooms['data'] as List)
-            .map((e) =>
-                Room.fromJson(Map<String, dynamic>.from(e as Map)))
-            .toList();
-        if (mounted) setState(() => _rooms = list);
-      }
-    } catch (_) {}
+      cached = _storage.getJson(_cacheKey);
+    } catch (_) {
+      cached = null;
+    }
 
-    // Cache buildings
-    try {
-      final cachedBuildings = _storage.getJson(_cacheBuildingsKey);
-      if (cachedBuildings != null && cachedBuildings['data'] is List) {
-        final list = (cachedBuildings['data'] as List)
-            .map((e) =>
-                Building.fromJson(Map<String, dynamic>.from(e as Map)))
+    if (cached != null && cached['data'] is List) {
+      try {
+        final list = (cached['data'] as List)
+            .map((e) => Room.fromJson(Map<String, dynamic>.from(e as Map)))
             .toList();
-        if (mounted) setState(() => _buildings = list);
-      }
-    } catch (_) {}
-
-    if (_rooms.isNotEmpty) {
-      _filterRooms();
+        if (mounted) {
+          setState(() {
+            _rooms = list;
+          });
+          _filterRooms();
+        }
+      } catch (_) {}
     }
 
     await _loadData();
@@ -74,7 +66,7 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
 
   Future<void> _loadData() async {
     setState(() {
-      _isLoading = _rooms.isEmpty && _buildings.isEmpty;
+      _isLoading = _rooms.isEmpty;
       _hasError = false;
     });
 
@@ -96,16 +88,12 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
 
       _filterRooms();
 
-      // Simpan cache
       try {
-        await _storage.setJson(_cacheRoomsKey, {
+        await _storage.setJson(_cacheKey, {
           'data': rooms.map((r) => r.toJson()).toList(),
         });
-        await _storage.setJson(_cacheBuildingsKey, {
-          'data': buildings.map((b) => b.toJson()).toList(),
-        });
       } catch (_) {}
-        } catch (e) {
+    } catch (e) {
       if (!mounted) return;
 
       if (Helpers.isNetworkError(e)) {
@@ -118,7 +106,7 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
         );
       }
 
-      if (_rooms.isEmpty && _buildings.isEmpty) {
+      if (_rooms.isEmpty) {
         setState(() {
           _hasError = true;
           _errorMessage = Helpers.friendlyErrorMessage(e);
@@ -147,7 +135,11 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
           .toList();
     }
 
-    setState(() => _filteredRooms = filtered);
+    if (mounted) {
+      setState(() => _filteredRooms = filtered);
+    } else {
+      _filteredRooms = filtered;
+    }
   }
 
   Future<void> _deleteRoom(String roomId) async {
@@ -155,8 +147,7 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Hapus Ruangan'),
-        content:
-            const Text('Apakah Anda yakin ingin menghapus ruangan ini?'),
+        content: const Text('Apakah Anda yakin ingin menghapus ruangan ini?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -176,9 +167,8 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
     try {
       await _roomRepository.deleteRoom(roomId);
       await _loadData();
-      if (mounted) {
-        Helpers.showSnackBar(context, 'Ruangan berhasil dihapus');
-      }
+      if (!mounted) return;
+      Helpers.showSnackBar(context, 'Ruangan berhasil dihapus');
     } catch (e) {
       if (!mounted) return;
       if (Helpers.isNetworkError(e)) {
@@ -186,7 +176,7 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
       } else {
         Helpers.showSnackBar(
           context,
-          'Gagal menghapus ruangan: $e',
+          'Gagal menghapus ruangan',
           isError: true,
         );
       }
@@ -235,10 +225,16 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
       appBar: AppBar(
         title: const Text('Kelola Ruangan'),
         actions: [
+          // FIXED: indikator status server ditambahkan di sini.
           const ServerStatusIndicator(),
           IconButton(
             icon: const Icon(Icons.refresh),
-            onPressed: _loadData,
+            onPressed: () {
+              // FIXED: picu health check paralel agar indikator langsung
+              // update ke hijau/merah begitu tombol ditekan.
+              ServerStatusIndicator.checkNow();
+              _loadData();
+            },
             tooltip: 'Refresh',
           ),
         ],
@@ -320,11 +316,11 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
           ),
           const SizedBox(height: 16),
 
-          if (_isLoading && _filteredRooms.isEmpty)
+          if (_isLoading && _rooms.isEmpty)
             const Expanded(
               child: Center(child: CircularProgressIndicator()),
             )
-                    else if (_hasError && _filteredRooms.isEmpty)
+          else if (_hasError && _rooms.isEmpty)
             Expanded(
               child: Center(
                 child: Padding(
@@ -340,9 +336,7 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
                       const SizedBox(height: 16),
                       Text(
                         'Tidak dapat memuat data',
-                        style: Theme.of(context)
-                            .textTheme
-                            .titleLarge,
+                        style: Theme.of(context).textTheme.titleLarge,
                         textAlign: TextAlign.center,
                       ),
                       const SizedBox(height: 8),
@@ -377,8 +371,7 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
                     const SizedBox(height: 16),
                     const Text(
                       'Tidak ada ruangan ditemukan',
-                      style:
-                          TextStyle(fontSize: 16, color: Colors.grey),
+                      style: TextStyle(fontSize: 16, color: Colors.grey),
                     ),
                     const SizedBox(height: 8),
                     if (_searchController.text.isNotEmpty ||
@@ -471,12 +464,11 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
                 ),
               ],
             ),
-
             if (staleDuration != null) ...[
               const SizedBox(height: 12),
               Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 12, vertical: 10),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                 decoration: BoxDecoration(
                   color: Colors.orange.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(10),
@@ -502,9 +494,7 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
                 ),
               ),
             ],
-
             const SizedBox(height: 16),
-
             Row(
               children: [
                 Expanded(
@@ -580,9 +570,7 @@ class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
           widget.buildings.any((b) => b.id == room.buildingId);
       _selectedBuildingId = buildingExists
           ? room.buildingId
-          : (widget.buildings.isNotEmpty
-              ? widget.buildings.first.id
-              : null);
+          : (widget.buildings.isNotEmpty ? widget.buildings.first.id : null);
 
       _selectedDataSource = room.dataSource;
       _selectedIotDeviceId = room.iotDeviceId;
@@ -596,9 +584,10 @@ class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
   Future<void> _loadIoTDevices() async {
     try {
       final devices = await _iotDeviceRepository.getDevices();
-      if (mounted) setState(() => _iotDevices = devices);
+      if (!mounted) return;
+      setState(() => _iotDevices = devices);
     } catch (e) {
-      print('Error loading IoT devices: $e');
+      debugPrint('Error loading IoT devices: $e');
     }
   }
 
@@ -617,8 +606,7 @@ class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
     }
 
     if (_selectedDataSource == 'iot' && _selectedIotDeviceId == null) {
-      Helpers.showSnackBar(
-          context, 'Pilih device IoT terlebih dahulu',
+      Helpers.showSnackBar(context, 'Pilih device IoT terlebih dahulu',
           isError: true);
       return;
     }
@@ -635,10 +623,8 @@ class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
           iotDeviceId:
               _selectedDataSource == 'iot' ? _selectedIotDeviceId : null,
         );
-        if (mounted) {
-          Helpers.showSnackBar(
-              context, 'Ruangan berhasil diperbarui');
-        }
+        if (!mounted) return;
+        Helpers.showSnackBar(context, 'Ruangan berhasil diperbarui');
       } else {
         await _roomRepository.createRoom(
           name: _nameController.text.trim(),
@@ -647,10 +633,8 @@ class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
           iotDeviceId:
               _selectedDataSource == 'iot' ? _selectedIotDeviceId : null,
         );
-        if (mounted) {
-          Helpers.showSnackBar(
-              context, 'Ruangan berhasil ditambahkan');
-        }
+        if (!mounted) return;
+        Helpers.showSnackBar(context, 'Ruangan berhasil ditambahkan');
       }
 
       widget.onRoomSaved();
@@ -663,7 +647,7 @@ class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
       } else {
         Helpers.showSnackBar(
           context,
-          'Gagal menyimpan ruangan: $e',
+          'Gagal menyimpan ruangan',
           isError: true,
         );
       }
@@ -676,8 +660,7 @@ class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title:
-            Text(widget.isEditing ? 'Edit Ruangan' : 'Tambah Ruangan'),
+        title: Text(widget.isEditing ? 'Edit Ruangan' : 'Tambah Ruangan'),
         actions: [
           if (_isLoading)
             const Padding(
@@ -698,14 +681,13 @@ class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text('Nama Ruangan*',
-                  style: TextStyle(
-                      fontSize: 16, fontWeight: FontWeight.w500)),
+                  style:
+                      TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
               const SizedBox(height: 8),
               TextFormField(
                 controller: _nameController,
                 decoration: const InputDecoration(
-                  hintText:
-                      'Contoh: H17, Lab Komputer, Ruang Baca',
+                  hintText: 'Contoh: H17, Lab Komputer, Ruang Baca',
                   border: OutlineInputBorder(),
                 ),
                 validator: (value) {
@@ -717,8 +699,8 @@ class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
               ),
               const SizedBox(height: 16),
               const Text('Gedung*',
-                  style: TextStyle(
-                      fontSize: 16, fontWeight: FontWeight.w500)),
+                  style:
+                      TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
               const SizedBox(height: 8),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -747,8 +729,8 @@ class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
               ),
               const SizedBox(height: 16),
               const Text('Sumber Data',
-                  style: TextStyle(
-                      fontSize: 16, fontWeight: FontWeight.w500)),
+                  style:
+                      TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
               const SizedBox(height: 8),
               Column(
                 children: [
@@ -780,11 +762,9 @@ class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
                   ),
                   if (_selectedDataSource == 'iot')
                     Padding(
-                      padding:
-                          const EdgeInsets.only(left: 40, top: 8),
+                      padding: const EdgeInsets.only(left: 40, top: 8),
                       child: Column(
-                        crossAxisAlignment:
-                            CrossAxisAlignment.start,
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           const Text('Pilih Device IoT:',
                               style: TextStyle(
@@ -792,25 +772,23 @@ class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
                                   fontWeight: FontWeight.w500)),
                           const SizedBox(height: 8),
                           Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 12),
+                            padding:
+                                const EdgeInsets.symmetric(horizontal: 12),
                             decoration: BoxDecoration(
                               color: Colors.white,
-                              borderRadius:
-                                  BorderRadius.circular(8),
-                              border: Border.all(
-                                  color: Colors.grey.shade300),
+                              borderRadius: BorderRadius.circular(8),
+                              border:
+                                  Border.all(color: Colors.grey.shade300),
                             ),
                             child: DropdownButtonHideUnderline(
                               child: DropdownButton<String>(
                                 value: _selectedIotDeviceId,
                                 isExpanded: true,
-                                icon:
-                                    const Icon(Icons.arrow_drop_down),
+                                icon: const Icon(Icons.arrow_drop_down),
                                 hint: const Text('Pilih Device IoT'),
                                 onChanged: (value) {
-                                  setState(() =>
-                                      _selectedIotDeviceId = value);
+                                  setState(
+                                      () => _selectedIotDeviceId = value);
                                 },
                                 items: _iotDevices.map((device) {
                                   return DropdownMenuItem(
@@ -827,8 +805,7 @@ class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
                               child: Text(
                                 'Device IoT wajib dipilih untuk sumber data IoT',
                                 style: TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.red),
+                                    fontSize: 12, color: Colors.red),
                               ),
                             ),
                         ],

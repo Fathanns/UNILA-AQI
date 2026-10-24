@@ -30,6 +30,21 @@ class SocketService {
   Stream<bool> get connectionStream => _connectionController.stream;
   Stream<Map<String, dynamic>> get dataStream => _dataController.stream;
 
+  // FIXED: helper untuk validasi payload socket.
+  // Mengembalikan Map yang aman atau null jika data bukan Map.
+  Map<String, dynamic>? _asMap(dynamic data) {
+    if (data == null) return null;
+    if (data is Map<String, dynamic>) return data;
+    if (data is Map) {
+      try {
+        return Map<String, dynamic>.from(data);
+      } catch (_) {
+        return null;
+      }
+    }
+    return null;
+  }
+
   // Connect to server
   Future<void> connect({String? token}) async {
     if (_isConnecting || _isConnected) {
@@ -158,21 +173,25 @@ class SocketService {
     });
 
     // Room update handler - OPTIMIZED
+    // FIXED: guard data agar tidak TypeError saat payload rusak.
      _socket!.on('room-update', (data) {
+    final map = _asMap(data);
+    if (map == null) return;
+
     if (kDebugMode) {
-      print('📡 Room update received: ${data['roomId']}');
+      print('📡 Room update received: ${map['roomId']}');
     }
     
     // Add timestamp if not present
-    if (data['timestamp'] == null) {
-      data['timestamp'] = DateTime.now().toIso8601String();
+    if (map['timestamp'] == null) {
+      map['timestamp'] = DateTime.now().toIso8601String();
     }
     
     // Call registered handlers for this event
     if (_eventHandlers.containsKey('room-update')) {
       for (final handler in _eventHandlers['room-update']!) {
         try {
-          handler(data);
+          handler(map);
         } catch (e) {
           if (kDebugMode) {
             print('❌ Error in room-update handler: $e');
@@ -184,22 +203,26 @@ class SocketService {
     // Broadcast to data stream
     _dataController.add({
       'type': 'room-update',
-      'data': data,
+      'data': map,
       'timestamp': DateTime.now()
     });
   });
 
     // Dashboard update handler
+    // FIXED: guard data agar tidak TypeError saat payload rusak.
     _socket!.on('dashboard-update', (data) {
+      final map = _asMap(data);
+      if (map == null) return;
+
       if (kDebugMode) {
-        print('📊 Dashboard update: ${data['type']}');
+        print('📊 Dashboard update: ${map['type']}');
       }
       
       // Call registered handlers
       if (_eventHandlers.containsKey('dashboard-update')) {
         for (final handler in _eventHandlers['dashboard-update']!) {
           try {
-            handler(data);
+            handler(map);
           } catch (e) {
             if (kDebugMode) {
               print('❌ Error in dashboard-update handler: $e');
@@ -211,22 +234,28 @@ class SocketService {
       // Broadcast to data stream
       _dataController.add({
         'type': 'dashboard-update',
-        'data': data,
+        'data': map,
         'timestamp': DateTime.now()
       });
     });
 
     // 🔥 BARU: Dashboard room updated handler
+  // FIXED: guard data agar tidak TypeError saat payload rusak.
   _socket!.on('dashboard-room-updated', (data) {
+    final map = _asMap(data);
+    if (map == null) return;
+
     if (kDebugMode) {
-      print('📊 Dashboard room updated: ${data['action']} - ${data['room']['name']}');
+      final room = map['room'];
+      final roomName = (room is Map) ? room['name'] : null;
+      print('📊 Dashboard room updated: ${map['action']} - $roomName');
     }
     
     // Call registered handlers
     if (_eventHandlers.containsKey('dashboard-room-updated')) {
       for (final handler in _eventHandlers['dashboard-room-updated']!) {
         try {
-          handler(data);
+          handler(map);
         } catch (e) {
           if (kDebugMode) {
             print('❌ Error in dashboard-room-updated handler: $e');
@@ -238,21 +267,25 @@ class SocketService {
     // Broadcast to data stream
     _dataController.add({
       'type': 'dashboard-room-updated',
-      'data': data,
+      'data': map,
       'timestamp': DateTime.now()
     });
   });
 
+  // FIXED: guard data agar tidak TypeError saat payload rusak.
   _socket!.on('room-deleted', (data) {
+  final map = _asMap(data);
+  if (map == null) return;
+
   if (kDebugMode) {
-    print('🗑️ Room deleted event received: ${data['roomName']} (${data['roomId']})');
+    print('🗑️ Room deleted event received: ${map['roomName']} (${map['roomId']})');
   }
   
   // Call registered handlers
   if (_eventHandlers.containsKey('room-deleted')) {
     for (final handler in _eventHandlers['room-deleted']!) {
       try {
-        handler(data);
+        handler(map);
       } catch (e) {
         if (kDebugMode) {
           print('❌ Error in room-deleted handler: $e');
@@ -264,22 +297,29 @@ class SocketService {
   // Broadcast to data stream
   _dataController.add({
     'type': 'room-deleted',
-    'data': data,
+    'data': map,
     'timestamp': DateTime.now()
   });
 });
 
   // 🔥 BARU: Room name changed handler
+  // FIXED: guard data agar tidak TypeError saat payload rusak.
   _socket!.on('room-name-changed', (data) {
+    final map = _asMap(data);
+    if (map == null) return;
+
+    final oldName = map['oldName']?.toString() ?? '-';
+    final newName = map['newName']?.toString() ?? '-';
+
     if (kDebugMode) {
-      print('✏️ Room name changed: ${data['oldName']} -> ${data['newName']}');
+      print('✏️ Room name changed: $oldName -> $newName');
     }
     
     // Call registered handlers
     if (_eventHandlers.containsKey('room-name-changed')) {
       for (final handler in _eventHandlers['room-name-changed']!) {
         try {
-          handler(data);
+          handler(map);
         } catch (e) {
           if (kDebugMode) {
             print('❌ Error in room-name-changed handler: $e');
@@ -291,22 +331,26 @@ class SocketService {
     // Broadcast to data stream
     _dataController.add({
       'type': 'room-name-changed',
-      'data': data,
+      'data': map,
       'timestamp': DateTime.now()
     });
   });
 
   // 🔥 BARU: Room building changed handler
+  // FIXED: guard data agar tidak TypeError saat payload rusak.
   _socket!.on('room-building-changed', (data) {
+    final map = _asMap(data);
+    if (map == null) return;
+
     if (kDebugMode) {
-      print('🏢 Room building changed: ${data['roomId']}');
+      print('🏢 Room building changed: ${map['roomId']}');
     }
     
     // Call registered handlers
     if (_eventHandlers.containsKey('room-building-changed')) {
       for (final handler in _eventHandlers['room-building-changed']!) {
         try {
-          handler(data);
+          handler(map);
         } catch (e) {
           if (kDebugMode) {
             print('❌ Error in room-building-changed handler: $e');
@@ -317,15 +361,19 @@ class SocketService {
   });
 
   // Global notification handler
+  // FIXED: guard data agar tidak TypeError saat payload rusak.
   _socket!.on('notification', (data) {
+    final map = _asMap(data);
+    if (map == null) return;
+
     if (kDebugMode) {
-      print('🔔 Notification received: ${data['message']}');
+      print('🔔 Notification received: ${map['message']}');
     }
     
     if (_eventHandlers.containsKey('notification')) {
       for (final handler in _eventHandlers['notification']!) {
         try {
-          handler(data);
+          handler(map);
         } catch (e) {
           if (kDebugMode) {
             print('❌ Error in notification handler: $e');

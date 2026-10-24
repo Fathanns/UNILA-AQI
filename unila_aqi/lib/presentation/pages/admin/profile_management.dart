@@ -800,19 +800,19 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Edit Profil'),
-        actions: [
-          if (_isLoading)
-            const Padding(
-              padding: EdgeInsets.all(16),
-              child: SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
-            ),
-        ],
-      ),
+  title: const Text('Profil Admin'),
+  actions: [
+    const ServerStatusIndicator(),
+    IconButton(
+      icon: const Icon(Icons.refresh),
+      onPressed: () {
+        ServerStatusIndicator.checkNow();
+        widget.onSaved();
+      },
+      tooltip: 'Refresh',
+    ),
+  ],
+),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Form(

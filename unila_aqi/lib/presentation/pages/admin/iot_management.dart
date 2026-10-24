@@ -185,7 +185,10 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
           const ServerStatusIndicator(),
           IconButton(
             icon: const Icon(Icons.refresh),
-            onPressed: _loadData,
+            onPressed: () {
+              ServerStatusIndicator.checkNow();
+              _loadData();
+            },
             tooltip: 'Refresh',
           ),
         ],

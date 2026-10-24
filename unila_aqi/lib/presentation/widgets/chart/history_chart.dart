@@ -159,19 +159,32 @@ class _HistoryChartState extends State<HistoryChart> {
   // Helper function untuk mendapatkan kategori AQI
 
 
+  // FIXED: bungkus dengan try-catch. showDatePicker dapat melempar
+  // (mis. context tidak valid saat widget sudah unmounted).
   Future<void> _selectDate(BuildContext context) async {
-    final DateTime? picked = await showDatePicker(
-      context: context,
-      initialDate: _selectedDate,
-      firstDate: DateTime.now().subtract(const Duration(days: 30)),
-      lastDate: DateTime.now(),
-    );
+    try {
+      final DateTime? picked = await showDatePicker(
+        context: context,
+        initialDate: _selectedDate,
+        firstDate: DateTime.now().subtract(const Duration(days: 30)),
+        lastDate: DateTime.now(),
+      );
 
-    if (picked != null && picked != _selectedDate) {
-      setState(() {
-        _selectedDate = picked;
-      });
-      await _loadHistoryData();
+      if (picked != null && picked != _selectedDate) {
+        setState(() {
+          _selectedDate = picked;
+        });
+        await _loadHistoryData();
+      }
+    } catch (e) {
+      debugPrint('❌ Date picker error: $e');
+      if (mounted) {
+        Helpers.showSnackBar(
+          context,
+          'Gagal membuka pemilih tanggal',
+          isError: true,
+        );
+      }
     }
   }
 

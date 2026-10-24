@@ -40,24 +40,29 @@ class ApiService {
     Map<String, String>? queryParams,
   }) async {
     final headers = await _getHeaders();
-    final uri = Uri.parse('$baseUrl/$endpoint').replace(queryParameters: queryParams);
+    final uri =
+        Uri.parse('$baseUrl/$endpoint').replace(queryParameters: queryParams);
 
     try {
       switch (method) {
         case 'GET':
           return await _client.get(uri, headers: headers).timeout(timeout);
         case 'POST':
-          return await _client.post(
-            uri,
-            headers: headers,
-            body: body != null ? jsonEncode(body) : null,
-          ).timeout(timeout);
+          return await _client
+              .post(
+                uri,
+                headers: headers,
+                body: body != null ? jsonEncode(body) : null,
+              )
+              .timeout(timeout);
         case 'PUT':
-          return await _client.put(
-            uri,
-            headers: headers,
-            body: body != null ? jsonEncode(body) : null,
-          ).timeout(timeout);
+          return await _client
+              .put(
+                uri,
+                headers: headers,
+                body: body != null ? jsonEncode(body) : null,
+              )
+              .timeout(timeout);
         case 'DELETE':
           return await _client.delete(uri, headers: headers).timeout(timeout);
         default:
@@ -69,16 +74,22 @@ class ApiService {
   }
 
   /// Health check ringan — return true jika server merespons 200.
+  ///
+  /// FIXED: timeout dipendekkan ke 3 detik agar indikator server
+  /// cepat berubah ke merah saat tombol refresh ditekan ketika
+  /// backend mati. Untuk jaringan normal, health check selesai
+  /// <500ms sehingga indikator langsung berubah ke hijau.
   Future<bool> checkServerHealth() async {
     try {
       final response = await _client
           .get(Uri.parse('$baseUrl/simple-test'))
-          .timeout(const Duration(seconds: 5));
+          .timeout(const Duration(seconds: 3));
       return response.statusCode == 200;
     } catch (_) {
       return false;
     }
   }
+
   // API Methods
   Future<dynamic> get(String endpoint, {Map<String, String>? queryParams}) async {
     final response = await _request('GET', endpoint, queryParams: queryParams);
@@ -111,7 +122,8 @@ class ApiService {
       if (statusCode >= 200 && statusCode < 300) {
         return jsonResponse;
       } else {
-        final errorMessage = jsonResponse['message'] ?? 'Request failed with status $statusCode';
+        final errorMessage =
+            jsonResponse['message'] ?? 'Request failed with status $statusCode';
         throw Exception(errorMessage);
       }
     } catch (e) {
@@ -140,7 +152,7 @@ class ApiService {
   }
 
   // ==================== REAL DATA ENDPOINTS ====================
-  
+
   // REAL: Get all buildings from database
   Future<dynamic> getBuildings() async {
     return await get('buildings');
@@ -218,31 +230,31 @@ class ApiService {
 
   // REAL: Get sensor data for room
   Future<dynamic> getSensorData(String roomId) async {
-  try {
-    final headers = await _getHeaders();
-    
-    final response = await http.get(
-      Uri.parse('$baseUrl/sensor-data/$roomId'),
-      headers: headers,
-    );
-    
-    if (response.statusCode == 200) {
-      return jsonDecode(response.body);
-    } else {
-      // Return data kosong jika gagal
+    try {
+      final headers = await _getHeaders();
+
+      final response = await http.get(
+        Uri.parse('$baseUrl/sensor-data/$roomId'),
+        headers: headers,
+      );
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body);
+      } else {
+        // Return data kosong jika gagal
+        return {
+          'success': false,
+          'data': [],
+        };
+      }
+    } catch (e) {
       return {
         'success': false,
-        'data': []
+        'data': [],
+        'error': e.toString(),
       };
     }
-  } catch (e) {
-    return {
-      'success': false,
-      'data': [],
-      'error': e.toString()
-    };
   }
-}
 
   // ==================== TEST/DEBUG ENDPOINTS ====================
   // (Keep for debugging but not used in production)
@@ -271,85 +283,110 @@ class ApiService {
     return await post('rooms/sync-building-names', {});
   }
 
-Future<dynamic> forceRefresh() async {
-  return await post('force-refresh', {});
-}
+  // FIXED: forceRefresh dibungkus try-catch dan return format seragam
+  // agar pemanggil tidak crash saat server mati / 4xx / 5xx.
+  Future<dynamic> forceRefresh() async {
+    try {
+      final response = await _request('POST', 'force-refresh', body: {});
+      final body = jsonDecode(response.body);
 
-// REAL: Get sensor history data untuk grafik
-Future<dynamic> getSensorHistory(String roomId, String date, {int interval = 30}) async {
-  try {
-    final headers = await _getHeaders();
-    
-    final response = await http.get(
-      Uri.parse('$baseUrl/sensor-data/$roomId/history?date=$date&interval=$interval'),
-      headers: headers,
-    );
-    
-    if (response.statusCode == 200) {
-      final jsonResponse = jsonDecode(response.body);
-      return jsonResponse;
-    } else {
+      if (response.statusCode >= 200 &&
+          response.statusCode < 300 &&
+          body is Map &&
+          body['success'] == true) {
+        return body;
+      }
+
+      return {
+        'success': false,
+        'message': (body is Map ? body['message']?.toString() : null) ??
+            'Force refresh failed (${response.statusCode})',
+      };
+    } catch (e) {
+      return {
+        'success': false,
+        'message': 'Gagal force refresh: $e',
+      };
+    }
+  }
+
+  // REAL: Get sensor history data untuk grafik
+  Future<dynamic> getSensorHistory(String roomId, String date,
+      {int interval = 30}) async {
+    try {
+      final headers = await _getHeaders();
+
+      final response = await http.get(
+        Uri.parse(
+            '$baseUrl/sensor-data/$roomId/history?date=$date&interval=$interval'),
+        headers: headers,
+      );
+
+      if (response.statusCode == 200) {
+        final jsonResponse = jsonDecode(response.body);
+        return jsonResponse;
+      } else {
+        return {
+          'success': false,
+          'data': [],
+          'error': 'Failed to fetch history data: ${response.statusCode}',
+        };
+      }
+    } catch (e) {
       return {
         'success': false,
         'data': [],
-        'error': 'Failed to fetch history data: ${response.statusCode}'
+        'error': e.toString(),
       };
     }
-  } catch (e) {
-    return {
-      'success': false,
-      'data': [],
-      'error': e.toString()
-    };
   }
-}
 
-Future<dynamic> get24HoursSensorData(String roomId) async {
-  try {
-    final headers = await _getHeaders();
-    
-    final response = await http.get(
-      Uri.parse('$baseUrl/sensor-data/$roomId'),
-      headers: headers,
-    );
-    
-    if (response.statusCode == 200) {
-      return jsonDecode(response.body);
-    } else {
+  Future<dynamic> get24HoursSensorData(String roomId) async {
+    try {
+      final headers = await _getHeaders();
+
+      final response = await http.get(
+        Uri.parse('$baseUrl/sensor-data/$roomId'),
+        headers: headers,
+      );
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body);
+      } else {
+        return {
+          'success': false,
+          'data': [],
+          'error': 'Failed to fetch 24h data: ${response.statusCode}',
+        };
+      }
+    } catch (e) {
       return {
         'success': false,
         'data': [],
-        'error': 'Failed to fetch 24h data: ${response.statusCode}'
+        'error': e.toString(),
       };
     }
-  } catch (e) {
-    return {
-      'success': false,
-      'data': [],
-      'error': e.toString()
-    };
   }
-}
 
-Future<dynamic> forgotPassword(String email) async {
-  return await post('auth/forgot-password', {'email': email});
-}
+  Future<dynamic> forgotPassword(String email) async {
+    return await post('auth/forgot-password', {'email': email});
+  }
 
-Future<dynamic> resetPasswordWithCode({
-  required String email,
-  required String code,
-  required String newPassword,
-}) async {
-  return await post('auth/reset-password', {
-    'email': email,
-    'code': code,
-    'newPassword': newPassword,
-  });
-}
+  Future<dynamic> resetPasswordWithCode({
+    required String email,
+    required String code,
+    required String newPassword,
+  }) async {
+    return await post('auth/reset-password', {
+      'email': email,
+      'code': code,
+      'newPassword': newPassword,
+    });
+  }
 
-Future<dynamic> resendResetCode(String email) async {
-  return await post('auth/resend-reset-code', {'email': email});
-}
+  Future<dynamic> resendResetCode(String email) async {
+    return await post('auth/resend-reset-code', {'email': email});
+  }
 
   // Dispose
   void dispose() {

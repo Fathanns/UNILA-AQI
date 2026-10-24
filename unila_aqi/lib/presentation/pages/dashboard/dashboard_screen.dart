@@ -52,25 +52,81 @@ class _DashboardScreenState extends State<DashboardScreen> {
 }
 
 // 🔥 BARU: Setup listener untuk update nama ruangan
+// FIXED: guard data agar tidak TypeError saat payload rusak.
 void _setupRoomNameUpdateListener() {
   Provider.of<RoomProvider>(context, listen: false);
   final socketService = SocketService();
   
   // Listen for room name updates
   socketService.on('room-name-changed', (data) {
-    if (_isMounted) {
-      print('🔄 Room name update received: ${data['oldName']} -> ${data['newName']}');
-      
-      // Refresh data untuk update tampilan
+    if (!_isMounted) return;
+    final map = _asMap(data);
+    if (map == null) return;
+
+    final oldName = map['oldName']?.toString() ?? '-';
+    final newName = map['newName']?.toString() ?? '-';
+
+    print('🔄 Room name update received: $oldName -> $newName');
+    
+    // Refresh data untuk update tampilan
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_isMounted) {
+        _refreshData();
+        
+        // Show notification
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Nama ruangan diperbarui: $oldName -> $newName'),
+            backgroundColor: Colors.blue,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    });
+  });
+  
+  // Listen for dashboard-room-updated events
+  // FIXED: guard data + nested access.
+  socketService.on('dashboard-room-updated', (data) {
+    if (!_isMounted) return;
+    final map = _asMap(data);
+    if (map == null) return;
+    if (map['action'] != 'updated') return;
+
+    print('📡 Dashboard room update received');
+    
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_isMounted) {
+        _refreshData();
+      }
+    });
+  });
+}
+
+// FIXED: guard data agar tidak TypeError saat payload rusak.
+void _setupBuildingUpdateListener() {
+  Provider.of<RoomProvider>(context, listen: false);
+  final socketService = SocketService();
+  
+  // Listen for building updates
+  socketService.on('building-updated', (data) {
+    if (!_isMounted) return;
+    final map = _asMap(data);
+    if (map == null) return;
+
+    print('🏢 Building update received: ${map['action']}');
+    
+    // Jika building diedit, refresh data
+    if (map['action'] == 'updated') {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (_isMounted) {
           _refreshData();
           
           // Show notification
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Nama ruangan diperbarui: ${data['oldName']} -> ${data['newName']}'),
-              backgroundColor: Colors.blue,
+            const SnackBar(
+              content: Text('Data gedung diperbarui'),
+              backgroundColor: Colors.green,
               duration: Duration(seconds: 2),
             ),
           );
@@ -78,49 +134,20 @@ void _setupRoomNameUpdateListener() {
       });
     }
   });
-  
-  // Listen for dashboard-room-updated events
-  socketService.on('dashboard-room-updated', (data) {
-    if (_isMounted && data['action'] == 'updated') {
-      print('📡 Dashboard room update received');
-      
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (_isMounted) {
-          _refreshData();
-        }
-      });
-    }
-  });
 }
 
-void _setupBuildingUpdateListener() {
-  Provider.of<RoomProvider>(context, listen: false);
-  final socketService = SocketService();
-  
-  // Listen for building updates
-  socketService.on('building-updated', (data) {
-    if (_isMounted) {
-      print('🏢 Building update received: ${data['action']}');
-      
-      // Jika building diedit, refresh data
-      if (data['action'] == 'updated') {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (_isMounted) {
-            _refreshData();
-            
-            // Show notification
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('Data gedung diperbarui'),
-                backgroundColor: Colors.green,
-                duration: Duration(seconds: 2),
-              ),
-            );
-          }
-        });
-      }
+// FIXED: helper untuk memvalidasi payload socket.
+Map<String, dynamic>? _asMap(dynamic data) {
+  if (data == null) return null;
+  if (data is Map<String, dynamic>) return data;
+  if (data is Map) {
+    try {
+      return Map<String, dynamic>.from(data);
+    } catch (_) {
+      return null;
     }
-  });
+  }
+  return null;
 }
   
   @override
@@ -225,16 +252,23 @@ void dispose() {
     );
   }
   
+  // FIXED: sebelumnya tidak ada try-catch → unhandled exception saat server
+  // mati. Sekarang: error di-log, navigasi tetap dijalankan di `finally`.
   void _handleLogout() async {
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    await authProvider.logout();
-    
-    // Navigate back to mode selection
-    Navigator.pushNamedAndRemoveUntil(
-      context,
-      '/',
-      (route) => false,
-    );
+    try {
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      await authProvider.logout();
+    } catch (e) {
+      debugPrint('❌ Logout error: $e');
+    } finally {
+      if (mounted) {
+        Navigator.pushNamedAndRemoveUntil(
+          context,
+          '/',
+          (route) => false,
+        );
+      }
+    }
   }
 
    void _handleHelpTap() {
@@ -252,17 +286,20 @@ void dispose() {
     
     return Scaffold(
             appBar: AppBar(
-        title: const Text('UNILA Air Quality Index'),
-        centerTitle: true,
-        actions: [
-           const ServerStatusIndicator(),
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _refreshData,
-            tooltip: 'Refresh',
-          ),
-        ],
-      ),
+  title: const Text('UNILA Air Quality Index'),
+  centerTitle: true,
+  actions: [
+    const ServerStatusIndicator(),
+    IconButton(
+      icon: const Icon(Icons.refresh),
+      onPressed: () {
+        ServerStatusIndicator.checkNow();
+        _refreshData();
+      },
+      tooltip: 'Refresh',
+    ),
+  ],
+),
       drawer: AppDrawer(
         isAdmin: widget.isAdminMode,
         onDashboardTap: () => Navigator.pop(context),

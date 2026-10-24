@@ -38,7 +38,10 @@ class MyApp extends StatelessWidget {
     // Initialize socket connection when app starts
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final roomProvider = Provider.of<RoomProvider>(context, listen: false);
-      roomProvider.initSocket();
+      // FIXED: catchError agar rejection dari initSocket tidak unhandled.
+      roomProvider.initSocket().catchError((e) {
+        debugPrint('❌ initSocket error: $e');
+      });
     });
 
     return MaterialApp(

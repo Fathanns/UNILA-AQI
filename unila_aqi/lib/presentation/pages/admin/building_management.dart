@@ -198,7 +198,10 @@ class _BuildingManagementScreenState extends State<BuildingManagementScreen> {
           const ServerStatusIndicator(),
           IconButton(
             icon: const Icon(Icons.refresh),
-            onPressed: _loadBuildings,
+            onPressed: () {
+              ServerStatusIndicator.checkNow();
+              _loadBuildings();
+            },
             tooltip: 'Refresh',
           ),
         ],

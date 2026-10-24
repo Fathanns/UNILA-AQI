@@ -12,6 +12,7 @@ const buildingRoutes = require('./routes/buildingRoutes');
 const roomRoutes = require('./routes/roomRoutes');
 const iotDeviceRoutes = require('./routes/iotDeviceRoutes');
 const sensorDataRoutes = require('./routes/sensorDataRoutes');
+
 require('dotenv').config();
 
 const User = require('./models/User');
@@ -20,9 +21,22 @@ const Room = require('./models/Room');
 const SensorData = require('./models/SensorData');
 const IoTDevice = require('./models/IoTDevice');
 const authRoutes = require('./routes/authRoutes');
+const { authMiddleware } = require('./middleware/authMiddleware');
 
 const app = express();
 const server = http.createServer(app);
+
+// FIXED: tangani error server-level (mis. EADDRINUSE) agar proses tidak
+// crash dengan stack trace default Node.
+server.on('error', (err) => {
+  console.error('❌ Server error:', err.message);
+  if (err.code === 'EADDRINUSE') {
+    console.error(`   Port ${process.env.PORT || 5000} sudah digunakan.`);
+    console.error('   Hentikan proses lain di port tersebut atau ubah PORT di .env');
+  }
+  process.exit(1);
+});
+
 const io = socketIo(server, {
   cors: {
     origin: "*", // Allow all origins for development
@@ -35,7 +49,10 @@ const io = socketIo(server, {
 app.use(cors());
 app.use(express.json());
 
-// Routesf
+// Make io accessible to other modules (routes membaca req.app.get('socketio'))
+app.set('socketio', io);
+
+// Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/seed', seedRoutes);
 app.use('/api/test', testRoutes);
@@ -46,7 +63,7 @@ app.use('/api/sensor-data', sensorDataRoutes);
 
 // Basic route for testing
 app.get('/', (req, res) => {
-  res.json({ 
+  res.json({
     message: 'UNILA AQI Backend API is running',
     database: process.env.MONGODB_URI ? 'Connected' : 'Not configured',
     timestamp: new Date(),
@@ -57,21 +74,20 @@ app.get('/', (req, res) => {
 // Socket.io Connection Handler
 io.on('connection', (socket) => {
   console.log(`🔌 New client connected: ${socket.id}`);
-  
+
   // Join specific room
   socket.on('join-room', (roomId) => {
     socket.join(roomId);
     console.log(`📡 Socket ${socket.id} joined room: ${roomId}`);
-    
-    // Send welcome message to this room
+
     socket.emit('room-joined', {
       roomId: roomId,
       message: `Connected to room ${roomId}`,
       timestamp: new Date()
     });
   });
-  
-    // Leave room
+
+  // Leave room
   socket.on('leave-room', (roomId) => {
     socket.leave(roomId);
     console.log(`📡 Socket ${socket.id} left room: ${roomId}`);
@@ -81,48 +97,49 @@ io.on('connection', (socket) => {
   socket.on('subscribe-dashboard', () => {
     socket.join('dashboard');
     console.log(`📊 Socket ${socket.id} subscribed to dashboard updates`);
-    
+
     socket.emit('dashboard-subscribed', {
       message: 'Subscribed to dashboard updates',
       timestamp: new Date()
     });
   });
-  
+
   // Unsubscribe from dashboard
   socket.on('unsubscribe-dashboard', () => {
     socket.leave('dashboard');
     console.log(`📊 Socket ${socket.id} unsubscribed from dashboard`);
   });
 
-    // Subscribe to room updates
-   socket.on('subscribe-room-updates', (roomId) => {
+  // Subscribe to room updates
+  socket.on('subscribe-room-updates', (roomId) => {
     socket.join(`room-updates-${roomId}`);
     console.log(`📡 Socket ${socket.id} subscribed to room ${roomId} updates`);
   });
 
-    // Request manual refre
-    socket.on('request-refresh', (data) => {
+  // Request manual refresh
+  socket.on('request-refresh', (data) => {
     const roomId = data?.roomId;
     console.log(`🔄 Socket ${socket.id} requested refresh${roomId ? ` for room ${roomId}` : ''}`);
-    
+
     if (roomId) {
-      // Trigger refresh for specific room
       socket.to(roomId).emit('room-refresh-requested', {
         requestedBy: socket.id,
         timestamp: new Date()
       });
     } else {
-      // Trigger general refresh
-      simulationService.updateAllRooms();
-      iotService.pollAllIoTDevices();
-      
-      // Broadcast refresh started
+      simulationService.updateAllRooms().catch((e) => {
+        console.error('❌ simulationService.updateAllRooms error:', e.message);
+      });
+      iotService.pollAllIoTDevices().catch((e) => {
+        console.error('❌ iotService.pollAllIoTDevices error:', e.message);
+      });
+
       io.emit('refresh-started', {
         requestedBy: socket.id,
         timestamp: new Date()
       });
     }
-    
+
     socket.emit('refresh-acknowledged', {
       message: 'Refresh request received',
       timestamp: new Date()
@@ -132,17 +149,16 @@ io.on('connection', (socket) => {
   // Handle disconnection
   socket.on('disconnect', (reason) => {
     console.log(`🔌 Client disconnected: ${socket.id} (reason: ${reason})`);
-    
-    // Notify dashboard about disconnection
+
     socket.to('dashboard').emit('client-disconnected', {
       socketId: socket.id,
       timestamp: new Date(),
       reason: reason
     });
   });
-  
+
   // Ping for connection testing
-    socket.on('ping', (data) => {
+  socket.on('ping', (data) => {
     const clientTime = data?.timestamp;
     socket.emit('pong', {
       serverTime: new Date(),
@@ -151,7 +167,7 @@ io.on('connection', (socket) => {
     });
   });
 
-     // Send connection confirmation
+  // Send connection confirmation
   socket.emit('connected', {
     socketId: socket.id,
     message: 'Connected to UNILA AQI WebSocket server',
@@ -162,11 +178,7 @@ io.on('connection', (socket) => {
       features: ['real-time-updates', 'room-monitoring', 'dashboard-updates']
     }
   });
-
 });
-
-// Make io accessible to other modules
-app.set('socketio', io);
 
 // Function to broadcast room updates
 const broadcastRoomUpdate = (roomId, data) => {
@@ -199,13 +211,13 @@ mongoose.connect(process.env.MONGODB_URI)
     console.log('✅ Connected to MongoDB Atlas');
     console.log(`📊 Database: ${mongoose.connection.db.databaseName}`);
     console.log(`📍 Host: ${mongoose.connection.host}`);
-    
+
     // Seed admin user
     await seedInitialAdmin();
-    
+
     // Sync building names in rooms
     await syncBuildingNames();
-    
+
     // Seed sample buildings and rooms
     const buildingCount = await Building.countDocuments();
     if (buildingCount === 0) {
@@ -214,10 +226,10 @@ mongoose.connect(process.env.MONGODB_URI)
     } else {
       console.log(`📊 Database already has ${buildingCount} buildings, skipping sample seeding`);
     }
-    
+
     // Start services with socket.io instance
-    simulationService.start(io);  // GANTI: gunakan simulationService
-    iotService.start(io);        // GANTI: gunakan iotService yang sudah diperbaiki
+    simulationService.start(io);
+    iotService.start(io);
 
     console.log('✅ All services started');
     console.log('   - Simulation Service: ACTIVE (1 minute intervals)');
@@ -234,10 +246,10 @@ mongoose.connect(process.env.MONGODB_URI)
 async function syncBuildingNames() {
   try {
     console.log('🔄 Syncing building names in rooms...');
-    
+
     const rooms = await Room.find().populate('building', 'name');
     let updatedCount = 0;
-    
+
     for (const room of rooms) {
       if (room.building && room.buildingName !== room.building.name) {
         room.buildingName = room.building.name;
@@ -245,7 +257,7 @@ async function syncBuildingNames() {
         updatedCount++;
       }
     }
-    
+
     if (updatedCount > 0) {
       console.log(`✅ Synced building names for ${updatedCount} rooms`);
     } else {
@@ -261,12 +273,10 @@ const PORT = process.env.PORT || 5000;
 
 const seedInitialAdmin = async () => {
   try {
-    const User = require('./models/User');
     const { hashPassword } = require('./utils/auth');
-    
-    // Cek apakah sudah ada admin
+
     const adminExists = await User.findOne({ role: 'admin' });
-    
+
     if (!adminExists) {
       const hashedPassword = await hashPassword('admin123');
       const admin = new User({
@@ -275,7 +285,7 @@ const seedInitialAdmin = async () => {
         email: 'admin@unila-aqi.ac.id',
         role: 'admin'
       });
-      
+
       await admin.save();
       console.log('✅ Initial admin user created');
       console.log('👤 Username: admin');
@@ -298,25 +308,24 @@ app.get('/api/simple-test', (req, res) => {
   });
 });
 
-
-app.post('/api/force-refresh', async (req, res) => {
+// FIXED: endpoint ini sebelumnya tidak await & tanpa auth.
+// Sekarang: wajib login (authMiddleware) + await agar reject tertangkap.
+app.post('/api/force-refresh', authMiddleware, async (req, res) => {
   try {
-    // Force simulation service to update
-    simulationService.forceUpdate();  // GANTI
-    
-    // Force IoT service to poll
-    iotService.forcePollAll();
-    
+    await simulationService.forceUpdate();
+    await iotService.forcePollAll();
+
     res.json({
       success: true,
-      message: 'Force refresh initiated for both services',
+      message: 'Force refresh completed for both services',
       timestamp: new Date(),
       services: {
-        simulation: 'Forced update started',
-        iot: 'Forced polling started'
+        simulation: 'Forced update completed',
+        iot: 'Forced polling completed'
       }
     });
   } catch (error) {
+    console.error('❌ Force refresh error:', error);
     res.status(500).json({
       success: false,
       message: 'Error forcing refresh',
@@ -331,11 +340,3 @@ server.listen(PORT, () => {
   console.log(`📡 WebSocket URL: ws://localhost:${PORT}`);
   console.log(`🔌 Socket.IO ready for real-time updates`);
 });
-
-app.use((req, res, next) => {
-  req.io = io;
-  next();
-});
-
-// Export io for use in other modules
-app.set('socketio', io);

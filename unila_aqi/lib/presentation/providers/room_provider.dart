@@ -73,10 +73,13 @@ class RoomProvider with ChangeNotifier {
     }
   }
 
+  // FIXED: guard tipe data agar payload null/rusak tidak memicu TypeError.
   void _handleRoomDeleted(dynamic data) {
+    if (data is! Map) return;
     try {
-      final roomId = data['roomId'];
-      final roomName = data['roomName'];
+      final map = Map<String, dynamic>.from(data);
+      final roomId = map['roomId'];
+      final roomName = map['roomName'];
 
       print('🗑️ Processing room deletion: $roomName ($roomId)');
 
@@ -94,14 +97,18 @@ class RoomProvider with ChangeNotifier {
     }
   }
 
+  // FIXED: guard tipe data agar payload null/rusak tidak memicu TypeError.
   void _handleDashboardRoomUpdated(dynamic data) {
+    if (data is! Map) return;
     try {
-      final action = data['action'];
-      final roomData = data['room'];
+      final map = Map<String, dynamic>.from(data);
+      final action = map['action'];
+      final roomData = map['room'];
 
-      if (action != 'created' || roomData == null) return;
+      if (action != 'created' || roomData == null || roomData is! Map) return;
 
-      final roomId = roomData['id']?.toString();
+      final roomMap = Map<String, dynamic>.from(roomData);
+      final roomId = roomMap['id']?.toString();
       if (roomId == null) return;
 
       if (_rooms.any((r) => r.id == roomId)) {
@@ -111,20 +118,22 @@ class RoomProvider with ChangeNotifier {
 
       final newRoom = Room(
         id: roomId,
-        name: roomData['name']?.toString() ?? 'Unknown',
-        buildingId: roomData['buildingId']?.toString() ?? '',
-        buildingName: roomData['buildingName']?.toString() ?? 'Unknown',
-        dataSource: roomData['dataSource']?.toString() ?? 'simulation',
-        iotDeviceId: roomData['iotDeviceId']?.toString(),
-        currentAQI: (roomData['currentAQI'] as num?)?.toInt() ?? 0,
+        name: roomMap['name']?.toString() ?? 'Unknown',
+        buildingId: roomMap['buildingId']?.toString() ?? '',
+        buildingName: roomMap['buildingName']?.toString() ?? 'Unknown',
+        dataSource: roomMap['dataSource']?.toString() ?? 'simulation',
+        iotDeviceId: roomMap['iotDeviceId']?.toString(),
+        currentAQI: (roomMap['currentAQI'] as num?)?.toInt() ?? 0,
         currentData: RoomData.fromJson(
-          Map<String, dynamic>.from(roomData['currentData'] ?? {}),
+          roomMap['currentData'] is Map
+              ? Map<String, dynamic>.from(roomMap['currentData'])
+              : <String, dynamic>{},
         ),
-        createdAt: roomData['createdAt'] != null
-            ? DateTime.parse(roomData['createdAt'].toString())
+        createdAt: roomMap['createdAt'] != null
+            ? DateTime.parse(roomMap['createdAt'].toString())
             : DateTime.now(),
-        updatedAt: roomData['updatedAt'] != null
-            ? DateTime.parse(roomData['updatedAt'].toString())
+        updatedAt: roomMap['updatedAt'] != null
+            ? DateTime.parse(roomMap['updatedAt'].toString())
             : DateTime.now(),
       );
 
@@ -179,26 +188,32 @@ class RoomProvider with ChangeNotifier {
     }
   }
 
+  // FIXED: guard tipe data + akses field via map lokal agar konsisten.
   void _handleRoomUpdate(dynamic data) {
+    if (data is! Map) return;
     try {
-      final roomId = data['roomId'];
-      final roomData = data['data'];
-      final source = data['source'] ?? 'unknown';
-      final action = data['action'];
+      final map = Map<String, dynamic>.from(data);
+      final roomId = map['roomId'];
+      final roomData = map['data'];
+      final source = map['source'] ?? 'unknown';
+      final action = map['action'];
 
-      print('🔄 Processing ${source.toUpperCase()} update for room: $roomId (action: $action)');
+      print('🔄 Processing ${source.toString().toUpperCase()} update for room: $roomId (action: $action)');
 
-      if (action == 'updated' && data['oldData'] != null) {
-        final oldData = data['oldData'];
-        final newName = roomData['name'];
-        final oldName = oldData['name'];
+      if (roomData is! Map) return;
+      final roomMap = Map<String, dynamic>.from(roomData);
+
+      if (action == 'updated' && map['oldData'] != null && map['oldData'] is Map) {
+        final oldMap = Map<String, dynamic>.from(map['oldData']);
+        final newName = roomMap['name'];
+        final oldName = oldMap['name'];
 
         if (newName != oldName) {
           handleRoomNameChanged({
             'roomId': roomId,
             'newName': newName,
             'oldName': oldName,
-            'buildingName': roomData['buildingName']
+            'buildingName': roomMap['buildingName']
           });
           return;
         }
@@ -207,24 +222,34 @@ class RoomProvider with ChangeNotifier {
       final roomIndex = _rooms.indexWhere((room) => room.id == roomId);
 
       if (roomIndex != -1) {
+        final currentRoomData = roomMap['currentData'];
+        if (currentRoomData is! Map) return;
+
+        final cdMap = Map<String, dynamic>.from(currentRoomData);
+
         final updatedRoom = Room(
           id: _rooms[roomIndex].id,
-          name: roomData['name'] ?? _rooms[roomIndex].name,
+          name: roomMap['name'] ?? _rooms[roomIndex].name,
           buildingId: _rooms[roomIndex].buildingId,
-          buildingName: roomData['buildingName'] ?? _rooms[roomIndex].buildingName,
+          buildingName: roomMap['buildingName'] ?? _rooms[roomIndex].buildingName,
           dataSource: _rooms[roomIndex].dataSource,
           iotDeviceId: _rooms[roomIndex].iotDeviceId,
-          currentAQI: roomData['currentAQI'],
+          currentAQI: (roomMap['currentAQI'] as num?)?.toInt() ??
+              _rooms[roomIndex].currentAQI,
           currentData: RoomData(
-            pm25: roomData['currentData']['pm25'].toDouble(),
-            pm10: roomData['currentData']['pm10'].toDouble(),
-            co2: roomData['currentData']['co2'].toDouble(),
-            temperature: roomData['currentData']['temperature'].toDouble(),
-            humidity: roomData['currentData']['humidity'].toDouble(),
-            updatedAt: DateTime.parse(roomData['currentData']['updatedAt']),
+            pm25: (cdMap['pm25'] as num?)?.toDouble() ?? 0,
+            pm10: (cdMap['pm10'] as num?)?.toDouble() ?? 0,
+            co2: (cdMap['co2'] as num?)?.toDouble() ?? 0,
+            temperature: (cdMap['temperature'] as num?)?.toDouble() ?? 0,
+            humidity: (cdMap['humidity'] as num?)?.toDouble() ?? 0,
+            updatedAt: cdMap['updatedAt'] != null
+                ? DateTime.parse(cdMap['updatedAt'].toString())
+                : DateTime.now(),
           ),
           createdAt: _rooms[roomIndex].createdAt,
-          updatedAt: DateTime.parse(roomData['updatedAt']),
+          updatedAt: roomMap['updatedAt'] != null
+              ? DateTime.parse(roomMap['updatedAt'].toString())
+              : DateTime.now(),
         );
 
         _rooms[roomIndex] = updatedRoom;
@@ -232,26 +257,29 @@ class RoomProvider with ChangeNotifier {
         _applyFilters();
         notifyListeners();
 
-        print('✅ Room ${_rooms[roomIndex].name} updated via ${source.toUpperCase()}: AQI ${updatedRoom.currentAQI}');
+        print('✅ Room ${_rooms[roomIndex].name} updated via ${source.toString().toUpperCase()}: AQI ${updatedRoom.currentAQI}');
       }
     } catch (e) {
       print('❌ Error handling room update: $e');
     }
   }
 
+  // FIXED: guard tipe data + delegasi yang aman ke handler lain.
   void _handleDashboardUpdate(dynamic data) {
+    if (data is! Map) return;
     try {
-      final type = data['type'];
+      final map = Map<String, dynamic>.from(data);
+      final type = map['type'];
 
       switch (type) {
         case 'room-data-updated':
           _refreshData();
           break;
         case 'building-name-changed':
-          handleBuildingNameChanged(data);
+          handleBuildingNameChanged(map);
           break;
         case 'room-name-changed':
-          handleRoomNameChanged(data);
+          handleRoomNameChanged(map);
           break;
         default:
           print('ℹ️ Unknown dashboard update type: $type');
@@ -261,12 +289,16 @@ class RoomProvider with ChangeNotifier {
     }
   }
 
-  void handleRoomNameChanged(Map<String, dynamic> data) {
+  // FIXED: signature diubah dari Map<String,dynamic> ke dynamic + guard,
+  // agar tidak mismatch tipe saat dipanggil dari callback socket.
+  void handleRoomNameChanged(dynamic data) {
+    if (data is! Map) return;
     try {
-      final roomId = data['roomId'];
-      final newName = data['newName'];
-      final oldName = data['oldName'];
-      final buildingName = data['buildingName'];
+      final map = Map<String, dynamic>.from(data);
+      final roomId = map['roomId'];
+      final newName = map['newName'];
+      final oldName = map['oldName'];
+      final buildingName = map['buildingName'];
 
       print('🔄 Processing room name change: $oldName -> $newName ($roomId)');
 
@@ -275,9 +307,9 @@ class RoomProvider with ChangeNotifier {
       if (roomIndex != -1) {
         final updatedRoom = Room(
           id: _rooms[roomIndex].id,
-          name: newName,
+          name: newName ?? _rooms[roomIndex].name,
           buildingId: _rooms[roomIndex].buildingId,
-          buildingName: buildingName,
+          buildingName: buildingName ?? _rooms[roomIndex].buildingName,
           dataSource: _rooms[roomIndex].dataSource,
           iotDeviceId: _rooms[roomIndex].iotDeviceId,
           currentAQI: _rooms[roomIndex].currentAQI,
@@ -475,10 +507,13 @@ class RoomProvider with ChangeNotifier {
     }
   }
 
-  void handleBuildingNameChanged(Map<String, dynamic> data) {
+  // FIXED: signature diubah ke dynamic + guard tipe.
+  void handleBuildingNameChanged(dynamic data) {
+    if (data is! Map) return;
     try {
-      final buildingId = data['buildingId'];
-      final newBuildingName = data['newBuildingName'];
+      final map = Map<String, dynamic>.from(data);
+      final buildingId = map['buildingId'];
+      final newBuildingName = map['newBuildingName'];
 
       print('🔄 Processing building name change: $buildingId -> $newBuildingName');
 
@@ -489,7 +524,7 @@ class RoomProvider with ChangeNotifier {
             id: _rooms[i].id,
             name: _rooms[i].name,
             buildingId: _rooms[i].buildingId,
-            buildingName: newBuildingName,
+            buildingName: newBuildingName ?? _rooms[i].buildingName,
             dataSource: _rooms[i].dataSource,
             iotDeviceId: _rooms[i].iotDeviceId,
             currentAQI: _rooms[i].currentAQI,

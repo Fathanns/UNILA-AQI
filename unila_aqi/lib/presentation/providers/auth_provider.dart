@@ -55,17 +55,20 @@ class AuthProvider with ChangeNotifier {
   }
   
   // Logout
+  // FIXED: sebelumnya `rethrow` menyebabkan state lokal tidak ter-update
+  // saat server error. Sekarang: error hanya di-log, state lokal direset
+  // di `finally` agar user tetap bisa keluar dari aplikasi.
   Future<void> logout() async {
     _isLoading = true;
     notifyListeners();
     
     try {
       await _authService.logout();
+    } catch (e) {
+      debugPrint('❌ Logout error (server): $e');
+    } finally {
       _currentUser = null;
       _isLoggedIn = false;
-    } catch (e) {
-      rethrow;
-    } finally {
       _isLoading = false;
       notifyListeners();
     }
