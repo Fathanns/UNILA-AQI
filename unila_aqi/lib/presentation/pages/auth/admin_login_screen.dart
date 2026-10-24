@@ -17,7 +17,7 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
-  
+
   bool _isLoading = false;
   bool _obscurePassword = true;
 
@@ -29,35 +29,39 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
   }
 
   Future<void> _handleLogin() async {
-  if (!_formKey.currentState!.validate()) return;
+    if (!_formKey.currentState!.validate()) return;
 
-  setState(() => _isLoading = true);
+    setState(() => _isLoading = true);
 
-  try {
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    await authProvider.login(
-      _usernameController.text.trim(),
-      _passwordController.text.trim(),
-      'admin',
-    );
-
-    if (mounted) {
-      Navigator.pushReplacementNamed(context, '/admin-dashboard');
-    }
-  } catch (e) {
-    if (mounted) {
-      Helpers.showSnackBar(
-        context,
-        'Username atau password yang Anda masukkan salah.',
-        isError: true,
+    try {
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      await authProvider.login(
+        _usernameController.text.trim(),
+        _passwordController.text.trim(),
+        'admin',
       );
-    }
-  } finally {
-    if (mounted) {
-      setState(() => _isLoading = false);
+
+      if (mounted) {
+        Navigator.pushReplacementNamed(context, '/admin-dashboard');
+      }
+    } catch (e) {
+      if (!mounted) return;
+      // Server mati / network error -> SnackBar khusus
+      if (Helpers.isNetworkError(e)) {
+        Helpers.showServerError(context);
+      } else {
+        Helpers.showSnackBar(
+          context,
+          'Username atau password yang Anda masukkan salah.',
+          isError: true,
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
-}
 
   @override
   Widget build(BuildContext context) {
@@ -75,37 +79,32 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
           padding: const EdgeInsets.all(24.0),
           child: Column(
             children: [
-              // Logo
               Container(
-              width: 120,
-              height: 120,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: AppColors.background,
-                  width: 2,
+                width: 120,
+                height: 120,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: AppColors.background, width: 2),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.white,
+                      blurRadius: 8,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
                 ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.white,
-                    blurRadius: 8,
-                    offset: const Offset(0, 4),
+                child: Padding(
+                  padding: const EdgeInsets.all(8.0),
+                  child: Image.asset(
+                    'assets/images/logo_unila.png',
+                    width: 104,
+                    height: 104,
+                    fit: BoxFit.contain,
                   ),
-                ],
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(8.0), // Padding untuk memberi ruang
-                child: Image.asset(
-                  'assets/images/logo_unila.png',
-                  width: 104, // 120 - (8*2) = 104
-                  height: 104,
-                  fit: BoxFit.contain, // Gunakan contain agar tidak terpotong
                 ),
               ),
-            ),
               const SizedBox(height: 16),
-              // Title
               Text(
                 'LOGIN ADMIN',
                 style: Theme.of(context).textTheme.headlineSmall?.copyWith(
@@ -114,12 +113,10 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                     ),
               ),
               const SizedBox(height: 32),
-              // Login Form
               Form(
                 key: _formKey,
                 child: Column(
                   children: [
-                    // Username Field
                     TextFormField(
                       controller: _usernameController,
                       decoration: const InputDecoration(
@@ -132,45 +129,40 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                       textInputAction: TextInputAction.next,
                     ),
                     const SizedBox(height: 16),
-                    // Password Field
                     TextFormField(
                       controller: _passwordController,
                       decoration: InputDecoration(
                         labelText: 'Password',
                         prefixIcon: const Icon(Icons.lock),
                         suffixIcon: IconButton(
-                          icon: Icon(
-                            _obscurePassword
-                                ? Icons.visibility_off
-                                : Icons.visibility,
-                          ),
+                          icon: Icon(_obscurePassword
+                              ? Icons.visibility_off
+                              : Icons.visibility),
                           onPressed: () {
-                            setState(() => _obscurePassword = !_obscurePassword);
+                            setState(
+                                () => _obscurePassword = !_obscurePassword);
                           },
                         ),
                         border: const OutlineInputBorder(),
                       ),
                       obscureText: _obscurePassword,
-                      validator: (value) => Validators.validateRequired(value, 'Password'),
+                      validator: (value) =>
+                          Validators.validateRequired(value, 'Password'),
                     ),
                     const SizedBox(height: 24),
-                    // Login Button
                     SizedBox(
-  width: double.infinity,
-  height: 50,
-  child: ElevatedButton(
-    onPressed: _isLoading ? null : _handleLogin,
-    child: const Text(
-      'LOGIN',
-      style: TextStyle(
-        fontSize: 16,
-        fontWeight: FontWeight.w600,
-      ),
-    ),
-  ),
-),
+                      width: double.infinity,
+                      height: 50,
+                      child: ElevatedButton(
+                        onPressed: _isLoading ? null : _handleLogin,
+                        child: const Text(
+                          'LOGIN',
+                          style: TextStyle(
+                              fontSize: 16, fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                    ),
                     const SizedBox(height: 16),
-                    // Forgot Password Link
                     TextButton(
                       onPressed: () {
                         Navigator.push(
@@ -182,14 +174,9 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                       },
                       child: const Text(
                         'LUPA PASSWORD?',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w600,
-                        ),
+                        style: TextStyle(fontWeight: FontWeight.w600),
                       ),
                     ),
-                    const SizedBox(height: 24),
-                    // Contact Information
-                    
                   ],
                 ),
               ),

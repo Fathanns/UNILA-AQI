@@ -6,6 +6,63 @@ import '../constants/colors.dart';
 import '../constants/app_constants.dart';
 
 class Helpers {
+
+    static bool isNetworkError(dynamic error) {
+    final s = (error?.toString() ?? '').toLowerCase();
+    return s.contains('socketexception') ||
+        s.contains('network error') ||
+        s.contains('failed host lookup') ||
+        s.contains('host lookup') ||
+        s.contains('no route to host') ||
+        s.contains('connection refused') ||
+        s.contains('connection closed') ||
+        s.contains('connection reset') ||
+        s.contains('connection error') ||
+        s.contains('connection failed') ||
+        s.contains('clientexception') ||
+        s.contains('xmlhttprequest') ||
+        s.contains('timeout') ||
+        s.contains('unable to connect') ||
+        s.contains('failed to fetch');
+  }
+
+   static void showServerError(BuildContext context) {
+    showSnackBar(
+      context,
+      'Tidak dapat terhubung ke server. Periksa koneksi internet Anda atau coba beberapa saat lagi.',
+      isError: true,
+    );
+  }
+
+  /// Pesan ramah untuk ditampilkan di halaman error.
+  static String friendlyErrorMessage(dynamic error) {
+    if (isNetworkError(error)) {
+      return 'Tidak dapat terhubung ke server.\nPeriksa koneksi internet Anda atau coba beberapa saat lagi.';
+    }
+    return 'Terjadi kesalahan saat memuat data.\nSilakan coba lagi.';
+  }
+
+  static String extractBackendMessage(
+    dynamic error, {
+    required String fallback,
+  }) {
+    String msg = (error?.toString() ?? '').trim();
+    msg = msg.replaceFirst('Exception: ', '').trim();
+
+    final lower = msg.toLowerCase();
+    if (msg.isEmpty ||
+        isNetworkError(error) ||
+        lower.contains('clientexception') ||
+        lower.contains('socketexception') ||
+        lower.contains('http exception') ||
+        lower.contains('xmlhttprequest') ||
+        lower.contains('instance of') ||
+        lower.contains('failed host lookup')) {
+      return fallback;
+    }
+    return msg;
+  }
+
   // AQI Helpers
   static Color getAQIColor(int aqi) {
     if (aqi <= 50) return AppColors.aqiGood; // hijau

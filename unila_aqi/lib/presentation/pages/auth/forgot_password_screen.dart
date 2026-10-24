@@ -15,7 +15,7 @@ class ForgotPasswordScreen extends StatefulWidget {
 class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
-  
+
   bool _isLoading = false;
 
   @override
@@ -25,34 +25,40 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   }
 
   Future<void> _handleSendResetLink() async {
-  if (!_formKey.currentState!.validate()) return;
+    if (!_formKey.currentState!.validate()) return;
 
-  setState(() => _isLoading = true);
+    setState(() => _isLoading = true);
 
-  try {
-    final response = await ApiService().forgotPassword(_emailController.text.trim());
+    try {
+      final response =
+          await ApiService().forgotPassword(_emailController.text.trim());
 
-    if (response['success'] == true && mounted) {
-      setState(() => _isLoading = false);
+      if (response['success'] == true && mounted) {
+        setState(() => _isLoading = false);
 
-      Helpers.showSnackBar(
-        context,
-        'Kode verifikasi telah dikirim ke email Anda',
-      );
+        Helpers.showSnackBar(
+          context,
+          'Kode verifikasi telah dikirim ke email Anda',
+        );
 
-      // Navigate ke halaman reset password
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => ResetPasswordScreen(
-            email: _emailController.text.trim(),
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => ResetPasswordScreen(
+              email: _emailController.text.trim(),
+            ),
           ),
-        ),
-      );
-    }
-  } catch (e) {
-    if (mounted) {
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
       setState(() => _isLoading = false);
+
+      // Server mati -> SnackBar khusus, jangan navigasi
+      if (Helpers.isNetworkError(e)) {
+        Helpers.showServerError(context);
+        return;
+      }
 
       final rawMsg = e.toString().replaceFirst('Exception: ', '');
       final message = rawMsg.contains('tidak terdaftar')
@@ -62,7 +68,6 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
       Helpers.showSnackBar(context, message, isError: true);
     }
   }
-}
 
   @override
   Widget build(BuildContext context) {
@@ -80,7 +85,6 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
           padding: const EdgeInsets.all(24.0),
           child: Column(
             children: [
-              // Logo
               Container(
                 width: 80,
                 height: 80,
@@ -88,14 +92,10 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                   color: AppColors.primary,
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(
-                  Icons.lock_reset,
-                  size: 40,
-                  color: Colors.white,
-                ),
+                child: const Icon(Icons.lock_reset,
+                    size: 40, color: Colors.white),
               ),
               const SizedBox(height: 16),
-              // Title
               Text(
                 'LUPA PASSWORD',
                 style: Theme.of(context).textTheme.headlineSmall?.copyWith(
@@ -107,13 +107,10 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
               const Text(
                 'Masukkan email admin yang terdaftar',
                 style: TextStyle(
-                  fontSize: 16,
-                  color: AppColors.textSecondary,
-                ),
+                    fontSize: 16, color: AppColors.textSecondary),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 32),
-              // Email Form
               Form(
                 key: _formKey,
                 child: Column(
@@ -124,34 +121,28 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                         labelText: 'Email',
                         prefixIcon: Icon(Icons.email),
                         border: OutlineInputBorder(),
-                        
                       ),
                       validator: Validators.validateEmail,
                       keyboardType: TextInputType.emailAddress,
                       textInputAction: TextInputAction.done,
                     ),
                     const SizedBox(height: 32),
-                    // Send Button
                     SizedBox(
                       width: double.infinity,
                       height: 50,
                       child: ElevatedButton(
-                        onPressed: _isLoading ? null : _handleSendResetLink,
+                        onPressed:
+                            _isLoading ? null : _handleSendResetLink,
                         child: const Text(
                           'KIRIM LINK RESET',
                           style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                          ),
+                              fontSize: 16, fontWeight: FontWeight.w600),
                         ),
                       ),
                     ),
                   ],
                 ),
               ),
-              const SizedBox(height: 32),
-              // Alternative Contact Info
-             
             ],
           ),
         ),

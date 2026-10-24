@@ -1,10 +1,11 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:unila_aqi/core/constants/colors.dart';
 import 'package:unila_aqi/core/services/socket_service.dart';
 import 'package:unila_aqi/core/utils/helpers.dart';
 import 'package:unila_aqi/data/models/room.dart';
+import 'package:unila_aqi/data/repositories/room_repository.dart';
 import 'package:unila_aqi/presentation/widgets/chart/history_chart.dart';
+import '../../widgets/common/server_status_indicator.dart';
 
 class RoomDetailScreen extends StatefulWidget {
   final Room room;
@@ -20,10 +21,10 @@ class RoomDetailScreen extends StatefulWidget {
 
 class _RoomDetailScreenState extends State<RoomDetailScreen> {
   final SocketService _socketService = SocketService();
+  final RoomRepository _roomRepository = RoomRepository();
 
   bool _isRefreshing = false;
   bool _isMounted = false;
-  bool _socketConnected = false;
   late Room _currentRoomData;
 
   @override
@@ -37,8 +38,28 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
       _setupRealtimeListener();
       _setupBuildingUpdateListener();
       _setupRoomNameUpdateListener();
-      _checkSocketConnection();
+      _ensureSocketConnected();
     });
+  }
+
+  void _ensureSocketConnected() {
+    if (!_socketService.isConnected && _isMounted) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _reconnectSocket();
+      });
+    }
+  }
+
+  Future<void> _reconnectSocket() async {
+    try {
+      await _socketService.connect();
+      await Future.delayed(const Duration(seconds: 2));
+      if (_socketService.isConnected) {
+        _joinRoomForUpdates();
+      }
+    } catch (e) {
+      print('❌ Failed to reconnect: $e');
+    }
   }
 
   void _setupRoomNameUpdateListener() {
@@ -46,8 +67,6 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
       if (_isMounted && data['roomId'] == widget.room.id) {
         final newName = data['newName'];
         final oldName = data['oldName'];
-
-        print('🔄 Room name updated for this room: $oldName -> $newName');
 
         setState(() {
           _currentRoomData = Room(
@@ -64,7 +83,8 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
           );
         });
 
-        _showNotification('Nama ruangan diperbarui: $oldName -> $newName', 'info');
+        _showNotification(
+            'Nama ruangan diperbarui: $oldName -> $newName', 'info');
       }
     });
 
@@ -75,8 +95,6 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
           final oldName = data['oldData']['name'];
 
           if (newName != oldName) {
-            print('🔄 Detected room name change in room-updated event');
-
             setState(() {
               _currentRoomData = Room(
                 id: _currentRoomData.id,
@@ -92,7 +110,9 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
               );
             });
 
-            _showNotification('Nama ruangan diperbarui: $oldName -> $newName', 'info');
+            _showNotification(
+                'Nama ruangan diperbarui: $oldName -> $newName',
+                'info');
           }
         }
       }
@@ -104,24 +124,23 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
       if (_isMounted && data['buildingId'] == widget.room.buildingId) {
         final newBuildingName = data['newBuildingName'];
 
-        print('🏢 Building name updated for this room: $newBuildingName');
-
         setState(() {
           _currentRoomData = Room(
-  id: _currentRoomData.id,
-  name: _currentRoomData.name,
-  buildingId: _currentRoomData.buildingId,
-  buildingName: newBuildingName,
-  dataSource: _currentRoomData.dataSource,
-  iotDeviceId: _currentRoomData.iotDeviceId,
-  currentAQI: _currentRoomData.currentAQI,
-  currentData: _currentRoomData.currentData,
-  createdAt: _currentRoomData.createdAt,
-  updatedAt: _currentRoomData.updatedAt,
-);
+            id: _currentRoomData.id,
+            name: _currentRoomData.name,
+            buildingId: _currentRoomData.buildingId,
+            buildingName: newBuildingName,
+            dataSource: _currentRoomData.dataSource,
+            iotDeviceId: _currentRoomData.iotDeviceId,
+            currentAQI: _currentRoomData.currentAQI,
+            currentData: _currentRoomData.currentData,
+            createdAt: _currentRoomData.createdAt,
+            updatedAt: _currentRoomData.updatedAt,
+          );
         });
 
-        _showNotification('Nama gedung diperbarui: $newBuildingName', 'info');
+        _showNotification('Nama gedung diperbarui: $newBuildingName',
+            'info');
       }
     });
   }
@@ -142,8 +161,6 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
         _showNotification(data['message'], data['type'] ?? 'info');
       }
     });
-
-    _socketConnected = _socketService.isConnected;
   }
 
   void _handleRoomUpdate(dynamic data) {
@@ -154,32 +171,33 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
       final nameChanged = oldName != newName;
 
       setState(() {
-  _currentRoomData = Room(
-    id: _currentRoomData.id,
-    name: newName,
-    buildingId: _currentRoomData.buildingId,
-    buildingName: _currentRoomData.buildingName,
-    dataSource: _currentRoomData.dataSource,
-    iotDeviceId: _currentRoomData.iotDeviceId,
-    currentAQI: roomData['currentAQI'],
-    currentData: RoomData(
-      pm25: roomData['currentData']['pm25'].toDouble(),
-      pm10: roomData['currentData']['pm10'].toDouble(),
-      co2: roomData['currentData']['co2'].toDouble(),
-      temperature: roomData['currentData']['temperature'].toDouble(),
-      humidity: roomData['currentData']['humidity'].toDouble(),
-      updatedAt: DateTime.parse(roomData['currentData']['updatedAt']),
-    ),
-    createdAt: _currentRoomData.createdAt,
-    updatedAt: DateTime.parse(roomData['updatedAt']),
-  );
-});
+        _currentRoomData = Room(
+          id: _currentRoomData.id,
+          name: newName,
+          buildingId: _currentRoomData.buildingId,
+          buildingName: _currentRoomData.buildingName,
+          dataSource: _currentRoomData.dataSource,
+          iotDeviceId: _currentRoomData.iotDeviceId,
+          currentAQI: roomData['currentAQI'],
+          currentData: RoomData(
+            pm25: roomData['currentData']['pm25'].toDouble(),
+            pm10: roomData['currentData']['pm10'].toDouble(),
+            co2: roomData['currentData']['co2'].toDouble(),
+            temperature:
+                roomData['currentData']['temperature'].toDouble(),
+            humidity: roomData['currentData']['humidity'].toDouble(),
+            updatedAt: DateTime.parse(
+                roomData['currentData']['updatedAt']),
+          ),
+          createdAt: _currentRoomData.createdAt,
+          updatedAt: DateTime.parse(roomData['updatedAt']),
+        );
+      });
 
       if (nameChanged) {
-        _showNotification('Nama ruangan diperbarui: $oldName -> $newName', 'info');
+        _showNotification(
+            'Nama ruangan diperbarui: $oldName -> $newName', 'info');
       }
-
-      print('🔄 Real-time update: Room ${_currentRoomData.name} - AQI ${_currentRoomData.currentAQI}');
     } catch (e) {
       print('❌ Error handling room update: $e');
     }
@@ -212,11 +230,11 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
         content: Row(
           children: [
             Icon(icon, color: Colors.white, size: 20),
-            SizedBox(width: 12),
+            const SizedBox(width: 12),
             Expanded(
               child: Text(
                 message,
-                style: TextStyle(
+                style: const TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w500,
                 ),
@@ -225,7 +243,7 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
           ],
         ),
         backgroundColor: backgroundColor,
-        duration: Duration(seconds: 3),
+        duration: const Duration(seconds: 3),
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
@@ -234,48 +252,41 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
     );
   }
 
-  void _checkSocketConnection() {
-    setState(() {
-      _socketConnected = _socketService.isConnected;
-    });
-
-    if (!_socketConnected && _isMounted) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _showNotification('Koneksi real-time terputus. Mencoba reconnect...', 'warning');
-        _reconnectSocket();
-      });
-    }
-  }
-
-  Future<void> _reconnectSocket() async {
-    try {
-      await _socketService.connect();
-      await Future.delayed(Duration(seconds: 2));
-      if (_socketService.isConnected) {
-        _joinRoomForUpdates();
-        setState(() {
-          _socketConnected = true;
-        });
-        _showNotification('Koneksi real-time berhasil dipulihkan', 'success');
-      }
-    } catch (e) {
-      print('❌ Failed to reconnect: $e');
-    }
-  }
-
+  /// Fetch data terbaru dari server.
   Future<void> _refreshData() async {
     if (!_isMounted) return;
 
     setState(() => _isRefreshing = true);
-    await Future.delayed(Duration(seconds: 1));
 
-    if (_isMounted) {
-      setState(() => _isRefreshing = false);
+    try {
+      final freshRoom =
+          await _roomRepository.getRoomById(widget.room.id);
+      if (_isMounted) {
+        setState(() {
+          _currentRoomData = freshRoom;
+        });
+      }
+    } catch (e) {
+      if (_isMounted) {
+        if (Helpers.isNetworkError(e)) {
+          Helpers.showServerError(context);
+        } else {
+          Helpers.showSnackBar(
+            context,
+            'Gagal refresh data ruangan',
+            isError: true,
+          );
+        }
+      }
+    } finally {
+      if (_isMounted) {
+        setState(() => _isRefreshing = false);
+      }
     }
   }
 
   // ------------------------------------------------------------
-  // UI BUILDING METHODS
+  // UI BUILDING METHODS (tidak berubah dari versi sebelumnya)
   // ------------------------------------------------------------
 
   Widget _buildAQICard() {
@@ -323,9 +334,9 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
                   ),
                 ],
               ),
-              // Sumber data
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
                   color: Colors.white.withOpacity(0.2),
                   borderRadius: BorderRadius.circular(10),
@@ -342,7 +353,9 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
                     ),
                     const SizedBox(width: 4),
                     Text(
-                      _currentRoomData.dataSource == 'iot' ? 'IoT' : 'Simulasi',
+                      _currentRoomData.dataSource == 'iot'
+                          ? 'IoT'
+                          : 'Simulasi',
                       style: const TextStyle(
                         fontSize: 10,
                         fontWeight: FontWeight.w700,
@@ -371,7 +384,8 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 4),
                       decoration: BoxDecoration(
                         color: Colors.white.withOpacity(0.2),
                         borderRadius: BorderRadius.circular(20),
@@ -385,9 +399,6 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
                         ),
                       ),
                     ),
-                    const SizedBox(height: 4),
-                    // Progress bar
-                    
                   ],
                 ),
               ),
@@ -398,7 +409,8 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
     );
   }
 
-  Widget _buildParameterCard(String label, String value, String status, Color color) {
+  Widget _buildParameterCard(
+      String label, String value, String status, Color color) {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -435,7 +447,8 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
           ),
           const SizedBox(height: 8),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            padding:
+                const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
               color: Colors.white.withOpacity(0.2),
               borderRadius: BorderRadius.circular(12),
@@ -454,165 +467,159 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
     );
   }
 
- Widget _buildHealthRecommendations() {
-  final aqi = _currentRoomData.currentAQI;
-  Helpers.getAQIColor(aqi);
-  Helpers.getAQILabel(aqi);
-  final recommendations = Helpers.getDetailedRecommendations(_currentRoomData);
+  Widget _buildHealthRecommendations() {
+    final aqi = _currentRoomData.currentAQI;
+    final recommendations =
+        Helpers.getDetailedRecommendations(_currentRoomData);
 
-  return Container(
-    width: double.infinity, // Tambahkan ini agar lebar penuh seperti grafik
-    padding: const EdgeInsets.all(12), // Sama dengan padding grafik (12)
-    decoration: BoxDecoration(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(12), // Sama dengan radius grafik (12)
-      boxShadow: [
-        BoxShadow(
-          color: Colors.black.withOpacity(0.05), // Sama dengan shadow grafik
-          blurRadius: 8,
-          offset: const Offset(0, 3), // Sama dengan offset grafik
-        ),
-      ],
-    ),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Judul dengan gaya seperti grafik historis
-        Row(
-          children: [
-            Icon(
-              Icons.health_and_safety_rounded, // Icon health
-              color: Colors.blue,
-              size: 18,
-            ),
-            const SizedBox(width: 6),
-            const Text(
-              'REKOMENDASI KESEHATAN',
-              style: TextStyle(
-                fontSize: 14, // Sama dengan font grafik
-                fontWeight: FontWeight.w600,
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.health_and_safety_rounded,
+                color: Colors.blue,
+                size: 18,
               ),
-            ),
-            const Spacer(),
-            // Status chip seperti di grafik
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: Colors.blue.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(6),
+              const SizedBox(width: 6),
+              const Text(
+                'REKOMENDASI KESEHATAN',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
-              child: Row(
-                children: [
-                  Container(
-                    width: 6,
-                    height: 6,
-                    decoration: BoxDecoration(
-                      color: Helpers.getAQIColor(_currentRoomData.currentAQI),
-                      shape: BoxShape.circle,
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.blue.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 6,
+                      height: 6,
+                      decoration: BoxDecoration(
+                        color: Helpers.getAQIColor(
+                            _currentRoomData.currentAQI),
+                        shape: BoxShape.circle,
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    'AQI: ${_currentRoomData.currentAQI}',
-                    style: TextStyle(
-                      fontSize: 10,
-                      color: Colors.blue.shade700,
-                      fontWeight: FontWeight.w500,
+                    const SizedBox(width: 4),
+                    Text(
+                      'AQI: $aqi',
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: Colors.blue.shade700,
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12), // Jarak setelah header
-        
-        // Parameter status chips
-        _buildParameterStatus(),
-        
-        const SizedBox(height: 16),
-        
-        // Daftar rekomendasi
-        ...recommendations.map(_buildRecommendationItem),
-      ],
-    ),
-  );
-}
+            ],
+          ),
+          const SizedBox(height: 12),
+          _buildParameterStatus(),
+          const SizedBox(height: 16),
+          ...recommendations.map(_buildRecommendationItem),
+        ],
+      ),
+    );
+  }
 
   Widget _buildParameterStatus() {
-  final data = _currentRoomData.currentData;
+    final data = _currentRoomData.currentData;
 
-  return Wrap(
-    spacing: 10,
-    runSpacing: 10,
-    children: [
-      _buildStatusChip('PM2.5: ${data.pm25.toStringAsFixed(1)}', Helpers.getPM25Color(data.pm25)),
-      _buildStatusChip('PM10: ${data.pm10.toStringAsFixed(1)}', Helpers.getPM10Color(data.pm10)),
-      _buildStatusChip('CO₂: ${data.co2.round()}', Helpers.getCO2Color(data.co2)),
-      _buildStatusChip('Suhu: ${data.temperature.toStringAsFixed(1)}°C', Helpers.getTemperatureColor(data.temperature)),
-      _buildStatusChip('Lembab: ${data.humidity.round()}%', Helpers.getHumidityColor(data.humidity)),
-    ],
-  );
-}
-
- Widget _buildStatusChip(String text, Color color) {
-  return Container(
-    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-    decoration: BoxDecoration(
-      color: color,
-      borderRadius: BorderRadius.circular(20),
-    ),
-    child: Text(
-      text,
-      style: const TextStyle(
-        fontSize: 12,
-        fontWeight: FontWeight.w700,
-        color: Colors.white,
-      ),
-    ),
-  );
-}
-
-Widget _buildRecommendationItem(String text) {
-  return Padding(
-    padding: const EdgeInsets.only(bottom: 8),
-    child: Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    return Wrap(
+      spacing: 10,
+      runSpacing: 10,
       children: [
-        const Icon(
-          Icons.arrow_right,
-          size: 16,
-          color: Colors.grey,
+        _buildStatusChip('PM2.5: ${data.pm25.toStringAsFixed(1)}',
+            Helpers.getPM25Color(data.pm25)),
+        _buildStatusChip('PM10: ${data.pm10.toStringAsFixed(1)}',
+            Helpers.getPM10Color(data.pm10)),
+        _buildStatusChip(
+            'CO₂: ${data.co2.round()}', Helpers.getCO2Color(data.co2)),
+        _buildStatusChip(
+            'Suhu: ${data.temperature.toStringAsFixed(1)}°C',
+            Helpers.getTemperatureColor(data.temperature)),
+        _buildStatusChip(
+            'Lembab: ${data.humidity.round()}%',
+            Helpers.getHumidityColor(data.humidity)),
+      ],
+    );
+  }
+
+  Widget _buildStatusChip(String text, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        text,
+        style: const TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+          color: Colors.white,
         ),
-        const SizedBox(width: 4),
-        Expanded(
-          child: Text(
-            text,
-            style: const TextStyle(
-              fontFamily: 'Inter',
-              fontSize: 15,                       // ✅ sama seperti label parameter
-              fontWeight: FontWeight.w400,        // ✅ eksplisit normal (tidak bold)
-              color: Colors.black,     // ✅ abu-abu seperti label parameter
-              height: 1.4,                        // ✅ spacing antar baris
+      ),
+    );
+  }
+
+  Widget _buildRecommendationItem(String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.arrow_right, size: 16, color: Colors.grey),
+          const SizedBox(width: 4),
+          Expanded(
+            child: Text(
+              text,
+              style: const TextStyle(
+                fontFamily: 'Inter',
+                fontSize: 15,
+                fontWeight: FontWeight.w400,
+                color: Colors.black,
+                height: 1.4,
+              ),
             ),
           ),
-        ),
-      ],
-    ),
-  );
-}
+        ],
+      ),
+    );
+  }
 
-    Widget _buildRoomInfoHeader() {
+  Widget _buildRoomInfoHeader() {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [
-            Colors.white,
-            Colors.grey.shade50,
-          ],
+          colors: [Colors.white, Colors.grey.shade50],
         ),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: Colors.grey.shade200, width: 1),
@@ -631,9 +638,8 @@ Widget _buildRecommendationItem(String text) {
         ],
       ),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center, // Bisa diubah ke .start jika ikon terlihat aneh saat teks jadi 2 baris
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          // Modern icon dengan gradient
           Container(
             width: 52,
             height: 52,
@@ -641,10 +647,7 @@ Widget _buildRecommendationItem(String text) {
               gradient: LinearGradient(
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
-                colors: [
-                  Colors.blue.shade400,
-                  Colors.blue.shade600,
-                ],
+                colors: [Colors.blue.shade400, Colors.blue.shade600],
               ),
               borderRadius: BorderRadius.circular(16),
               boxShadow: [
@@ -662,13 +665,10 @@ Widget _buildRecommendationItem(String text) {
             ),
           ),
           const SizedBox(width: 16),
-
-          // Informasi ruangan
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // ✅ Nama ruangan (maxLines & overflow dihapus)
                 Text(
                   _currentRoomData.name,
                   style: const TextStyle(
@@ -679,8 +679,6 @@ Widget _buildRecommendationItem(String text) {
                   ),
                 ),
                 const SizedBox(height: 6),
-
-                // ✅ Lokasi gedung (maxLines & overflow dihapus)
                 Row(
                   children: [
                     Icon(
@@ -702,8 +700,6 @@ Widget _buildRecommendationItem(String text) {
                   ],
                 ),
                 const SizedBox(height: 6),
-
-                // Informasi update terakhir
                 Row(
                   children: [
                     Icon(
@@ -739,7 +735,7 @@ Widget _buildRecommendationItem(String text) {
           onPressed: () => Navigator.pop(context),
           splashRadius: 20,
         ),
-        title: Text(
+        title: const Text(
           'Detail Ruangan',
           style: TextStyle(
             fontSize: 18,
@@ -751,6 +747,7 @@ Widget _buildRecommendationItem(String text) {
         elevation: 0,
         backgroundColor: Colors.white,
         actions: [
+          const ServerStatusIndicator(),
           IconButton(
             icon: _isRefreshing
                 ? SizedBox(
@@ -761,7 +758,7 @@ Widget _buildRecommendationItem(String text) {
                       color: AppColors.primary,
                     ),
                   )
-                : Icon(
+                : const Icon(
                     Icons.refresh_rounded,
                     size: 22,
                     color: AppColors.textSecondary,
@@ -781,104 +778,34 @@ Widget _buildRecommendationItem(String text) {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Real-time connection status
-              if (!_socketConnected)
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  margin: const EdgeInsets.only(bottom: 16),
-                  decoration: BoxDecoration(
-                    color: Colors.orange.withOpacity(0.08),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: Colors.orange.withOpacity(0.2)),
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 40,
-                        height: 40,
-                        decoration: BoxDecoration(
-                          color: Colors.orange.withOpacity(0.1),
-                          shape: BoxShape.circle,
-                        ),
-                        child: Icon(
-                          Icons.wifi_off_rounded,
-                          size: 20,
-                          color: Colors.orange,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Koneksi terputus',
-                              style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w700,
-                                color: Colors.orange.shade700,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              'Mencoba reconnect otomatis...',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.orange.shade600,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      IconButton(
-                        icon: Icon(
-                          Icons.refresh_rounded,
-                          size: 20,
-                          color: Colors.orange,
-                        ),
-                        onPressed: _reconnectSocket,
-                        splashRadius: 20,
-                      ),
-                    ],
-                  ),
-                ),
-
-              // Room info header
               _buildRoomInfoHeader(),
-
               const SizedBox(height: 16),
-
-              // AQI Card
               _buildAQICard(),
-
               const SizedBox(height: 16),
 
-              // Last update info
-             
-
-            
-
-              // Section Title
-              
-
-              // Parameter Grid - First Row
               Row(
                 children: [
                   Expanded(
                     child: _buildParameterCard(
                       'PM2.5',
-                      _currentRoomData.currentData.pm25.toStringAsFixed(1),
-                      Helpers.getPM25Status(_currentRoomData.currentData.pm25),
-                      Helpers.getPM25Color(_currentRoomData.currentData.pm25),
+                      _currentRoomData.currentData.pm25
+                          .toStringAsFixed(1),
+                      Helpers.getPM25Status(
+                          _currentRoomData.currentData.pm25),
+                      Helpers.getPM25Color(
+                          _currentRoomData.currentData.pm25),
                     ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
                     child: _buildParameterCard(
                       'PM10',
-                      _currentRoomData.currentData.pm10.toStringAsFixed(1),
-                      Helpers.getPM10Status(_currentRoomData.currentData.pm10),
-                      Helpers.getPM10Color(_currentRoomData.currentData.pm10),
+                      _currentRoomData.currentData.pm10
+                          .toStringAsFixed(1),
+                      Helpers.getPM10Status(
+                          _currentRoomData.currentData.pm10),
+                      Helpers.getPM10Color(
+                          _currentRoomData.currentData.pm10),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -886,24 +813,25 @@ Widget _buildRecommendationItem(String text) {
                     child: _buildParameterCard(
                       'CO₂',
                       '${_currentRoomData.currentData.co2.round()}',
-                      Helpers.getCO2Status(_currentRoomData.currentData.co2),
-                      Helpers.getCO2Color(_currentRoomData.currentData.co2),
+                      Helpers.getCO2Status(
+                          _currentRoomData.currentData.co2),
+                      Helpers.getCO2Color(
+                          _currentRoomData.currentData.co2),
                     ),
                   ),
                 ],
               ),
-
               const SizedBox(height: 12),
-
-              // Parameter Grid - Second Row
               Row(
                 children: [
                   Expanded(
                     child: _buildParameterCard(
                       'SUHU',
                       '${_currentRoomData.currentData.temperature.toStringAsFixed(1)}°C',
-                      Helpers.getTemperatureStatus(_currentRoomData.currentData.temperature),
-                      Helpers.getTemperatureColor(_currentRoomData.currentData.temperature),
+                      Helpers.getTemperatureStatus(
+                          _currentRoomData.currentData.temperature),
+                      Helpers.getTemperatureColor(
+                          _currentRoomData.currentData.temperature),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -911,22 +839,20 @@ Widget _buildRecommendationItem(String text) {
                     child: _buildParameterCard(
                       'KELEMBABAN',
                       '${_currentRoomData.currentData.humidity.round()}%',
-                      Helpers.getHumidityStatus(_currentRoomData.currentData.humidity),
-                      Helpers.getHumidityColor(_currentRoomData.currentData.humidity),
+                      Helpers.getHumidityStatus(
+                          _currentRoomData.currentData.humidity),
+                      Helpers.getHumidityColor(
+                          _currentRoomData.currentData.humidity),
                     ),
                   ),
                   const Spacer(),
                 ],
               ),
-
               const SizedBox(height: 24),
 
-              // Health Recommendations
               _buildHealthRecommendations(),
-
               const SizedBox(height: 24),
 
-              // History Chart Section (tidak diubah)
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(12),
@@ -944,38 +870,27 @@ Widget _buildRecommendationItem(String text) {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
+                    const Row(
                       children: [
-                        const Icon(
-                          Icons.timeline,
-                          color: Colors.blue,
-                          size: 18,
-                        ),
-                        const SizedBox(width: 6),
-                        const Text(
+                        Icon(Icons.timeline,
+                            color: Colors.blue, size: 18),
+                        SizedBox(width: 6),
+                        Text(
                           'GRAFIK HISTORIS',
                           style: TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
                           ),
                         ),
-                        const Spacer(),
-          
+                        Spacer(),
                       ],
                     ),
                     const SizedBox(height: 8),
-
-                    // Chart Widget
                     HistoryChart(
                       roomId: _currentRoomData.id,
                       roomName: _currentRoomData.name,
                       buildingName: _currentRoomData.buildingName,
                     ),
-
-               
-
-                    // Info tambahan
-                   
                   ],
                 ),
               ),
@@ -990,10 +905,8 @@ Widget _buildRecommendationItem(String text) {
   void dispose() {
     _isMounted = false;
 
-    // Leave room
     _socketService.leaveRoom(widget.room.id);
 
-    // Remove event listeners
     _socketService.off('room-update');
     _socketService.off('notification');
     _socketService.off('room-building-updated');

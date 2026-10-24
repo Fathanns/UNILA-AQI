@@ -3,58 +3,113 @@ import '../../../data/repositories/building_repository.dart';
 import '../../../data/models/building.dart';
 import '../../../core/utils/helpers.dart';
 import '../../../core/constants/colors.dart';
+import '../../../core/services/storage_service.dart';
+import '../../widgets/common/server_status_indicator.dart';
 
 class BuildingManagementScreen extends StatefulWidget {
   const BuildingManagementScreen({super.key});
 
   @override
-  State<BuildingManagementScreen> createState() => _BuildingManagementScreenState();
+  State<BuildingManagementScreen> createState() =>
+      _BuildingManagementScreenState();
 }
 
 class _BuildingManagementScreenState extends State<BuildingManagementScreen> {
   final BuildingRepository _buildingRepository = BuildingRepository();
+  final StorageService _storage = StorageService();
   final TextEditingController _searchController = TextEditingController();
-  
+
+  static const String _cacheKey = 'cache_buildings';
+
   List<Building> _buildings = [];
   List<Building> _filteredBuildings = [];
   bool _isLoading = false;
   bool _hasError = false;
   String _errorMessage = '';
-  
+
   @override
   void initState() {
     super.initState();
-    _loadBuildings();
+    _loadCacheThenFetch();
   }
-  
+
+  /// 1) Muat cache dulu agar konten terakhir tampil,
+  /// 2) lalu fetch dari server untuk update terbaru.
+  Future<void> _loadCacheThenFetch() async {
+    Map<String, dynamic>? cached;
+    try {
+      cached = _storage.getJson(_cacheKey);
+    } catch (_) {
+      cached = null;
+    }
+
+    if (cached != null && cached['data'] is List) {
+      try {
+        final list = (cached['data'] as List)
+            .map((e) =>
+                Building.fromJson(Map<String, dynamic>.from(e as Map)))
+            .toList();
+        if (mounted) {
+          setState(() {
+            _buildings = list;
+          });
+          _filterBuildings(_searchController.text);
+        }
+      } catch (_) {
+        // cache rusak — abaikan
+      }
+    }
+
+    await _loadBuildings();
+  }
+
   Future<void> _loadBuildings() async {
-  setState(() {
-    _isLoading = true;
-    _hasError = false;
-  });
-
-  try {
-    final buildings = await _buildingRepository.getBuildings();
-
     setState(() {
-      _buildings = buildings;
-      // 🔥 JANGAN set _filteredBuildings = buildings di sini
+      // Spinner hanya jika belum ada data (cache kosong)
+      _isLoading = _buildings.isEmpty;
+      _hasError = false;
     });
 
-    // 🔥 Reapply filter pencarian yang sedang aktif
-    _filterBuildings(_searchController.text);
+    try {
+      final buildings = await _buildingRepository.getBuildings();
+      if (!mounted) return;
 
-  } catch (e) {
-    setState(() {
-      _hasError = true;
-      _errorMessage = e.toString();
-    });
-    Helpers.showSnackBar(context, 'Gagal memuat data gedung: $e', isError: true);
-  } finally {
-    setState(() => _isLoading = false);
+      setState(() {
+        _buildings = buildings;
+      });
+      _filterBuildings(_searchController.text);
+
+      // Simpan cache
+      try {
+        await _storage.setJson(_cacheKey, {
+          'data': buildings.map((b) => b.toJson()).toList(),
+        });
+      } catch (_) {}
+        } catch (e) {
+      if (!mounted) return;
+
+      if (Helpers.isNetworkError(e)) {
+        Helpers.showServerError(context);
+      } else {
+        Helpers.showSnackBar(
+          context,
+          'Gagal memuat data gedung',
+          isError: true,
+        );
+      }
+
+      // Tampilkan error state HANYA jika tidak ada cache sama sekali
+      if (_buildings.isEmpty) {
+        setState(() {
+          _hasError = true;
+          _errorMessage = Helpers.friendlyErrorMessage(e);
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
-}
-  
+
   void _filterBuildings(String query) {
     if (query.isEmpty) {
       setState(() => _filteredBuildings = _buildings);
@@ -68,7 +123,7 @@ class _BuildingManagementScreenState extends State<BuildingManagementScreen> {
       setState(() => _filteredBuildings = filtered);
     }
   }
-  
+
   Future<void> _deleteBuilding(String buildingId) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -82,23 +137,35 @@ class _BuildingManagementScreenState extends State<BuildingManagementScreen> {
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Hapus', style: TextStyle(color: AppColors.error)),
+            child: const Text('Hapus',
+                style: TextStyle(color: AppColors.error)),
           ),
         ],
       ),
     );
-    
+
     if (confirmed != true) return;
-    
+
     try {
       await _buildingRepository.deleteBuilding(buildingId);
       await _loadBuildings();
-      Helpers.showSnackBar(context, 'Gedung berhasil dihapus');
+      if (mounted) {
+        Helpers.showSnackBar(context, 'Gedung berhasil dihapus');
+      }
     } catch (e) {
-      Helpers.showSnackBar(context, 'Gagal menghapus gedung: $e', isError: true);
+      if (!mounted) return;
+      if (Helpers.isNetworkError(e)) {
+        Helpers.showServerError(context);
+      } else {
+        Helpers.showSnackBar(
+          context,
+          'Gagal menghapus gedung: $e',
+          isError: true,
+        );
+      }
     }
   }
-  
+
   void _navigateToAddBuilding() {
     Navigator.push(
       context,
@@ -109,7 +176,7 @@ class _BuildingManagementScreenState extends State<BuildingManagementScreen> {
       ),
     );
   }
-  
+
   void _navigateToEditBuilding(Building building) {
     Navigator.push(
       context,
@@ -121,13 +188,14 @@ class _BuildingManagementScreenState extends State<BuildingManagementScreen> {
       ),
     );
   }
-  
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Kelola Gedung'),
         actions: [
+          const ServerStatusIndicator(),
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _loadBuildings,
@@ -137,7 +205,6 @@ class _BuildingManagementScreenState extends State<BuildingManagementScreen> {
       ),
       body: Column(
         children: [
-          // Search Bar
           Padding(
             padding: const EdgeInsets.all(16),
             child: TextField(
@@ -162,8 +229,6 @@ class _BuildingManagementScreenState extends State<BuildingManagementScreen> {
               onChanged: _filterBuildings,
             ),
           ),
-          
-          // Add Button
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: SizedBox(
@@ -178,64 +243,67 @@ class _BuildingManagementScreenState extends State<BuildingManagementScreen> {
               ),
             ),
           ),
-          
           const SizedBox(height: 16),
-          
-          // Loading State
-          if (_isLoading)
+
+          if (_isLoading && _filteredBuildings.isEmpty)
             const Expanded(
-              child: Center(
-                child: CircularProgressIndicator(),
-              ),
+              child: Center(child: CircularProgressIndicator()),
             )
-          
-          // Error State
-          else if (_hasError)
+                    else if (_hasError && _filteredBuildings.isEmpty)
             Expanded(
               child: Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(
-                      Icons.error_outline,
-                      size: 64,
-                      color: AppColors.error,
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      'Error: $_errorMessage',
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(color: AppColors.error),
-                    ),
-                    const SizedBox(height: 16),
-                    ElevatedButton(
-                      onPressed: _loadBuildings,
-                      child: const Text('Coba Lagi'),
-                    ),
-                  ],
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(
+                        Icons.cloud_off_rounded,
+                        size: 72,
+                        color: AppColors.textHint,
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Tidak dapat memuat data',
+                        style: Theme.of(context)
+                            .textTheme
+                            .titleLarge,
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        _errorMessage,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          color: AppColors.textSecondary,
+                          height: 1.5,
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      ElevatedButton.icon(
+                        onPressed: _loadBuildings,
+                        icon: const Icon(Icons.refresh, size: 18),
+                        label: const Text('Coba Lagi'),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             )
-          
-          // Empty State
           else if (_filteredBuildings.isEmpty)
             Expanded(
               child: Center(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Icon(
-                      Icons.location_city_outlined,
-                      size: 64,
-                      color: Colors.grey,
-                    ),
+                    const Icon(Icons.location_city_outlined,
+                        size: 64, color: Colors.grey),
                     const SizedBox(height: 16),
                     const Text(
                       'Tidak ada gedung ditemukan',
-                      style: TextStyle(
-                        fontSize: 16,
-                        color: Colors.grey,
-                      ),
+                      style:
+                          TextStyle(fontSize: 16, color: Colors.grey),
                     ),
                     const SizedBox(height: 8),
                     if (_searchController.text.isNotEmpty)
@@ -250,8 +318,6 @@ class _BuildingManagementScreenState extends State<BuildingManagementScreen> {
                 ),
               ),
             )
-          
-          // Data State
           else
             Expanded(
               child: ListView.builder(
@@ -263,23 +329,19 @@ class _BuildingManagementScreenState extends State<BuildingManagementScreen> {
                 },
               ),
             ),
-          
-          // Footer
+
           Container(
             padding: const EdgeInsets.all(16),
             child: Text(
               'Total: ${_filteredBuildings.length} gedung',
-              style: const TextStyle(
-                fontSize: 14,
-                color: Colors.grey,
-              ),
+              style: const TextStyle(fontSize: 14, color: Colors.grey),
             ),
           ),
         ],
       ),
     );
   }
-  
+
   Widget _buildBuildingCard(Building building) {
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
@@ -316,7 +378,8 @@ class _BuildingManagementScreenState extends State<BuildingManagementScreen> {
                   ),
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
                     color: AppColors.primary.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(20),
@@ -332,42 +395,32 @@ class _BuildingManagementScreenState extends State<BuildingManagementScreen> {
                 ),
               ],
             ),
-            
-            if (building.description != null && building.description!.isNotEmpty)
+            if (building.description != null &&
+                building.description!.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(top: 8),
                 child: Text(
                   building.description!,
                   style: const TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey,
-                  ),
+                      fontSize: 14, color: Colors.grey),
                 ),
               ),
-            
             Padding(
               padding: const EdgeInsets.only(top: 12),
               child: Row(
                 children: [
-                  const Icon(
-                    Icons.calendar_today,
-                    size: 14,
-                    color: Colors.grey,
-                  ),
+                  const Icon(Icons.calendar_today,
+                      size: 14, color: Colors.grey),
                   const SizedBox(width: 4),
                   Text(
                     'Dibuat: ${Helpers.formatDateTime(building.createdAt)}',
                     style: const TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey,
-                    ),
+                        fontSize: 12, color: Colors.grey),
                   ),
                 ],
               ),
             ),
-            
             const SizedBox(height: 16),
-            
             Row(
               children: [
                 Expanded(
@@ -404,17 +457,18 @@ class _BuildingManagementScreenState extends State<BuildingManagementScreen> {
 class AddEditBuildingScreen extends StatefulWidget {
   final Building? building;
   final VoidCallback onBuildingSaved;
-  
+
   const AddEditBuildingScreen({
     super.key,
     this.building,
     required this.onBuildingSaved,
   });
-  
+
   bool get isEditing => building != null;
-  
+
   @override
-  State<AddEditBuildingScreen> createState() => _AddEditBuildingScreenState();
+  State<AddEditBuildingScreen> createState() =>
+      _AddEditBuildingScreenState();
 }
 
 class _AddEditBuildingScreenState extends State<AddEditBuildingScreen> {
@@ -423,14 +477,12 @@ class _AddEditBuildingScreenState extends State<AddEditBuildingScreen> {
   final _codeController = TextEditingController();
   final _descriptionController = TextEditingController();
   final BuildingRepository _buildingRepository = BuildingRepository();
-  
+
   bool _isLoading = false;
-  
+
   @override
   void initState() {
     super.initState();
-    
-    // Prefill fields if editing
     if (widget.isEditing) {
       final building = widget.building!;
       _nameController.text = building.name;
@@ -438,7 +490,7 @@ class _AddEditBuildingScreenState extends State<AddEditBuildingScreen> {
       _descriptionController.text = building.description ?? '';
     }
   }
-  
+
   @override
   void dispose() {
     _nameController.dispose();
@@ -446,49 +498,67 @@ class _AddEditBuildingScreenState extends State<AddEditBuildingScreen> {
     _descriptionController.dispose();
     super.dispose();
   }
-  
+
   Future<void> _saveBuilding() async {
     if (!_formKey.currentState!.validate()) return;
-    
+
     setState(() => _isLoading = true);
-    
+
     try {
       if (widget.isEditing) {
         await _buildingRepository.updateBuilding(
           id: widget.building!.id,
           name: _nameController.text.trim(),
-          code: _codeController.text.trim().isEmpty ? null : _codeController.text.trim(),
-          description: _descriptionController.text.trim().isEmpty ? null : _descriptionController.text.trim(),
+          code: _codeController.text.trim().isEmpty
+              ? null
+              : _codeController.text.trim(),
+          description: _descriptionController.text.trim().isEmpty
+              ? null
+              : _descriptionController.text.trim(),
         );
-        Helpers.showSnackBar(context, 'Gedung berhasil diperbarui');
+        if (mounted) {
+          Helpers.showSnackBar(context, 'Gedung berhasil diperbarui');
+        }
       } else {
         await _buildingRepository.createBuilding(
           name: _nameController.text.trim(),
-          code: _codeController.text.trim().isEmpty ? null : _codeController.text.trim(),
-          description: _descriptionController.text.trim().isEmpty ? null : _descriptionController.text.trim(),
+          code: _codeController.text.trim().isEmpty
+              ? null
+              : _codeController.text.trim(),
+          description: _descriptionController.text.trim().isEmpty
+              ? null
+              : _descriptionController.text.trim(),
         );
-        Helpers.showSnackBar(context, 'Gedung berhasil ditambahkan');
+        if (mounted) {
+          Helpers.showSnackBar(context, 'Gedung berhasil ditambahkan');
+        }
       }
-      
+
       widget.onBuildingSaved();
-      
-      if (mounted) {
-        Navigator.pop(context);
-      }
+
+      if (mounted) Navigator.pop(context);
     } catch (e) {
-      Helpers.showSnackBar(context, 'Gagal menyimpan gedung: $e', isError: true);
-    } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
+      if (!mounted) return;
+      if (Helpers.isNetworkError(e)) {
+        Helpers.showServerError(context);
+      } else {
+        Helpers.showSnackBar(
+          context,
+          'Gagal menyimpan gedung: $e',
+          isError: true,
+        );
       }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
-  
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.isEditing ? 'Edit Gedung' : 'Tambah Gedung'),
+        title:
+            Text(widget.isEditing ? 'Edit Gedung' : 'Tambah Gedung'),
         actions: [
           if (_isLoading)
             const Padding(
@@ -508,13 +578,9 @@ class _AddEditBuildingScreenState extends State<AddEditBuildingScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'Nama Gedung*',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
+              const Text('Nama Gedung*',
+                  style: TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.w500)),
               const SizedBox(height: 8),
               TextFormField(
                 controller: _nameController,
@@ -529,16 +595,10 @@ class _AddEditBuildingScreenState extends State<AddEditBuildingScreen> {
                   return null;
                 },
               ),
-              
               const SizedBox(height: 16),
-              
-              const Text(
-                'Kode Gedung',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
+              const Text('Kode Gedung',
+                  style: TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.w500)),
               const SizedBox(height: 8),
               TextFormField(
                 controller: _codeController,
@@ -547,16 +607,10 @@ class _AddEditBuildingScreenState extends State<AddEditBuildingScreen> {
                   border: OutlineInputBorder(),
                 ),
               ),
-              
               const SizedBox(height: 16),
-              
-              const Text(
-                'Deskripsi',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
+              const Text('Deskripsi',
+                  style: TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.w500)),
               const SizedBox(height: 8),
               TextFormField(
                 controller: _descriptionController,
@@ -566,30 +620,27 @@ class _AddEditBuildingScreenState extends State<AddEditBuildingScreen> {
                 ),
                 maxLines: 3,
               ),
-              
               const SizedBox(height: 32),
-              
               SizedBox(
                 width: double.infinity,
                 height: 50,
                 child: ElevatedButton(
                   onPressed: _isLoading ? null : _saveBuilding,
                   child: Text(
-                    widget.isEditing ? 'SIMPAN PERUBAHAN' : 'SIMPAN GEDUNG',
-                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                    widget.isEditing
+                        ? 'SIMPAN PERUBAHAN'
+                        : 'SIMPAN GEDUNG',
+                    style: const TextStyle(
+                        fontSize: 16, fontWeight: FontWeight.w600),
                   ),
                 ),
               ),
-              
               const SizedBox(height: 16),
-              
               if (widget.isEditing)
                 Text(
                   '*Wajib diisi',
                   style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey[600],
-                  ),
+                      fontSize: 12, color: Colors.grey[600]),
                 ),
             ],
           ),

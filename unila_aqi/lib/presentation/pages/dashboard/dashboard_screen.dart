@@ -13,6 +13,7 @@ import '../../../presentation/pages/room/room_detail_screen.dart';
 import '../../../core/utils/helpers.dart';
 import '../../../core/constants/colors.dart';
 import '../../pages/info/aqi_info_screen.dart';
+import '../../../presentation/widgets/common/server_status_indicator.dart';
 
 class DashboardScreen extends StatefulWidget {
   final bool isAdminMode;
@@ -140,35 +141,78 @@ void dispose() {
 }
   
  Future<void> _loadInitialData() async {
-  if (!_isMounted) return;
-  
-  final roomProvider = Provider.of<RoomProvider>(context, listen: false);
-  
-  try {
-    await roomProvider.loadRooms();
-  } catch (e) {
-    print('❌ Error loading rooms: $e');
-    
-    // Tampilkan pesan error yang user-friendly
-    if (e.toString().contains('401') || e.toString().contains('Access denied')) {
-      Helpers.showSnackBar(
-        context, 
-        'Tidak bisa mengakses data. Silakan login sebagai admin atau hubungi administrator.',
-        isError: true
-      );
+    if (!_isMounted) return;
+
+    final roomProvider = Provider.of<RoomProvider>(context, listen: false);
+
+    try {
+      await roomProvider.loadRooms();
+    } catch (e) {
+      if (!_isMounted) return;
+      if (Helpers.isNetworkError(e)) {
+        Helpers.showServerError(context);
+      } else if (e.toString().contains('401') ||
+          e.toString().contains('Access denied')) {
+        Helpers.showSnackBar(
+          context,
+          'Tidak bisa mengakses data. Silakan login sebagai admin atau hubungi administrator.',
+          isError: true,
+        );
+      } else {
+        Helpers.showSnackBar(
+          context,
+          'Gagal memuat data: $e',
+          isError: true,
+        );
+      }
+    }
+
+    // Setelah load, cek apakah provider menyimpan error (loadRooms catch internal)
+    if (_isMounted && roomProvider.hasError && roomProvider.rooms.isEmpty) {
+      final msg = roomProvider.errorMessage.toLowerCase();
+      if (msg.contains('socketexception') ||
+          msg.contains('network') ||
+          msg.contains('connection') ||
+          msg.contains('timeout') ||
+          msg.contains('failed host')) {
+        Helpers.showServerError(context);
+      }
     }
   }
-}
 
   
   Future<void> _refreshData() async {
     if (!_isMounted) return;
-    
+
     final roomProvider = Provider.of<RoomProvider>(context, listen: false);
-    await roomProvider.refresh();
-    
-    if (_isMounted) {
-      _refreshController.refreshCompleted();
+
+    try {
+      await roomProvider.refresh();
+    } catch (e) {
+      if (_isMounted) {
+        if (Helpers.isNetworkError(e)) {
+          Helpers.showServerError(context);
+        } else {
+          Helpers.showSnackBar(context, 'Gagal refresh: $e', isError: true);
+        }
+      }
+    } finally {
+      if (_isMounted) {
+        _refreshController.refreshCompleted();
+      }
+    }
+
+    // Cek provider error juga (refresh menangkap internal)
+    if (_isMounted && roomProvider.hasError) {
+      final msg = roomProvider.errorMessage.toLowerCase();
+      final isNet = msg.contains('socketexception') ||
+          msg.contains('network') ||
+          msg.contains('connection') ||
+          msg.contains('timeout') ||
+          msg.contains('failed host');
+      if (isNet) {
+        Helpers.showServerError(context);
+      }
     }
   }
   
@@ -207,24 +251,17 @@ void dispose() {
     final roomProvider = Provider.of<RoomProvider>(context);
     
     return Scaffold(
-      appBar: AppBar(
+            appBar: AppBar(
         title: const Text('UNILA Air Quality Index'),
         centerTitle: true,
         actions: [
-  IconButton(
-    icon: Icon(Icons.refresh),
-    onPressed: _refreshData,
-    tooltip: 'Refresh',
-  ),
-
-  Builder(
-    builder: (context) => IconButton(
-      icon: Icon(Icons.menu),
-      onPressed: () => Scaffold.of(context).openDrawer(),
-      tooltip: 'Menu',
-    ),
-  ),
-],
+           const ServerStatusIndicator(),
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _refreshData,
+            tooltip: 'Refresh',
+          ),
+        ],
       ),
       drawer: AppDrawer(
         isAdmin: widget.isAdminMode,
@@ -321,24 +358,20 @@ void dispose() {
               ),
             ),
             // Loading State
-            if (roomProvider.isLoading)
+                        // Loading State — hanya jika belum ada data
+            if (roomProvider.isLoading && roomProvider.rooms.isEmpty)
               const SliverFillRemaining(
-                child: Center(
-                  child: CircularProgressIndicator(),
-                ),
+                child: Center(child: CircularProgressIndicator()),
               )
-            // Error State
-            else if (roomProvider.hasError)
+            // Error State — hanya jika TIDAK ada data sama sekali
+            else if (roomProvider.hasError && roomProvider.rooms.isEmpty)
               SliverFillRemaining(
                 child: Center(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const Icon(
-                        Icons.error_outline,
-                        size: 64,
-                        color: AppColors.error,
-                      ),
+                      const Icon(Icons.error_outline,
+                          size: 64, color: AppColors.error),
                       const SizedBox(height: 16),
                       Text(
                         'Error: ${roomProvider.errorMessage}',
@@ -361,18 +394,15 @@ void dispose() {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const Icon(
-                        Icons.search_off,
-                        size: 64,
-                        color: Colors.grey,
-                      ),
+                      const Icon(Icons.search_off,
+                          size: 64, color: Colors.grey),
                       const SizedBox(height: 16),
                       const Text(
                         'Tidak ada ruangan ditemukan',
                         style: TextStyle(fontSize: 16, color: Colors.grey),
                       ),
                       const SizedBox(height: 8),
-                      if (_searchController.text.isNotEmpty || 
+                      if (_searchController.text.isNotEmpty ||
                           roomProvider.selectedBuilding != 'Semua Gedung')
                         TextButton(
                           onPressed: () {
@@ -385,15 +415,16 @@ void dispose() {
                   ),
                 ),
               )
-            // Data State - Grouped by Building
+            // Data State — tetap tampil walau refresh error
             else
               SliverList(
                 delegate: SliverChildBuilderDelegate(
                   (context, index) {
-                    final buildingEntries = roomProvider.roomsByBuilding.entries.toList();
+                    final buildingEntries =
+                        roomProvider.roomsByBuilding.entries.toList();
                     final buildingName = buildingEntries[index].key;
                     final rooms = buildingEntries[index].value;
-                    
+
                     return Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       child: BuildingSection(

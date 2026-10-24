@@ -3,6 +3,8 @@ import '../../../data/repositories/iot_device_repository.dart';
 import '../../../data/models/iot_device.dart';
 import '../../../core/utils/helpers.dart';
 import '../../../core/constants/colors.dart';
+import '../../../core/services/storage_service.dart';
+import '../../widgets/common/server_status_indicator.dart';
 
 class IoTManagementScreen extends StatefulWidget {
   const IoTManagementScreen({super.key});
@@ -13,7 +15,10 @@ class IoTManagementScreen extends StatefulWidget {
 
 class _IoTManagementScreenState extends State<IoTManagementScreen> {
   final IoTDeviceRepository _deviceRepository = IoTDeviceRepository();
+  final StorageService _storage = StorageService();
   final TextEditingController _searchController = TextEditingController();
+
+  static const String _cacheKey = 'cache_iot_devices';
 
   List<IoTDevice> _devices = [];
   List<IoTDevice> _filteredDevices = [];
@@ -24,30 +29,70 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
   @override
   void initState() {
     super.initState();
-    _loadData();
+    _loadCacheThenFetch();
+  }
+
+  Future<void> _loadCacheThenFetch() async {
+    try {
+      final cached = _storage.getJson(_cacheKey);
+      if (cached != null && cached['data'] is List) {
+        final list = (cached['data'] as List)
+            .map((e) =>
+                IoTDevice.fromJson(Map<String, dynamic>.from(e as Map)))
+            .toList();
+        if (mounted) {
+          setState(() {
+            _devices = list;
+            _filteredDevices = list;
+          });
+        }
+      }
+    } catch (_) {}
+
+    await _loadData();
   }
 
   Future<void> _loadData() async {
     setState(() {
-      _isLoading = true;
+      _isLoading = _devices.isEmpty;
       _hasError = false;
     });
 
     try {
       final devices = await _deviceRepository.getDevices();
+      if (!mounted) return;
 
       setState(() {
         _devices = devices;
         _filteredDevices = devices;
       });
-    } catch (e) {
-      setState(() {
-        _hasError = true;
-        _errorMessage = e.toString();
-      });
-      Helpers.showSnackBar(context, 'Gagal memuat data device: $e', isError: true);
+
+      try {
+        await _storage.setJson(_cacheKey, {
+          'data': devices.map((d) => d.toJson()).toList(),
+        });
+      } catch (_) {}
+        } catch (e) {
+      if (!mounted) return;
+
+      if (Helpers.isNetworkError(e)) {
+        Helpers.showServerError(context);
+      } else {
+        Helpers.showSnackBar(
+          context,
+          'Gagal memuat data device',
+          isError: true,
+        );
+      }
+
+      if (_devices.isEmpty) {
+        setState(() {
+          _hasError = true;
+          _errorMessage = Helpers.friendlyErrorMessage(e);
+        });
+      }
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -70,7 +115,8 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Hapus Device IoT'),
-        content: const Text('Apakah Anda yakin ingin menghapus device ini?'),
+        content:
+            const Text('Apakah Anda yakin ingin menghapus device ini?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -78,7 +124,8 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Hapus', style: TextStyle(color: AppColors.error)),
+            child: const Text('Hapus',
+                style: TextStyle(color: AppColors.error)),
           ),
         ],
       ),
@@ -89,9 +136,20 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
     try {
       await _deviceRepository.deleteDevice(deviceId);
       await _loadData();
-      Helpers.showSnackBar(context, 'Device berhasil dihapus');
+      if (mounted) {
+        Helpers.showSnackBar(context, 'Device berhasil dihapus');
+      }
     } catch (e) {
-      Helpers.showSnackBar(context, 'Gagal menghapus device: $e', isError: true);
+      if (!mounted) return;
+      if (Helpers.isNetworkError(e)) {
+        Helpers.showServerError(context);
+      } else {
+        Helpers.showSnackBar(
+          context,
+          'Gagal menghapus device: $e',
+          isError: true,
+        );
+      }
     }
   }
 
@@ -124,6 +182,7 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
       appBar: AppBar(
         title: const Text('Kelola Device IoT'),
         actions: [
+          const ServerStatusIndicator(),
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _loadData,
@@ -172,27 +231,50 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
             ),
           ),
           const SizedBox(height: 16),
-          if (_isLoading)
+
+          if (_isLoading && _filteredDevices.isEmpty)
             const Expanded(
               child: Center(child: CircularProgressIndicator()),
             )
-          else if (_hasError)
+                    else if (_hasError && _filteredDevices.isEmpty)
             Expanded(
               child: Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.error_outline, size: 64, color: AppColors.error),
-                    const SizedBox(height: 16),
-                    Text('Error: $_errorMessage',
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(
+                        Icons.cloud_off_rounded,
+                        size: 72,
+                        color: AppColors.textHint,
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Tidak dapat memuat data',
+                        style: Theme.of(context)
+                            .textTheme
+                            .titleLarge,
                         textAlign: TextAlign.center,
-                        style: const TextStyle(color: AppColors.error)),
-                    const SizedBox(height: 16),
-                    ElevatedButton(
-                      onPressed: _loadData,
-                      child: const Text('Coba Lagi'),
-                    ),
-                  ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        _errorMessage,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          color: AppColors.textSecondary,
+                          height: 1.5,
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      ElevatedButton.icon(
+                        onPressed: _loadData,
+                        icon: const Icon(Icons.refresh, size: 18),
+                        label: const Text('Coba Lagi'),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             )
@@ -202,10 +284,12 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Icon(Icons.sensors_off, size: 64, color: Colors.grey),
+                    const Icon(Icons.sensors_off,
+                        size: 64, color: Colors.grey),
                     const SizedBox(height: 16),
                     const Text('Tidak ada device ditemukan',
-                        style: TextStyle(fontSize: 16, color: Colors.grey)),
+                        style: TextStyle(
+                            fontSize: 16, color: Colors.grey)),
                     const SizedBox(height: 8),
                     if (_searchController.text.isNotEmpty)
                       TextButton(
@@ -230,6 +314,7 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
                 },
               ),
             ),
+
           Container(
             padding: const EdgeInsets.all(16),
             child: Text(
@@ -242,7 +327,7 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
     );
   }
 
-    Widget _buildDeviceCard(IoTDevice device) {
+  Widget _buildDeviceCard(IoTDevice device) {
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
       child: Padding(
@@ -257,12 +342,14 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
                 fontWeight: FontWeight.w600,
               ),
             ),
-            if (device.description != null && device.description!.isNotEmpty)
+            if (device.description != null &&
+                device.description!.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(top: 8),
                 child: Text(
                   device.description!,
-                  style: const TextStyle(fontSize: 14, color: Colors.grey),
+                  style: const TextStyle(
+                      fontSize: 14, color: Colors.grey),
                 ),
               ),
             Padding(
@@ -324,7 +411,8 @@ class AddEditIoTDeviceScreen extends StatefulWidget {
   bool get isEditing => device != null;
 
   @override
-  State<AddEditIoTDeviceScreen> createState() => _AddEditIoTDeviceScreenState();
+  State<AddEditIoTDeviceScreen> createState() =>
+      _AddEditIoTDeviceScreenState();
 }
 
 class _AddEditIoTDeviceScreenState extends State<AddEditIoTDeviceScreen> {
@@ -371,7 +459,9 @@ class _AddEditIoTDeviceScreenState extends State<AddEditIoTDeviceScreen> {
               : _descriptionController.text.trim(),
           apiEndpoint: _endpointController.text.trim(),
         );
-        Helpers.showSnackBar(context, 'Device berhasil diperbarui');
+        if (mounted) {
+          Helpers.showSnackBar(context, 'Device berhasil diperbarui');
+        }
       } else {
         await _deviceRepository.createDevice(
           name: _nameController.text.trim(),
@@ -380,20 +470,27 @@ class _AddEditIoTDeviceScreenState extends State<AddEditIoTDeviceScreen> {
               : _descriptionController.text.trim(),
           apiEndpoint: _endpointController.text.trim(),
         );
-        Helpers.showSnackBar(context, 'Device berhasil ditambahkan');
+        if (mounted) {
+          Helpers.showSnackBar(context, 'Device berhasil ditambahkan');
+        }
       }
 
       widget.onDeviceSaved();
 
-      if (mounted) {
-        Navigator.pop(context);
-      }
+      if (mounted) Navigator.pop(context);
     } catch (e) {
-      Helpers.showSnackBar(context, 'Gagal menyimpan device: $e', isError: true);
-    } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
+      if (!mounted) return;
+      if (Helpers.isNetworkError(e)) {
+        Helpers.showServerError(context);
+      } else {
+        Helpers.showSnackBar(
+          context,
+          'Gagal menyimpan device: $e',
+          isError: true,
+        );
       }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -401,7 +498,8 @@ class _AddEditIoTDeviceScreenState extends State<AddEditIoTDeviceScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.isEditing ? 'Edit Device IoT' : 'Tambah Device IoT'),
+        title: Text(
+            widget.isEditing ? 'Edit Device IoT' : 'Tambah Device IoT'),
         actions: [
           if (_isLoading)
             const Padding(
@@ -422,7 +520,8 @@ class _AddEditIoTDeviceScreenState extends State<AddEditIoTDeviceScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text('Nama Device*',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
+                  style: TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.w500)),
               const SizedBox(height: 8),
               TextFormField(
                 controller: _nameController,
@@ -439,7 +538,8 @@ class _AddEditIoTDeviceScreenState extends State<AddEditIoTDeviceScreen> {
               ),
               const SizedBox(height: 16),
               const Text('Deskripsi',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
+                  style: TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.w500)),
               const SizedBox(height: 8),
               TextFormField(
                 controller: _descriptionController,
@@ -451,7 +551,8 @@ class _AddEditIoTDeviceScreenState extends State<AddEditIoTDeviceScreen> {
               ),
               const SizedBox(height: 16),
               const Text('Endpoint API*',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
+                  style: TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.w500)),
               const SizedBox(height: 8),
               TextFormField(
                 controller: _endpointController,
@@ -478,8 +579,12 @@ class _AddEditIoTDeviceScreenState extends State<AddEditIoTDeviceScreen> {
                 child: ElevatedButton(
                   onPressed: _isLoading ? null : _saveDevice,
                   child: Text(
-                    widget.isEditing ? 'SIMPAN PERUBAHAN' : 'SIMPAN DEVICE',
-                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                    widget.isEditing
+                        ? 'SIMPAN PERUBAHAN'
+                        : 'SIMPAN DEVICE',
+                    style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600),
                   ),
                 ),
               ),

@@ -34,62 +34,62 @@ tambahan feature:
 
 *CATCH*
 
-catch Ketika data mati
-- perbaikan tampilan dashboard catch nya Ketika server atau data mati di kedua mode
-- tambah juga catch nya Ketika data dimatikan, aneh nya Ketika di refresh akan menampilkan data sebelumnya sepersekiat detik, di buat langusng catch nya aja
-- catch Ketika login tapi server atau data mati
-- catch Ketika hapus Gedung tpi masih ada ruangan yg terkait
+~~catch Ketika data mati~~
+- ~~perbaikan tampilan dashboard catch nya Ketika server atau data mati di kedua mode~~
+- ~~tambah juga catch nya Ketika data dimatikan, aneh nya Ketika di refresh akan menampilkan data sebelumnya sepersekiat detik, di buat langusng catch nya aja~~
+- ~~catch Ketika login tapi server atau data mati~~
+- ~~catch Ketika hapus Gedung tpi masih ada ruangan yg terkait~~
 
-kondisi catch saat server mati:
+~~kondisi catch saat server mati:~~
 
-PENGUNJUNG
+~~PENGUNJUNG~~
 
-1. halaman login sebagai pengujung
-    - saat klik login
+1. ~~halaman login sebagai pengujung~~
+    ~~- saat klik login~~
 
-2. dashboard
-    - saat klik refresh tampilkan catch snack bar, konten tetap ada
+2. ~~dashboard~~
+    ~~- saat klik refresh tampilkan catch snack bar, konten tetap ada~~
 
-ADMIN
+~~ADMIN~~
 
-1. halaman auth admin 
-    - saat klik login
-    - saat klik reset password
+1. ~~halaman auth admin~~ 
+    ~~- saat klik login~~
+    ~~- saat klik reset password~~
 
-2. halaman lupa password
-    - saat kllik kirim link reset
+2. ~~halaman lupa password~~
+    ~~- saat kllik kirim link reset~~
 
-3. halaman reset passwrod
-    - saat klik reset password
+3. ~~halaman reset passwrod
+    ~~- saat klik reset password~~
 
-4. dashboard
-    - saat refresh
+4. ~~dashboard~~
+    ~~- saat refresh~~
 
-5. room detil
-    - saat klik tombol refresh
-    - saat klik tombol refresh grafik
+5. ~~room detil~~
+    ~~- saat klik tombol refresh~~
+    ~~- saat klik tombol refresh grafik~~
 
-6. building management
-    - saat klik rombol refresh
-    - saat klik tombol simpan gedung
-    - saat klik tombol hapus gedung (masih ada ruangan yang terkait juga)
-    - saat klik tombol simpan perubahan
+6. ~~building management~~
+    ~~- saat klik rombol refresh~~
+    ~~- saat klik tombol simpan gedung~~
+    ~~- saat klik tombol hapus gedung (masih ada ruangan yang terkait juga)~~
+    ~~- saat klik tombol simpan perubahan~~
 
 7. room management
-    - saat klik tombol refresh
-    - saat klik sombol simpan ruangan
-    - saat klik tombol simpan perubahan
-    - saat klik tombol hapus
+    ~~- saat klik tombol refresh~~
+    ~~- saat klik sombol simpan ruangan~~
+    ~~- saat klik tombol simpan perubahan~~
+    ~~- saat klik tombol hapus~~
 
-8. iot device management
-    - saat klik tombol refresh
-    - saat klik sombol simpan device
-    - saat klik tombol simpan perubahan
-    - saat klik tombol hapus
+8. ~~iot device management~~
+    ~~- saat klik tombol refresh~~
+    ~~- saat klik sombol simpan device~~
+    ~~- saat klik tombol simpan perubahan~~
+    ~~- saat klik tombol hapus~~
 
-9. profil admin
-    - saat klik tombol simpan perubahan
-    - saat klik tombol ganti passwrord
+9. ~~profil admin~~
+    ~~- saat klik tombol simpan perubahan~~
+    ~~- saat klik tombol ganti passwrord~~
 
 *FITUR*
 
@@ -106,3 +106,7 @@ ADMIN
 *SORTING*
 
 - perbaiki sorting alphabet pada dashbaord
+
+*DASHBOARD*
+
+- over margin keterangan terakhir update

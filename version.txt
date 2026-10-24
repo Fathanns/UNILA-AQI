@@ -8899,6 +8899,17 @@ class ApiService {
     }
   }
 
+  /// Health check ringan — return true jika server merespons 200.
+  Future<bool> checkServerHealth() async {
+    try {
+      final response = await _client
+          .get(Uri.parse('$baseUrl/simple-test'))
+          .timeout(const Duration(seconds: 5));
+      return response.statusCode == 200;
+    } catch (_) {
+      return false;
+    }
+  }
   // API Methods
   Future<dynamic> get(String endpoint, {Map<String, String>? queryParams}) async {
     final response = await _request('GET', endpoint, queryParams: queryParams);
@@ -9174,112 +9185,6 @@ Future<dynamic> resendResetCode(String email) async {
   // Dispose
   void dispose() {
     _client.close();
-  }
-}
-
----------------------------------------------------------------------------------------------------------------------------------------
-lib/core/services/auth_service.dart:
-
-import 'package:shared_preferences/shared_preferences.dart';
-import 'api_service.dart';
-
-class AuthService {
-  static final AuthService _instance = AuthService._internal();
-  factory AuthService() => _instance;
-  AuthService._internal();
-
-  final ApiService _apiService = ApiService();
-
-  // Check if admin is already registered
-  Future<bool> isAdminRegistered() async {
-    try {
-      final response = await _apiService.checkAdminRegistered();
-      return response['isRegistered'] ?? false;
-    } catch (e) {
-      return false;
-    }
-  }
-
-  // Admin login
-  Future<Map<String, dynamic>> loginAdmin(String username, String password) async {
-    try {
-      final response = await _apiService.adminLogin(username, password);
-      
-      if (response['success'] == true) {
-        await _saveAuthData(response);
-      }
-      
-      return response;
-    } catch (e) {
-      rethrow;
-    }
-  }
-
-  // Save authentication data
-  Future<void> _saveAuthData(Map<String, dynamic> response) async {
-    final prefs = await SharedPreferences.getInstance();
-    
-    await prefs.setString('auth_token', response['token']);
-    await prefs.setString('user_id', response['user']['id']);
-    await prefs.setString('username', response['user']['username']);
-    await prefs.setString('role', response['user']['role']);
-    await prefs.setBool('is_logged_in', true);
-  }
-
-  // Check if user is logged in
-  Future<bool> isLoggedIn() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getBool('is_logged_in') ?? false;
-  }
-
-  // Get current user
-  Future<Map<String, dynamic>> getCurrentUser() async {
-    final prefs = await SharedPreferences.getInstance();
-    
-    return {
-      'id': prefs.getString('user_id'),
-      'username': prefs.getString('username'),
-      'role': prefs.getString('role'),
-    };
-  }
-
-  // Get auth token
-  Future<String?> getToken() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString('auth_token');
-  }
-
-  // Logout
-  Future<void> logout() async {
-    final prefs = await SharedPreferences.getInstance();
-    
-    await prefs.remove('auth_token');
-    await prefs.remove('user_id');
-    await prefs.remove('username');
-    await prefs.remove('role');
-    await prefs.setBool('is_logged_in', false);
-  }
-
-  // Change password
-  Future<Map<String, dynamic>> changePassword(
-    String oldPassword,
-    String newPassword,
-  ) async {
-    try {
-      final token = await getToken();
-      if (token == null) {
-        throw Exception('Not authenticated');
-      }
-
-      // This would call your backend API
-      // For now, return a mock response
-      return {
-        'success': true,
-        'message': 'Password changed successfully',
-      };
-    } catch (e) {
-      rethrow;
-    }
   }
 }
 
@@ -10225,6 +10130,63 @@ import '../constants/colors.dart';
 import '../constants/app_constants.dart';
 
 class Helpers {
+
+    static bool isNetworkError(dynamic error) {
+    final s = (error?.toString() ?? '').toLowerCase();
+    return s.contains('socketexception') ||
+        s.contains('network error') ||
+        s.contains('failed host lookup') ||
+        s.contains('host lookup') ||
+        s.contains('no route to host') ||
+        s.contains('connection refused') ||
+        s.contains('connection closed') ||
+        s.contains('connection reset') ||
+        s.contains('connection error') ||
+        s.contains('connection failed') ||
+        s.contains('clientexception') ||
+        s.contains('xmlhttprequest') ||
+        s.contains('timeout') ||
+        s.contains('unable to connect') ||
+        s.contains('failed to fetch');
+  }
+
+   static void showServerError(BuildContext context) {
+    showSnackBar(
+      context,
+      'Tidak dapat terhubung ke server. Periksa koneksi internet Anda atau coba beberapa saat lagi.',
+      isError: true,
+    );
+  }
+
+  /// Pesan ramah untuk ditampilkan di halaman error.
+  static String friendlyErrorMessage(dynamic error) {
+    if (isNetworkError(error)) {
+      return 'Tidak dapat terhubung ke server.\nPeriksa koneksi internet Anda atau coba beberapa saat lagi.';
+    }
+    return 'Terjadi kesalahan saat memuat data.\nSilakan coba lagi.';
+  }
+
+  static String extractBackendMessage(
+    dynamic error, {
+    required String fallback,
+  }) {
+    String msg = (error?.toString() ?? '').trim();
+    msg = msg.replaceFirst('Exception: ', '').trim();
+
+    final lower = msg.toLowerCase();
+    if (msg.isEmpty ||
+        isNetworkError(error) ||
+        lower.contains('clientexception') ||
+        lower.contains('socketexception') ||
+        lower.contains('http exception') ||
+        lower.contains('xmlhttprequest') ||
+        lower.contains('instance of') ||
+        lower.contains('failed host lookup')) {
+      return fallback;
+    }
+    return msg;
+  }
+
   // AQI Helpers
   static Color getAQIColor(int aqi) {
     if (aqi <= 50) return AppColors.aqiGood; // hijau
@@ -12169,58 +12131,113 @@ import '../../../data/repositories/building_repository.dart';
 import '../../../data/models/building.dart';
 import '../../../core/utils/helpers.dart';
 import '../../../core/constants/colors.dart';
+import '../../../core/services/storage_service.dart';
+import '../../widgets/common/server_status_indicator.dart';
 
 class BuildingManagementScreen extends StatefulWidget {
   const BuildingManagementScreen({super.key});
 
   @override
-  State<BuildingManagementScreen> createState() => _BuildingManagementScreenState();
+  State<BuildingManagementScreen> createState() =>
+      _BuildingManagementScreenState();
 }
 
 class _BuildingManagementScreenState extends State<BuildingManagementScreen> {
   final BuildingRepository _buildingRepository = BuildingRepository();
+  final StorageService _storage = StorageService();
   final TextEditingController _searchController = TextEditingController();
-  
+
+  static const String _cacheKey = 'cache_buildings';
+
   List<Building> _buildings = [];
   List<Building> _filteredBuildings = [];
   bool _isLoading = false;
   bool _hasError = false;
   String _errorMessage = '';
-  
+
   @override
   void initState() {
     super.initState();
-    _loadBuildings();
+    _loadCacheThenFetch();
   }
-  
+
+  /// 1) Muat cache dulu agar konten terakhir tampil,
+  /// 2) lalu fetch dari server untuk update terbaru.
+  Future<void> _loadCacheThenFetch() async {
+    Map<String, dynamic>? cached;
+    try {
+      cached = _storage.getJson(_cacheKey);
+    } catch (_) {
+      cached = null;
+    }
+
+    if (cached != null && cached['data'] is List) {
+      try {
+        final list = (cached['data'] as List)
+            .map((e) =>
+                Building.fromJson(Map<String, dynamic>.from(e as Map)))
+            .toList();
+        if (mounted) {
+          setState(() {
+            _buildings = list;
+          });
+          _filterBuildings(_searchController.text);
+        }
+      } catch (_) {
+        // cache rusak — abaikan
+      }
+    }
+
+    await _loadBuildings();
+  }
+
   Future<void> _loadBuildings() async {
-  setState(() {
-    _isLoading = true;
-    _hasError = false;
-  });
-
-  try {
-    final buildings = await _buildingRepository.getBuildings();
-
     setState(() {
-      _buildings = buildings;
-      // 🔥 JANGAN set _filteredBuildings = buildings di sini
+      // Spinner hanya jika belum ada data (cache kosong)
+      _isLoading = _buildings.isEmpty;
+      _hasError = false;
     });
 
-    // 🔥 Reapply filter pencarian yang sedang aktif
-    _filterBuildings(_searchController.text);
+    try {
+      final buildings = await _buildingRepository.getBuildings();
+      if (!mounted) return;
 
-  } catch (e) {
-    setState(() {
-      _hasError = true;
-      _errorMessage = e.toString();
-    });
-    Helpers.showSnackBar(context, 'Gagal memuat data gedung: $e', isError: true);
-  } finally {
-    setState(() => _isLoading = false);
+      setState(() {
+        _buildings = buildings;
+      });
+      _filterBuildings(_searchController.text);
+
+      // Simpan cache
+      try {
+        await _storage.setJson(_cacheKey, {
+          'data': buildings.map((b) => b.toJson()).toList(),
+        });
+      } catch (_) {}
+        } catch (e) {
+      if (!mounted) return;
+
+      if (Helpers.isNetworkError(e)) {
+        Helpers.showServerError(context);
+      } else {
+        Helpers.showSnackBar(
+          context,
+          'Gagal memuat data gedung',
+          isError: true,
+        );
+      }
+
+      // Tampilkan error state HANYA jika tidak ada cache sama sekali
+      if (_buildings.isEmpty) {
+        setState(() {
+          _hasError = true;
+          _errorMessage = Helpers.friendlyErrorMessage(e);
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
-}
-  
+
   void _filterBuildings(String query) {
     if (query.isEmpty) {
       setState(() => _filteredBuildings = _buildings);
@@ -12234,7 +12251,7 @@ class _BuildingManagementScreenState extends State<BuildingManagementScreen> {
       setState(() => _filteredBuildings = filtered);
     }
   }
-  
+
   Future<void> _deleteBuilding(String buildingId) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -12248,23 +12265,35 @@ class _BuildingManagementScreenState extends State<BuildingManagementScreen> {
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Hapus', style: TextStyle(color: AppColors.error)),
+            child: const Text('Hapus',
+                style: TextStyle(color: AppColors.error)),
           ),
         ],
       ),
     );
-    
+
     if (confirmed != true) return;
-    
+
     try {
       await _buildingRepository.deleteBuilding(buildingId);
       await _loadBuildings();
-      Helpers.showSnackBar(context, 'Gedung berhasil dihapus');
+      if (mounted) {
+        Helpers.showSnackBar(context, 'Gedung berhasil dihapus');
+      }
     } catch (e) {
-      Helpers.showSnackBar(context, 'Gagal menghapus gedung: $e', isError: true);
+      if (!mounted) return;
+      if (Helpers.isNetworkError(e)) {
+        Helpers.showServerError(context);
+      } else {
+        Helpers.showSnackBar(
+          context,
+          'Gagal menghapus gedung: $e',
+          isError: true,
+        );
+      }
     }
   }
-  
+
   void _navigateToAddBuilding() {
     Navigator.push(
       context,
@@ -12275,7 +12304,7 @@ class _BuildingManagementScreenState extends State<BuildingManagementScreen> {
       ),
     );
   }
-  
+
   void _navigateToEditBuilding(Building building) {
     Navigator.push(
       context,
@@ -12287,13 +12316,14 @@ class _BuildingManagementScreenState extends State<BuildingManagementScreen> {
       ),
     );
   }
-  
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Kelola Gedung'),
         actions: [
+          const ServerStatusIndicator(),
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _loadBuildings,
@@ -12303,7 +12333,6 @@ class _BuildingManagementScreenState extends State<BuildingManagementScreen> {
       ),
       body: Column(
         children: [
-          // Search Bar
           Padding(
             padding: const EdgeInsets.all(16),
             child: TextField(
@@ -12328,8 +12357,6 @@ class _BuildingManagementScreenState extends State<BuildingManagementScreen> {
               onChanged: _filterBuildings,
             ),
           ),
-          
-          // Add Button
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: SizedBox(
@@ -12344,64 +12371,67 @@ class _BuildingManagementScreenState extends State<BuildingManagementScreen> {
               ),
             ),
           ),
-          
           const SizedBox(height: 16),
-          
-          // Loading State
-          if (_isLoading)
+
+          if (_isLoading && _filteredBuildings.isEmpty)
             const Expanded(
-              child: Center(
-                child: CircularProgressIndicator(),
-              ),
+              child: Center(child: CircularProgressIndicator()),
             )
-          
-          // Error State
-          else if (_hasError)
+                    else if (_hasError && _filteredBuildings.isEmpty)
             Expanded(
               child: Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(
-                      Icons.error_outline,
-                      size: 64,
-                      color: AppColors.error,
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      'Error: $_errorMessage',
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(color: AppColors.error),
-                    ),
-                    const SizedBox(height: 16),
-                    ElevatedButton(
-                      onPressed: _loadBuildings,
-                      child: const Text('Coba Lagi'),
-                    ),
-                  ],
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(
+                        Icons.cloud_off_rounded,
+                        size: 72,
+                        color: AppColors.textHint,
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Tidak dapat memuat data',
+                        style: Theme.of(context)
+                            .textTheme
+                            .titleLarge,
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        _errorMessage,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          color: AppColors.textSecondary,
+                          height: 1.5,
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      ElevatedButton.icon(
+                        onPressed: _loadBuildings,
+                        icon: const Icon(Icons.refresh, size: 18),
+                        label: const Text('Coba Lagi'),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             )
-          
-          // Empty State
           else if (_filteredBuildings.isEmpty)
             Expanded(
               child: Center(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Icon(
-                      Icons.location_city_outlined,
-                      size: 64,
-                      color: Colors.grey,
-                    ),
+                    const Icon(Icons.location_city_outlined,
+                        size: 64, color: Colors.grey),
                     const SizedBox(height: 16),
                     const Text(
                       'Tidak ada gedung ditemukan',
-                      style: TextStyle(
-                        fontSize: 16,
-                        color: Colors.grey,
-                      ),
+                      style:
+                          TextStyle(fontSize: 16, color: Colors.grey),
                     ),
                     const SizedBox(height: 8),
                     if (_searchController.text.isNotEmpty)
@@ -12416,8 +12446,6 @@ class _BuildingManagementScreenState extends State<BuildingManagementScreen> {
                 ),
               ),
             )
-          
-          // Data State
           else
             Expanded(
               child: ListView.builder(
@@ -12429,23 +12457,19 @@ class _BuildingManagementScreenState extends State<BuildingManagementScreen> {
                 },
               ),
             ),
-          
-          // Footer
+
           Container(
             padding: const EdgeInsets.all(16),
             child: Text(
               'Total: ${_filteredBuildings.length} gedung',
-              style: const TextStyle(
-                fontSize: 14,
-                color: Colors.grey,
-              ),
+              style: const TextStyle(fontSize: 14, color: Colors.grey),
             ),
           ),
         ],
       ),
     );
   }
-  
+
   Widget _buildBuildingCard(Building building) {
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
@@ -12482,7 +12506,8 @@ class _BuildingManagementScreenState extends State<BuildingManagementScreen> {
                   ),
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
                     color: AppColors.primary.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(20),
@@ -12498,42 +12523,32 @@ class _BuildingManagementScreenState extends State<BuildingManagementScreen> {
                 ),
               ],
             ),
-            
-            if (building.description != null && building.description!.isNotEmpty)
+            if (building.description != null &&
+                building.description!.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(top: 8),
                 child: Text(
                   building.description!,
                   style: const TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey,
-                  ),
+                      fontSize: 14, color: Colors.grey),
                 ),
               ),
-            
             Padding(
               padding: const EdgeInsets.only(top: 12),
               child: Row(
                 children: [
-                  const Icon(
-                    Icons.calendar_today,
-                    size: 14,
-                    color: Colors.grey,
-                  ),
+                  const Icon(Icons.calendar_today,
+                      size: 14, color: Colors.grey),
                   const SizedBox(width: 4),
                   Text(
                     'Dibuat: ${Helpers.formatDateTime(building.createdAt)}',
                     style: const TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey,
-                    ),
+                        fontSize: 12, color: Colors.grey),
                   ),
                 ],
               ),
             ),
-            
             const SizedBox(height: 16),
-            
             Row(
               children: [
                 Expanded(
@@ -12570,17 +12585,18 @@ class _BuildingManagementScreenState extends State<BuildingManagementScreen> {
 class AddEditBuildingScreen extends StatefulWidget {
   final Building? building;
   final VoidCallback onBuildingSaved;
-  
+
   const AddEditBuildingScreen({
     super.key,
     this.building,
     required this.onBuildingSaved,
   });
-  
+
   bool get isEditing => building != null;
-  
+
   @override
-  State<AddEditBuildingScreen> createState() => _AddEditBuildingScreenState();
+  State<AddEditBuildingScreen> createState() =>
+      _AddEditBuildingScreenState();
 }
 
 class _AddEditBuildingScreenState extends State<AddEditBuildingScreen> {
@@ -12589,14 +12605,12 @@ class _AddEditBuildingScreenState extends State<AddEditBuildingScreen> {
   final _codeController = TextEditingController();
   final _descriptionController = TextEditingController();
   final BuildingRepository _buildingRepository = BuildingRepository();
-  
+
   bool _isLoading = false;
-  
+
   @override
   void initState() {
     super.initState();
-    
-    // Prefill fields if editing
     if (widget.isEditing) {
       final building = widget.building!;
       _nameController.text = building.name;
@@ -12604,7 +12618,7 @@ class _AddEditBuildingScreenState extends State<AddEditBuildingScreen> {
       _descriptionController.text = building.description ?? '';
     }
   }
-  
+
   @override
   void dispose() {
     _nameController.dispose();
@@ -12612,49 +12626,67 @@ class _AddEditBuildingScreenState extends State<AddEditBuildingScreen> {
     _descriptionController.dispose();
     super.dispose();
   }
-  
+
   Future<void> _saveBuilding() async {
     if (!_formKey.currentState!.validate()) return;
-    
+
     setState(() => _isLoading = true);
-    
+
     try {
       if (widget.isEditing) {
         await _buildingRepository.updateBuilding(
           id: widget.building!.id,
           name: _nameController.text.trim(),
-          code: _codeController.text.trim().isEmpty ? null : _codeController.text.trim(),
-          description: _descriptionController.text.trim().isEmpty ? null : _descriptionController.text.trim(),
+          code: _codeController.text.trim().isEmpty
+              ? null
+              : _codeController.text.trim(),
+          description: _descriptionController.text.trim().isEmpty
+              ? null
+              : _descriptionController.text.trim(),
         );
-        Helpers.showSnackBar(context, 'Gedung berhasil diperbarui');
+        if (mounted) {
+          Helpers.showSnackBar(context, 'Gedung berhasil diperbarui');
+        }
       } else {
         await _buildingRepository.createBuilding(
           name: _nameController.text.trim(),
-          code: _codeController.text.trim().isEmpty ? null : _codeController.text.trim(),
-          description: _descriptionController.text.trim().isEmpty ? null : _descriptionController.text.trim(),
+          code: _codeController.text.trim().isEmpty
+              ? null
+              : _codeController.text.trim(),
+          description: _descriptionController.text.trim().isEmpty
+              ? null
+              : _descriptionController.text.trim(),
         );
-        Helpers.showSnackBar(context, 'Gedung berhasil ditambahkan');
+        if (mounted) {
+          Helpers.showSnackBar(context, 'Gedung berhasil ditambahkan');
+        }
       }
-      
+
       widget.onBuildingSaved();
-      
-      if (mounted) {
-        Navigator.pop(context);
-      }
+
+      if (mounted) Navigator.pop(context);
     } catch (e) {
-      Helpers.showSnackBar(context, 'Gagal menyimpan gedung: $e', isError: true);
-    } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
+      if (!mounted) return;
+      if (Helpers.isNetworkError(e)) {
+        Helpers.showServerError(context);
+      } else {
+        Helpers.showSnackBar(
+          context,
+          'Gagal menyimpan gedung: $e',
+          isError: true,
+        );
       }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
-  
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.isEditing ? 'Edit Gedung' : 'Tambah Gedung'),
+        title:
+            Text(widget.isEditing ? 'Edit Gedung' : 'Tambah Gedung'),
         actions: [
           if (_isLoading)
             const Padding(
@@ -12674,13 +12706,9 @@ class _AddEditBuildingScreenState extends State<AddEditBuildingScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'Nama Gedung*',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
+              const Text('Nama Gedung*',
+                  style: TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.w500)),
               const SizedBox(height: 8),
               TextFormField(
                 controller: _nameController,
@@ -12695,16 +12723,10 @@ class _AddEditBuildingScreenState extends State<AddEditBuildingScreen> {
                   return null;
                 },
               ),
-              
               const SizedBox(height: 16),
-              
-              const Text(
-                'Kode Gedung',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
+              const Text('Kode Gedung',
+                  style: TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.w500)),
               const SizedBox(height: 8),
               TextFormField(
                 controller: _codeController,
@@ -12713,16 +12735,10 @@ class _AddEditBuildingScreenState extends State<AddEditBuildingScreen> {
                   border: OutlineInputBorder(),
                 ),
               ),
-              
               const SizedBox(height: 16),
-              
-              const Text(
-                'Deskripsi',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
+              const Text('Deskripsi',
+                  style: TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.w500)),
               const SizedBox(height: 8),
               TextFormField(
                 controller: _descriptionController,
@@ -12732,30 +12748,27 @@ class _AddEditBuildingScreenState extends State<AddEditBuildingScreen> {
                 ),
                 maxLines: 3,
               ),
-              
               const SizedBox(height: 32),
-              
               SizedBox(
                 width: double.infinity,
                 height: 50,
                 child: ElevatedButton(
                   onPressed: _isLoading ? null : _saveBuilding,
                   child: Text(
-                    widget.isEditing ? 'SIMPAN PERUBAHAN' : 'SIMPAN GEDUNG',
-                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                    widget.isEditing
+                        ? 'SIMPAN PERUBAHAN'
+                        : 'SIMPAN GEDUNG',
+                    style: const TextStyle(
+                        fontSize: 16, fontWeight: FontWeight.w600),
                   ),
                 ),
               ),
-              
               const SizedBox(height: 16),
-              
               if (widget.isEditing)
                 Text(
                   '*Wajib diisi',
                   style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey[600],
-                  ),
+                      fontSize: 12, color: Colors.grey[600]),
                 ),
             ],
           ),
@@ -12773,6 +12786,8 @@ import '../../../data/repositories/iot_device_repository.dart';
 import '../../../data/models/iot_device.dart';
 import '../../../core/utils/helpers.dart';
 import '../../../core/constants/colors.dart';
+import '../../../core/services/storage_service.dart';
+import '../../widgets/common/server_status_indicator.dart';
 
 class IoTManagementScreen extends StatefulWidget {
   const IoTManagementScreen({super.key});
@@ -12783,7 +12798,10 @@ class IoTManagementScreen extends StatefulWidget {
 
 class _IoTManagementScreenState extends State<IoTManagementScreen> {
   final IoTDeviceRepository _deviceRepository = IoTDeviceRepository();
+  final StorageService _storage = StorageService();
   final TextEditingController _searchController = TextEditingController();
+
+  static const String _cacheKey = 'cache_iot_devices';
 
   List<IoTDevice> _devices = [];
   List<IoTDevice> _filteredDevices = [];
@@ -12794,30 +12812,70 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
   @override
   void initState() {
     super.initState();
-    _loadData();
+    _loadCacheThenFetch();
+  }
+
+  Future<void> _loadCacheThenFetch() async {
+    try {
+      final cached = _storage.getJson(_cacheKey);
+      if (cached != null && cached['data'] is List) {
+        final list = (cached['data'] as List)
+            .map((e) =>
+                IoTDevice.fromJson(Map<String, dynamic>.from(e as Map)))
+            .toList();
+        if (mounted) {
+          setState(() {
+            _devices = list;
+            _filteredDevices = list;
+          });
+        }
+      }
+    } catch (_) {}
+
+    await _loadData();
   }
 
   Future<void> _loadData() async {
     setState(() {
-      _isLoading = true;
+      _isLoading = _devices.isEmpty;
       _hasError = false;
     });
 
     try {
       final devices = await _deviceRepository.getDevices();
+      if (!mounted) return;
 
       setState(() {
         _devices = devices;
         _filteredDevices = devices;
       });
-    } catch (e) {
-      setState(() {
-        _hasError = true;
-        _errorMessage = e.toString();
-      });
-      Helpers.showSnackBar(context, 'Gagal memuat data device: $e', isError: true);
+
+      try {
+        await _storage.setJson(_cacheKey, {
+          'data': devices.map((d) => d.toJson()).toList(),
+        });
+      } catch (_) {}
+        } catch (e) {
+      if (!mounted) return;
+
+      if (Helpers.isNetworkError(e)) {
+        Helpers.showServerError(context);
+      } else {
+        Helpers.showSnackBar(
+          context,
+          'Gagal memuat data device',
+          isError: true,
+        );
+      }
+
+      if (_devices.isEmpty) {
+        setState(() {
+          _hasError = true;
+          _errorMessage = Helpers.friendlyErrorMessage(e);
+        });
+      }
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -12840,7 +12898,8 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Hapus Device IoT'),
-        content: const Text('Apakah Anda yakin ingin menghapus device ini?'),
+        content:
+            const Text('Apakah Anda yakin ingin menghapus device ini?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -12848,7 +12907,8 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Hapus', style: TextStyle(color: AppColors.error)),
+            child: const Text('Hapus',
+                style: TextStyle(color: AppColors.error)),
           ),
         ],
       ),
@@ -12859,9 +12919,20 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
     try {
       await _deviceRepository.deleteDevice(deviceId);
       await _loadData();
-      Helpers.showSnackBar(context, 'Device berhasil dihapus');
+      if (mounted) {
+        Helpers.showSnackBar(context, 'Device berhasil dihapus');
+      }
     } catch (e) {
-      Helpers.showSnackBar(context, 'Gagal menghapus device: $e', isError: true);
+      if (!mounted) return;
+      if (Helpers.isNetworkError(e)) {
+        Helpers.showServerError(context);
+      } else {
+        Helpers.showSnackBar(
+          context,
+          'Gagal menghapus device: $e',
+          isError: true,
+        );
+      }
     }
   }
 
@@ -12894,6 +12965,7 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
       appBar: AppBar(
         title: const Text('Kelola Device IoT'),
         actions: [
+          const ServerStatusIndicator(),
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _loadData,
@@ -12942,27 +13014,50 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
             ),
           ),
           const SizedBox(height: 16),
-          if (_isLoading)
+
+          if (_isLoading && _filteredDevices.isEmpty)
             const Expanded(
               child: Center(child: CircularProgressIndicator()),
             )
-          else if (_hasError)
+                    else if (_hasError && _filteredDevices.isEmpty)
             Expanded(
               child: Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.error_outline, size: 64, color: AppColors.error),
-                    const SizedBox(height: 16),
-                    Text('Error: $_errorMessage',
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(
+                        Icons.cloud_off_rounded,
+                        size: 72,
+                        color: AppColors.textHint,
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Tidak dapat memuat data',
+                        style: Theme.of(context)
+                            .textTheme
+                            .titleLarge,
                         textAlign: TextAlign.center,
-                        style: const TextStyle(color: AppColors.error)),
-                    const SizedBox(height: 16),
-                    ElevatedButton(
-                      onPressed: _loadData,
-                      child: const Text('Coba Lagi'),
-                    ),
-                  ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        _errorMessage,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          color: AppColors.textSecondary,
+                          height: 1.5,
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      ElevatedButton.icon(
+                        onPressed: _loadData,
+                        icon: const Icon(Icons.refresh, size: 18),
+                        label: const Text('Coba Lagi'),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             )
@@ -12972,10 +13067,12 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Icon(Icons.sensors_off, size: 64, color: Colors.grey),
+                    const Icon(Icons.sensors_off,
+                        size: 64, color: Colors.grey),
                     const SizedBox(height: 16),
                     const Text('Tidak ada device ditemukan',
-                        style: TextStyle(fontSize: 16, color: Colors.grey)),
+                        style: TextStyle(
+                            fontSize: 16, color: Colors.grey)),
                     const SizedBox(height: 8),
                     if (_searchController.text.isNotEmpty)
                       TextButton(
@@ -13000,6 +13097,7 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
                 },
               ),
             ),
+
           Container(
             padding: const EdgeInsets.all(16),
             child: Text(
@@ -13012,7 +13110,7 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
     );
   }
 
-    Widget _buildDeviceCard(IoTDevice device) {
+  Widget _buildDeviceCard(IoTDevice device) {
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
       child: Padding(
@@ -13027,12 +13125,14 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
                 fontWeight: FontWeight.w600,
               ),
             ),
-            if (device.description != null && device.description!.isNotEmpty)
+            if (device.description != null &&
+                device.description!.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(top: 8),
                 child: Text(
                   device.description!,
-                  style: const TextStyle(fontSize: 14, color: Colors.grey),
+                  style: const TextStyle(
+                      fontSize: 14, color: Colors.grey),
                 ),
               ),
             Padding(
@@ -13094,7 +13194,8 @@ class AddEditIoTDeviceScreen extends StatefulWidget {
   bool get isEditing => device != null;
 
   @override
-  State<AddEditIoTDeviceScreen> createState() => _AddEditIoTDeviceScreenState();
+  State<AddEditIoTDeviceScreen> createState() =>
+      _AddEditIoTDeviceScreenState();
 }
 
 class _AddEditIoTDeviceScreenState extends State<AddEditIoTDeviceScreen> {
@@ -13141,7 +13242,9 @@ class _AddEditIoTDeviceScreenState extends State<AddEditIoTDeviceScreen> {
               : _descriptionController.text.trim(),
           apiEndpoint: _endpointController.text.trim(),
         );
-        Helpers.showSnackBar(context, 'Device berhasil diperbarui');
+        if (mounted) {
+          Helpers.showSnackBar(context, 'Device berhasil diperbarui');
+        }
       } else {
         await _deviceRepository.createDevice(
           name: _nameController.text.trim(),
@@ -13150,20 +13253,27 @@ class _AddEditIoTDeviceScreenState extends State<AddEditIoTDeviceScreen> {
               : _descriptionController.text.trim(),
           apiEndpoint: _endpointController.text.trim(),
         );
-        Helpers.showSnackBar(context, 'Device berhasil ditambahkan');
+        if (mounted) {
+          Helpers.showSnackBar(context, 'Device berhasil ditambahkan');
+        }
       }
 
       widget.onDeviceSaved();
 
-      if (mounted) {
-        Navigator.pop(context);
-      }
+      if (mounted) Navigator.pop(context);
     } catch (e) {
-      Helpers.showSnackBar(context, 'Gagal menyimpan device: $e', isError: true);
-    } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
+      if (!mounted) return;
+      if (Helpers.isNetworkError(e)) {
+        Helpers.showServerError(context);
+      } else {
+        Helpers.showSnackBar(
+          context,
+          'Gagal menyimpan device: $e',
+          isError: true,
+        );
       }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -13171,7 +13281,8 @@ class _AddEditIoTDeviceScreenState extends State<AddEditIoTDeviceScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.isEditing ? 'Edit Device IoT' : 'Tambah Device IoT'),
+        title: Text(
+            widget.isEditing ? 'Edit Device IoT' : 'Tambah Device IoT'),
         actions: [
           if (_isLoading)
             const Padding(
@@ -13192,7 +13303,8 @@ class _AddEditIoTDeviceScreenState extends State<AddEditIoTDeviceScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text('Nama Device*',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
+                  style: TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.w500)),
               const SizedBox(height: 8),
               TextFormField(
                 controller: _nameController,
@@ -13209,7 +13321,8 @@ class _AddEditIoTDeviceScreenState extends State<AddEditIoTDeviceScreen> {
               ),
               const SizedBox(height: 16),
               const Text('Deskripsi',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
+                  style: TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.w500)),
               const SizedBox(height: 8),
               TextFormField(
                 controller: _descriptionController,
@@ -13221,7 +13334,8 @@ class _AddEditIoTDeviceScreenState extends State<AddEditIoTDeviceScreen> {
               ),
               const SizedBox(height: 16),
               const Text('Endpoint API*',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
+                  style: TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.w500)),
               const SizedBox(height: 8),
               TextFormField(
                 controller: _endpointController,
@@ -13248,8 +13362,12 @@ class _AddEditIoTDeviceScreenState extends State<AddEditIoTDeviceScreen> {
                 child: ElevatedButton(
                   onPressed: _isLoading ? null : _saveDevice,
                   child: Text(
-                    widget.isEditing ? 'SIMPAN PERUBAHAN' : 'SIMPAN DEVICE',
-                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                    widget.isEditing
+                        ? 'SIMPAN PERUBAHAN'
+                        : 'SIMPAN DEVICE',
+                    style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600),
                   ),
                 ),
               ),
@@ -13275,6 +13393,8 @@ import '../../../data/repositories/building_repository.dart';
 import '../../../data/repositories/room_repository.dart';
 import '../../../data/repositories/iot_device_repository.dart';
 import '../../providers/auth_provider.dart';
+import '../../../core/services/storage_service.dart';
+import '../../widgets/common/server_status_indicator.dart';
 
 class ProfileManagementScreen extends StatefulWidget {
   const ProfileManagementScreen({super.key});
@@ -13289,9 +13409,12 @@ class _ProfileManagementScreenState extends State<ProfileManagementScreen> {
   final _buildingRepository = BuildingRepository();
   final _roomRepository = RoomRepository();
   final _deviceRepository = IoTDeviceRepository();
+  final StorageService _storage = StorageService();
+  static const String _cacheKey = 'cache_profile';
 
   bool _isLoading = true;
-  String? _error;
+  bool _hasError = false;
+  String _errorForLog = ''; // hanya untuk debugging, TIDAK ditampilkan
 
   String _username = '';
   String _email = '';
@@ -13307,7 +13430,6 @@ class _ProfileManagementScreenState extends State<ProfileManagementScreen> {
     _loadData();
   }
 
-  /// Helper: ambil panjang list, kalau error kembalikan 0
   Future<int> _safeCount<T>(Future<List<T>> future) async {
     try {
       return (await future).length;
@@ -13317,13 +13439,40 @@ class _ProfileManagementScreenState extends State<ProfileManagementScreen> {
   }
 
   Future<void> _loadData() async {
+    // 1) Muat cache dulu (jika ada)
+    bool hadCache = false;
+    try {
+      final cached = _storage.getJson(_cacheKey);
+      if (cached != null) {
+        if (mounted) {
+          setState(() {
+            _username = cached['username']?.toString() ?? '';
+            _email = cached['email']?.toString() ?? '';
+            _lastLogin = cached['lastLogin'] != null
+                ? DateTime.tryParse(cached['lastLogin'].toString())
+                : null;
+            _buildingCount =
+                (cached['buildingCount'] as num?)?.toInt() ?? 0;
+            _roomCount = (cached['roomCount'] as num?)?.toInt() ?? 0;
+            _deviceCount =
+                (cached['deviceCount'] as num?)?.toInt() ?? 0;
+            _isLoading = false;
+          });
+          hadCache = _username.isNotEmpty;
+        }
+      }
+    } catch (_) {
+      // cache rusak — abaikan, lanjut fetch server
+    }
+
     setState(() {
-      _isLoading = true;
-      _error = null;
+      _isLoading = !hadCache;
+      _hasError = false;
+      _errorForLog = '';
     });
 
+    // 2) Fetch dari server
     try {
-      // Jalankan profile & hitungan paralel
       final profileFuture = _profileRepository.getProfile();
       final countsFuture = Future.wait<int>([
         _safeCount(_buildingRepository.getBuildings()),
@@ -13347,13 +13496,40 @@ class _ProfileManagementScreenState extends State<ProfileManagementScreen> {
         _roomCount = counts[1];
         _deviceCount = counts[2];
         _isLoading = false;
+        _hasError = false;
       });
+
+      // Simpan cache
+      try {
+        await _storage.setJson(_cacheKey, {
+          'username': _username,
+          'email': _email,
+          'lastLogin': _lastLogin?.toIso8601String(),
+          'buildingCount': _buildingCount,
+          'roomCount': _roomCount,
+          'deviceCount': _deviceCount,
+        });
+      } catch (_) {}
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = e.toString();
         _isLoading = false;
+        // Tampilkan error state HANYA jika tidak ada cache
+        if (!hadCache) {
+          _hasError = true;
+          _errorForLog = e.toString(); // untuk debug saja
+        }
       });
+
+      if (Helpers.isNetworkError(e)) {
+        Helpers.showServerError(context);
+      } else {
+        Helpers.showSnackBar(
+          context,
+          'Gagal memuat profil',
+          isError: true,
+        );
+      }
     }
   }
 
@@ -13362,7 +13538,8 @@ class _ProfileManagementScreenState extends State<ProfileManagementScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Logout'),
-        content: const Text('Apakah Anda yakin ingin keluar dari akun ini?'),
+        content: const Text(
+            'Apakah Anda yakin ingin keluar dari akun ini?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -13378,7 +13555,8 @@ class _ProfileManagementScreenState extends State<ProfileManagementScreen> {
     );
     if (confirmed != true) return;
 
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final authProvider =
+        Provider.of<AuthProvider>(context, listen: false);
     await authProvider.logout();
     if (mounted) {
       Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
@@ -13401,7 +13579,8 @@ class _ProfileManagementScreenState extends State<ProfileManagementScreen> {
   void _navigateToChangePassword() {
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (context) => const ChangePasswordScreen()),
+      MaterialPageRoute(
+          builder: (context) => const ChangePasswordScreen()),
     );
   }
 
@@ -13411,6 +13590,7 @@ class _ProfileManagementScreenState extends State<ProfileManagementScreen> {
       appBar: AppBar(
         title: const Text('Profil Admin'),
         actions: [
+          const ServerStatusIndicator(),
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _loadData,
@@ -13420,31 +13600,49 @@ class _ProfileManagementScreenState extends State<ProfileManagementScreen> {
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : _error != null
+          : _hasError
               ? _buildErrorState()
               : _buildContent(),
     );
   }
 
   Widget _buildErrorState() {
+    // Pesan di sini DIJAMIN ramah — tidak bergantung pada string error.
+    final isNetwork = Helpers.isNetworkError(_errorForLog);
+
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.error_outline, size: 64, color: AppColors.error),
+            const Icon(
+              Icons.cloud_off_rounded,
+              size: 72,
+              color: AppColors.textHint,
+            ),
             const SizedBox(height: 16),
-            Text('Gagal memuat profil',
-                style: Theme.of(context).textTheme.titleLarge),
+            Text(
+              'Tidak dapat memuat profil',
+              style: Theme.of(context).textTheme.titleLarge,
+              textAlign: TextAlign.center,
+            ),
             const SizedBox(height: 8),
-            Text(_error ?? '',
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: AppColors.textSecondary)),
-            const SizedBox(height: 16),
+            Text(
+              isNetwork
+                  ? 'Tidak dapat terhubung ke server.\nPeriksa koneksi internet Anda atau coba beberapa saat lagi.'
+                  : 'Terjadi kesalahan saat memuat data.\nSilakan coba lagi.',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 14,
+                color: AppColors.textSecondary,
+                height: 1.5,
+              ),
+            ),
+            const SizedBox(height: 24),
             ElevatedButton.icon(
               onPressed: _loadData,
-              icon: const Icon(Icons.refresh),
+              icon: const Icon(Icons.refresh, size: 18),
               label: const Text('Coba Lagi'),
             ),
           ],
@@ -13501,8 +13699,8 @@ class _ProfileManagementScreenState extends State<ProfileManagementScreen> {
             decoration: BoxDecoration(
               color: Colors.white.withOpacity(0.25),
               shape: BoxShape.circle,
-              border:
-                  Border.all(color: Colors.white.withOpacity(0.5), width: 3),
+              border: Border.all(
+                  color: Colors.white.withOpacity(0.5), width: 3),
             ),
             child: const Icon(Icons.admin_panel_settings,
                 size: 48, color: Colors.white),
@@ -13519,7 +13717,8 @@ class _ProfileManagementScreenState extends State<ProfileManagementScreen> {
           ),
           const SizedBox(height: 6),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            padding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
             decoration: BoxDecoration(
               color: Colors.white.withOpacity(0.25),
               borderRadius: BorderRadius.circular(20),
@@ -13540,7 +13739,8 @@ class _ProfileManagementScreenState extends State<ProfileManagementScreen> {
             width: double.infinity,
             child: OutlinedButton.icon(
               onPressed: _navigateToEditProfile,
-              icon: const Icon(Icons.edit, size: 18, color: Colors.white),
+              icon: const Icon(Icons.edit,
+                  size: 18, color: Colors.white),
               label: const Text(
                 'EDIT PROFIL',
                 style: TextStyle(
@@ -13551,7 +13751,8 @@ class _ProfileManagementScreenState extends State<ProfileManagementScreen> {
               ),
               style: OutlinedButton.styleFrom(
                 foregroundColor: Colors.white,
-                side: const BorderSide(color: Colors.white, width: 1.5),
+                side: const BorderSide(
+                    color: Colors.white, width: 1.5),
                 padding: const EdgeInsets.symmetric(vertical: 12),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(8),
@@ -13791,7 +13992,9 @@ class _ProfileManagementScreenState extends State<ProfileManagementScreen> {
         style: TextStyle(
           fontSize: 15,
           fontWeight: FontWeight.w600,
-          color: isDestructive ? AppColors.error : AppColors.textPrimary,
+          color: isDestructive
+              ? AppColors.error
+              : AppColors.textPrimary,
           fontFamily: 'Inter',
         ),
       ),
@@ -13815,7 +14018,7 @@ class _ProfileManagementScreenState extends State<ProfileManagementScreen> {
 }
 
 // ============================================================
-// EDIT PROFILE (dengan verifikasi email 6 digit)
+// EDIT PROFILE
 // ============================================================
 class EditProfileScreen extends StatefulWidget {
   final String currentUsername;
@@ -13896,12 +14099,16 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         'Kode verifikasi telah dikirim ke $email',
       );
     } catch (e) {
-      if (mounted) {
-        Helpers.showSnackBar(
-          context,
-          e.toString().replaceFirst('Exception: ', ''),
-          isError: true,
+      if (!mounted) return;
+
+      if (Helpers.isNetworkError(e)) {
+        Helpers.showServerError(context);
+      } else {
+        final msg = Helpers.extractBackendMessage(
+          e,
+          fallback: 'Gagal mengirim kode verifikasi. Coba lagi.',
         );
+        Helpers.showSnackBar(context, msg, isError: true);
       }
     } finally {
       if (mounted) {
@@ -13914,8 +14121,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     if (!_formKey.currentState!.validate()) return;
 
     final email = _emailController.text.trim();
-    final emailChanged =
-        email.toLowerCase() != widget.currentEmail.trim().toLowerCase();
+    final emailChanged = email.toLowerCase() !=
+        widget.currentEmail.trim().toLowerCase();
 
     if (emailChanged) {
       final code = _codeController.text.trim();
@@ -13936,16 +14143,17 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       await _profileRepository.updateProfile(
         username: _usernameController.text.trim(),
         email: email.isEmpty ? null : email,
-        emailChangeCode: emailChanged ? _codeController.text.trim() : null,
+        emailChangeCode:
+            emailChanged ? _codeController.text.trim() : null,
       );
 
-      // Update prefs username agar drawer mengikuti
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('username', _usernameController.text.trim());
+      await prefs.setString(
+          'username', _usernameController.text.trim());
 
-      // Refresh AuthProvider agar drawer langsung update
       if (mounted) {
-        final authProvider = Provider.of<AuthProvider>(context, listen: false);
+        final authProvider =
+            Provider.of<AuthProvider>(context, listen: false);
         await authProvider.initialize();
       }
 
@@ -13956,12 +14164,16 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         Navigator.pop(context);
       }
     } catch (e) {
-      if (mounted) {
-        Helpers.showSnackBar(
-          context,
-          'Gagal menyimpan profil: ${e.toString().replaceFirst('Exception: ', '')}',
-          isError: true,
+      if (!mounted) return;
+
+      if (Helpers.isNetworkError(e)) {
+        Helpers.showServerError(context);
+      } else {
+        final msg = Helpers.extractBackendMessage(
+          e,
+          fallback: 'Gagal menyimpan profil. Coba lagi.',
         );
+        Helpers.showSnackBar(context, msg, isError: true);
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -13993,7 +14205,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text('Username*',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
+                  style: TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.w500)),
               const SizedBox(height: 8),
               TextFormField(
                 controller: _usernameController,
@@ -14007,7 +14220,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               ),
               const SizedBox(height: 16),
               const Text('Email',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
+                  style: TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.w500)),
               const SizedBox(height: 8),
               TextFormField(
                 controller: _emailController,
@@ -14027,12 +14241,12 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 },
               ),
 
-              // Verifikasi email — muncul hanya jika email berubah
               if (_isEmailChanged) ...[
                 const SizedBox(height: 16),
                 const Text(
                   'Kode Verifikasi Email*',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+                  style: TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.w500),
                 ),
                 const SizedBox(height: 8),
                 Row(
@@ -14051,7 +14265,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                         ),
                         validator: (value) {
                           if (!_isEmailChanged) return null;
-                          if (value == null || value.trim().length != 6) {
+                          if (value == null ||
+                              value.trim().length != 6) {
                             return 'Masukkan 6 digit kode verifikasi';
                           }
                           return null;
@@ -14062,15 +14277,18 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     SizedBox(
                       height: 56,
                       child: OutlinedButton(
-                        onPressed: _isSendingCode ? null : _sendEmailCode,
+                        onPressed:
+                            _isSendingCode ? null : _sendEmailCode,
                         child: _isSendingCode
                             ? const SizedBox(
                                 width: 18,
                                 height: 18,
-                                child:
-                                    CircularProgressIndicator(strokeWidth: 2),
+                                child: CircularProgressIndicator(
+                                    strokeWidth: 2),
                               )
-                            : Text(_codeSent ? 'Kirim Ulang' : 'Kirim Kode'),
+                            : Text(_codeSent
+                                ? 'Kirim Ulang'
+                                : 'Kirim Kode'),
                       ),
                     ),
                   ],
@@ -14096,8 +14314,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                   onPressed: _isLoading ? null : _save,
                   child: const Text(
                     'SIMPAN PERUBAHAN',
-                    style:
-                        TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                    style: TextStyle(
+                        fontSize: 16, fontWeight: FontWeight.w600),
                   ),
                 ),
               ),
@@ -14116,7 +14334,8 @@ class ChangePasswordScreen extends StatefulWidget {
   const ChangePasswordScreen({super.key});
 
   @override
-  State<ChangePasswordScreen> createState() => _ChangePasswordScreenState();
+  State<ChangePasswordScreen> createState() =>
+      _ChangePasswordScreenState();
 }
 
 class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
@@ -14153,9 +14372,16 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
         Navigator.pop(context);
       }
     } catch (e) {
-      if (mounted) {
-        Helpers.showSnackBar(context, 'Gagal mengubah password: $e',
-            isError: true);
+      if (!mounted) return;
+
+      if (Helpers.isNetworkError(e)) {
+        Helpers.showServerError(context);
+      } else {
+        final msg = Helpers.extractBackendMessage(
+          e,
+          fallback: 'Gagal mengubah password. Coba lagi.',
+        );
+        Helpers.showSnackBar(context, msg, isError: true);
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -14187,7 +14413,8 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text('Password Lama*',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
+                  style: TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.w500)),
               const SizedBox(height: 8),
               TextFormField(
                 controller: _oldController,
@@ -14209,7 +14436,8 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
               ),
               const SizedBox(height: 16),
               const Text('Password Baru*',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
+                  style: TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.w500)),
               const SizedBox(height: 8),
               TextFormField(
                 controller: _newController,
@@ -14230,7 +14458,8 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
               ),
               const SizedBox(height: 16),
               const Text('Konfirmasi Password Baru*',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
+                  style: TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.w500)),
               const SizedBox(height: 8),
               TextFormField(
                 controller: _confirmController,
@@ -14243,11 +14472,12 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                     icon: Icon(_obscureConfirm
                         ? Icons.visibility_off
                         : Icons.visibility),
-                    onPressed: () =>
-                        setState(() => _obscureConfirm = !_obscureConfirm),
+                    onPressed: () => setState(
+                        () => _obscureConfirm = !_obscureConfirm),
                   ),
                 ),
-                validator: (value) => Validators.validateConfirmPassword(
+                validator: (value) =>
+                    Validators.validateConfirmPassword(
                   value,
                   _newController.text,
                 ),
@@ -14291,8 +14521,8 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                   onPressed: _isLoading ? null : _save,
                   child: const Text(
                     'GANTI PASSWORD',
-                    style:
-                        TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                    style: TextStyle(
+                        fontSize: 16, fontWeight: FontWeight.w600),
                   ),
                 ),
               ),
@@ -15045,7 +15275,7 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
-  
+
   bool _isLoading = false;
   bool _obscurePassword = true;
 
@@ -15057,35 +15287,39 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
   }
 
   Future<void> _handleLogin() async {
-  if (!_formKey.currentState!.validate()) return;
+    if (!_formKey.currentState!.validate()) return;
 
-  setState(() => _isLoading = true);
+    setState(() => _isLoading = true);
 
-  try {
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    await authProvider.login(
-      _usernameController.text.trim(),
-      _passwordController.text.trim(),
-      'admin',
-    );
-
-    if (mounted) {
-      Navigator.pushReplacementNamed(context, '/admin-dashboard');
-    }
-  } catch (e) {
-    if (mounted) {
-      Helpers.showSnackBar(
-        context,
-        'Username atau password yang Anda masukkan salah.',
-        isError: true,
+    try {
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      await authProvider.login(
+        _usernameController.text.trim(),
+        _passwordController.text.trim(),
+        'admin',
       );
-    }
-  } finally {
-    if (mounted) {
-      setState(() => _isLoading = false);
+
+      if (mounted) {
+        Navigator.pushReplacementNamed(context, '/admin-dashboard');
+      }
+    } catch (e) {
+      if (!mounted) return;
+      // Server mati / network error -> SnackBar khusus
+      if (Helpers.isNetworkError(e)) {
+        Helpers.showServerError(context);
+      } else {
+        Helpers.showSnackBar(
+          context,
+          'Username atau password yang Anda masukkan salah.',
+          isError: true,
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
-}
 
   @override
   Widget build(BuildContext context) {
@@ -15103,37 +15337,32 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
           padding: const EdgeInsets.all(24.0),
           child: Column(
             children: [
-              // Logo
               Container(
-              width: 120,
-              height: 120,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: AppColors.background,
-                  width: 2,
+                width: 120,
+                height: 120,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: AppColors.background, width: 2),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.white,
+                      blurRadius: 8,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
                 ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.white,
-                    blurRadius: 8,
-                    offset: const Offset(0, 4),
+                child: Padding(
+                  padding: const EdgeInsets.all(8.0),
+                  child: Image.asset(
+                    'assets/images/logo_unila.png',
+                    width: 104,
+                    height: 104,
+                    fit: BoxFit.contain,
                   ),
-                ],
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(8.0), // Padding untuk memberi ruang
-                child: Image.asset(
-                  'assets/images/logo_unila.png',
-                  width: 104, // 120 - (8*2) = 104
-                  height: 104,
-                  fit: BoxFit.contain, // Gunakan contain agar tidak terpotong
                 ),
               ),
-            ),
               const SizedBox(height: 16),
-              // Title
               Text(
                 'LOGIN ADMIN',
                 style: Theme.of(context).textTheme.headlineSmall?.copyWith(
@@ -15142,12 +15371,10 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                     ),
               ),
               const SizedBox(height: 32),
-              // Login Form
               Form(
                 key: _formKey,
                 child: Column(
                   children: [
-                    // Username Field
                     TextFormField(
                       controller: _usernameController,
                       decoration: const InputDecoration(
@@ -15160,45 +15387,40 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                       textInputAction: TextInputAction.next,
                     ),
                     const SizedBox(height: 16),
-                    // Password Field
                     TextFormField(
                       controller: _passwordController,
                       decoration: InputDecoration(
                         labelText: 'Password',
                         prefixIcon: const Icon(Icons.lock),
                         suffixIcon: IconButton(
-                          icon: Icon(
-                            _obscurePassword
-                                ? Icons.visibility_off
-                                : Icons.visibility,
-                          ),
+                          icon: Icon(_obscurePassword
+                              ? Icons.visibility_off
+                              : Icons.visibility),
                           onPressed: () {
-                            setState(() => _obscurePassword = !_obscurePassword);
+                            setState(
+                                () => _obscurePassword = !_obscurePassword);
                           },
                         ),
                         border: const OutlineInputBorder(),
                       ),
                       obscureText: _obscurePassword,
-                      validator: (value) => Validators.validateRequired(value, 'Password'),
+                      validator: (value) =>
+                          Validators.validateRequired(value, 'Password'),
                     ),
                     const SizedBox(height: 24),
-                    // Login Button
                     SizedBox(
-  width: double.infinity,
-  height: 50,
-  child: ElevatedButton(
-    onPressed: _isLoading ? null : _handleLogin,
-    child: const Text(
-      'LOGIN',
-      style: TextStyle(
-        fontSize: 16,
-        fontWeight: FontWeight.w600,
-      ),
-    ),
-  ),
-),
+                      width: double.infinity,
+                      height: 50,
+                      child: ElevatedButton(
+                        onPressed: _isLoading ? null : _handleLogin,
+                        child: const Text(
+                          'LOGIN',
+                          style: TextStyle(
+                              fontSize: 16, fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                    ),
                     const SizedBox(height: 16),
-                    // Forgot Password Link
                     TextButton(
                       onPressed: () {
                         Navigator.push(
@@ -15210,14 +15432,9 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                       },
                       child: const Text(
                         'LUPA PASSWORD?',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w600,
-                        ),
+                        style: TextStyle(fontWeight: FontWeight.w600),
                       ),
                     ),
-                    const SizedBox(height: 24),
-                    // Contact Information
-                    
                   ],
                 ),
               ),
@@ -15249,7 +15466,7 @@ class ForgotPasswordScreen extends StatefulWidget {
 class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
-  
+
   bool _isLoading = false;
 
   @override
@@ -15259,34 +15476,40 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   }
 
   Future<void> _handleSendResetLink() async {
-  if (!_formKey.currentState!.validate()) return;
+    if (!_formKey.currentState!.validate()) return;
 
-  setState(() => _isLoading = true);
+    setState(() => _isLoading = true);
 
-  try {
-    final response = await ApiService().forgotPassword(_emailController.text.trim());
+    try {
+      final response =
+          await ApiService().forgotPassword(_emailController.text.trim());
 
-    if (response['success'] == true && mounted) {
-      setState(() => _isLoading = false);
+      if (response['success'] == true && mounted) {
+        setState(() => _isLoading = false);
 
-      Helpers.showSnackBar(
-        context,
-        'Kode verifikasi telah dikirim ke email Anda',
-      );
+        Helpers.showSnackBar(
+          context,
+          'Kode verifikasi telah dikirim ke email Anda',
+        );
 
-      // Navigate ke halaman reset password
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => ResetPasswordScreen(
-            email: _emailController.text.trim(),
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => ResetPasswordScreen(
+              email: _emailController.text.trim(),
+            ),
           ),
-        ),
-      );
-    }
-  } catch (e) {
-    if (mounted) {
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
       setState(() => _isLoading = false);
+
+      // Server mati -> SnackBar khusus, jangan navigasi
+      if (Helpers.isNetworkError(e)) {
+        Helpers.showServerError(context);
+        return;
+      }
 
       final rawMsg = e.toString().replaceFirst('Exception: ', '');
       final message = rawMsg.contains('tidak terdaftar')
@@ -15296,7 +15519,6 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
       Helpers.showSnackBar(context, message, isError: true);
     }
   }
-}
 
   @override
   Widget build(BuildContext context) {
@@ -15314,7 +15536,6 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
           padding: const EdgeInsets.all(24.0),
           child: Column(
             children: [
-              // Logo
               Container(
                 width: 80,
                 height: 80,
@@ -15322,14 +15543,10 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                   color: AppColors.primary,
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(
-                  Icons.lock_reset,
-                  size: 40,
-                  color: Colors.white,
-                ),
+                child: const Icon(Icons.lock_reset,
+                    size: 40, color: Colors.white),
               ),
               const SizedBox(height: 16),
-              // Title
               Text(
                 'LUPA PASSWORD',
                 style: Theme.of(context).textTheme.headlineSmall?.copyWith(
@@ -15341,13 +15558,10 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
               const Text(
                 'Masukkan email admin yang terdaftar',
                 style: TextStyle(
-                  fontSize: 16,
-                  color: AppColors.textSecondary,
-                ),
+                    fontSize: 16, color: AppColors.textSecondary),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 32),
-              // Email Form
               Form(
                 key: _formKey,
                 child: Column(
@@ -15358,34 +15572,28 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                         labelText: 'Email',
                         prefixIcon: Icon(Icons.email),
                         border: OutlineInputBorder(),
-                        
                       ),
                       validator: Validators.validateEmail,
                       keyboardType: TextInputType.emailAddress,
                       textInputAction: TextInputAction.done,
                     ),
                     const SizedBox(height: 32),
-                    // Send Button
                     SizedBox(
                       width: double.infinity,
                       height: 50,
                       child: ElevatedButton(
-                        onPressed: _isLoading ? null : _handleSendResetLink,
+                        onPressed:
+                            _isLoading ? null : _handleSendResetLink,
                         child: const Text(
                           'KIRIM LINK RESET',
                           style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                          ),
+                              fontSize: 16, fontWeight: FontWeight.w600),
                         ),
                       ),
                     ),
                   ],
                 ),
               ),
-              const SizedBox(height: 32),
-              // Alternative Contact Info
-             
             ],
           ),
         ),
@@ -15610,18 +15818,18 @@ void dispose() {
   // ============================================================
   // RESET PASSWORD (VALIDASI KODE + SIMPAN PASSWORD BARU)
   // ============================================================
-  Future<void> _handleResetPassword() async {
-  if (!_formKey.currentState!.validate()) return;
+   Future<void> _handleResetPassword() async {
+    if (!_formKey.currentState!.validate()) return;
 
-  final code = _codeController.text;   // ✅ langsung
-  if (code.length != 6) {
-    Helpers.showSnackBar(
-      context,
-      'Masukkan 6 digit kode dengan lengkap',
-      isError: true,
-    );
-    return;
-  }
+    final code = _codeController.text;
+    if (code.length != 6) {
+      Helpers.showSnackBar(
+        context,
+        'Masukkan 6 digit kode dengan lengkap',
+        isError: true,
+      );
+      return;
+    }
 
     setState(() => _isLoading = true);
 
@@ -15647,16 +15855,20 @@ void dispose() {
       }
     } catch (e) {
       if (!mounted) return;
-
       setState(() => _isLoading = false);
 
-      final rawMsg = e.toString().replaceFirst('Exception: ', '');
+      // Server mati -> SnackBar khusus, tidak reset password
+      if (Helpers.isNetworkError(e)) {
+        Helpers.showServerError(context);
+        return;
+      }
 
-      // Pesan yang lebih user-friendly
+      final rawMsg = e.toString().replaceFirst('Exception: ', '');
       String message = rawMsg;
       if (rawMsg.toLowerCase().contains('kode') &&
           rawMsg.toLowerCase().contains('salah')) {
-        message = 'Kode verifikasi salah. Periksa kembali kode yang Anda masukkan.';
+        message =
+            'Kode verifikasi salah. Periksa kembali kode yang Anda masukkan.';
       } else if (rawMsg.toLowerCase().contains('kedaluwarsa') ||
           rawMsg.toLowerCase().contains('expired')) {
         message = 'Kode sudah kedaluwarsa. Silakan kirim ulang kode.';
@@ -15702,8 +15914,12 @@ void dispose() {
       }
     } catch (e) {
       if (!mounted) return;
-
       setState(() => _isLoading = false);
+
+      if (Helpers.isNetworkError(e)) {
+        Helpers.showServerError(context);
+        return;
+      }
 
       final rawMsg = e.toString().replaceFirst('Exception: ', '');
       Helpers.showSnackBar(
@@ -16045,6 +16261,7 @@ import '../../../presentation/pages/room/room_detail_screen.dart';
 import '../../../core/utils/helpers.dart';
 import '../../../core/constants/colors.dart';
 import '../../pages/info/aqi_info_screen.dart';
+import '../../../presentation/widgets/common/server_status_indicator.dart';
 
 class DashboardScreen extends StatefulWidget {
   final bool isAdminMode;
@@ -16172,35 +16389,78 @@ void dispose() {
 }
   
  Future<void> _loadInitialData() async {
-  if (!_isMounted) return;
-  
-  final roomProvider = Provider.of<RoomProvider>(context, listen: false);
-  
-  try {
-    await roomProvider.loadRooms();
-  } catch (e) {
-    print('❌ Error loading rooms: $e');
-    
-    // Tampilkan pesan error yang user-friendly
-    if (e.toString().contains('401') || e.toString().contains('Access denied')) {
-      Helpers.showSnackBar(
-        context, 
-        'Tidak bisa mengakses data. Silakan login sebagai admin atau hubungi administrator.',
-        isError: true
-      );
+    if (!_isMounted) return;
+
+    final roomProvider = Provider.of<RoomProvider>(context, listen: false);
+
+    try {
+      await roomProvider.loadRooms();
+    } catch (e) {
+      if (!_isMounted) return;
+      if (Helpers.isNetworkError(e)) {
+        Helpers.showServerError(context);
+      } else if (e.toString().contains('401') ||
+          e.toString().contains('Access denied')) {
+        Helpers.showSnackBar(
+          context,
+          'Tidak bisa mengakses data. Silakan login sebagai admin atau hubungi administrator.',
+          isError: true,
+        );
+      } else {
+        Helpers.showSnackBar(
+          context,
+          'Gagal memuat data: $e',
+          isError: true,
+        );
+      }
+    }
+
+    // Setelah load, cek apakah provider menyimpan error (loadRooms catch internal)
+    if (_isMounted && roomProvider.hasError && roomProvider.rooms.isEmpty) {
+      final msg = roomProvider.errorMessage.toLowerCase();
+      if (msg.contains('socketexception') ||
+          msg.contains('network') ||
+          msg.contains('connection') ||
+          msg.contains('timeout') ||
+          msg.contains('failed host')) {
+        Helpers.showServerError(context);
+      }
     }
   }
-}
 
   
   Future<void> _refreshData() async {
     if (!_isMounted) return;
-    
+
     final roomProvider = Provider.of<RoomProvider>(context, listen: false);
-    await roomProvider.refresh();
-    
-    if (_isMounted) {
-      _refreshController.refreshCompleted();
+
+    try {
+      await roomProvider.refresh();
+    } catch (e) {
+      if (_isMounted) {
+        if (Helpers.isNetworkError(e)) {
+          Helpers.showServerError(context);
+        } else {
+          Helpers.showSnackBar(context, 'Gagal refresh: $e', isError: true);
+        }
+      }
+    } finally {
+      if (_isMounted) {
+        _refreshController.refreshCompleted();
+      }
+    }
+
+    // Cek provider error juga (refresh menangkap internal)
+    if (_isMounted && roomProvider.hasError) {
+      final msg = roomProvider.errorMessage.toLowerCase();
+      final isNet = msg.contains('socketexception') ||
+          msg.contains('network') ||
+          msg.contains('connection') ||
+          msg.contains('timeout') ||
+          msg.contains('failed host');
+      if (isNet) {
+        Helpers.showServerError(context);
+      }
     }
   }
   
@@ -16239,24 +16499,17 @@ void dispose() {
     final roomProvider = Provider.of<RoomProvider>(context);
     
     return Scaffold(
-      appBar: AppBar(
+            appBar: AppBar(
         title: const Text('UNILA Air Quality Index'),
         centerTitle: true,
         actions: [
-  IconButton(
-    icon: Icon(Icons.refresh),
-    onPressed: _refreshData,
-    tooltip: 'Refresh',
-  ),
-
-  Builder(
-    builder: (context) => IconButton(
-      icon: Icon(Icons.menu),
-      onPressed: () => Scaffold.of(context).openDrawer(),
-      tooltip: 'Menu',
-    ),
-  ),
-],
+           const ServerStatusIndicator(),
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _refreshData,
+            tooltip: 'Refresh',
+          ),
+        ],
       ),
       drawer: AppDrawer(
         isAdmin: widget.isAdminMode,
@@ -16353,24 +16606,20 @@ void dispose() {
               ),
             ),
             // Loading State
-            if (roomProvider.isLoading)
+                        // Loading State — hanya jika belum ada data
+            if (roomProvider.isLoading && roomProvider.rooms.isEmpty)
               const SliverFillRemaining(
-                child: Center(
-                  child: CircularProgressIndicator(),
-                ),
+                child: Center(child: CircularProgressIndicator()),
               )
-            // Error State
-            else if (roomProvider.hasError)
+            // Error State — hanya jika TIDAK ada data sama sekali
+            else if (roomProvider.hasError && roomProvider.rooms.isEmpty)
               SliverFillRemaining(
                 child: Center(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const Icon(
-                        Icons.error_outline,
-                        size: 64,
-                        color: AppColors.error,
-                      ),
+                      const Icon(Icons.error_outline,
+                          size: 64, color: AppColors.error),
                       const SizedBox(height: 16),
                       Text(
                         'Error: ${roomProvider.errorMessage}',
@@ -16393,18 +16642,15 @@ void dispose() {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const Icon(
-                        Icons.search_off,
-                        size: 64,
-                        color: Colors.grey,
-                      ),
+                      const Icon(Icons.search_off,
+                          size: 64, color: Colors.grey),
                       const SizedBox(height: 16),
                       const Text(
                         'Tidak ada ruangan ditemukan',
                         style: TextStyle(fontSize: 16, color: Colors.grey),
                       ),
                       const SizedBox(height: 8),
-                      if (_searchController.text.isNotEmpty || 
+                      if (_searchController.text.isNotEmpty ||
                           roomProvider.selectedBuilding != 'Semua Gedung')
                         TextButton(
                           onPressed: () {
@@ -16417,15 +16663,16 @@ void dispose() {
                   ),
                 ),
               )
-            // Data State - Grouped by Building
+            // Data State — tetap tampil walau refresh error
             else
               SliverList(
                 delegate: SliverChildBuilderDelegate(
                   (context, index) {
-                    final buildingEntries = roomProvider.roomsByBuilding.entries.toList();
+                    final buildingEntries =
+                        roomProvider.roomsByBuilding.entries.toList();
                     final buildingName = buildingEntries[index].key;
                     final rooms = buildingEntries[index].value;
-                    
+
                     return Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       child: BuildingSection(
@@ -16987,13 +17234,14 @@ class _AQIInfoScreenState extends State<AQIInfoScreen> {
 ---------------------------------------------------------------------------------------------------------------------------------------
 lib/presentation/pages/room/room_detail_screen.dart: 
 
-import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:unila_aqi/core/constants/colors.dart';
 import 'package:unila_aqi/core/services/socket_service.dart';
 import 'package:unila_aqi/core/utils/helpers.dart';
 import 'package:unila_aqi/data/models/room.dart';
+import 'package:unila_aqi/data/repositories/room_repository.dart';
 import 'package:unila_aqi/presentation/widgets/chart/history_chart.dart';
+import '../../widgets/common/server_status_indicator.dart';
 
 class RoomDetailScreen extends StatefulWidget {
   final Room room;
@@ -17009,10 +17257,10 @@ class RoomDetailScreen extends StatefulWidget {
 
 class _RoomDetailScreenState extends State<RoomDetailScreen> {
   final SocketService _socketService = SocketService();
+  final RoomRepository _roomRepository = RoomRepository();
 
   bool _isRefreshing = false;
   bool _isMounted = false;
-  bool _socketConnected = false;
   late Room _currentRoomData;
 
   @override
@@ -17026,8 +17274,28 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
       _setupRealtimeListener();
       _setupBuildingUpdateListener();
       _setupRoomNameUpdateListener();
-      _checkSocketConnection();
+      _ensureSocketConnected();
     });
+  }
+
+  void _ensureSocketConnected() {
+    if (!_socketService.isConnected && _isMounted) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _reconnectSocket();
+      });
+    }
+  }
+
+  Future<void> _reconnectSocket() async {
+    try {
+      await _socketService.connect();
+      await Future.delayed(const Duration(seconds: 2));
+      if (_socketService.isConnected) {
+        _joinRoomForUpdates();
+      }
+    } catch (e) {
+      print('❌ Failed to reconnect: $e');
+    }
   }
 
   void _setupRoomNameUpdateListener() {
@@ -17035,8 +17303,6 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
       if (_isMounted && data['roomId'] == widget.room.id) {
         final newName = data['newName'];
         final oldName = data['oldName'];
-
-        print('🔄 Room name updated for this room: $oldName -> $newName');
 
         setState(() {
           _currentRoomData = Room(
@@ -17053,7 +17319,8 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
           );
         });
 
-        _showNotification('Nama ruangan diperbarui: $oldName -> $newName', 'info');
+        _showNotification(
+            'Nama ruangan diperbarui: $oldName -> $newName', 'info');
       }
     });
 
@@ -17064,8 +17331,6 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
           final oldName = data['oldData']['name'];
 
           if (newName != oldName) {
-            print('🔄 Detected room name change in room-updated event');
-
             setState(() {
               _currentRoomData = Room(
                 id: _currentRoomData.id,
@@ -17081,7 +17346,9 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
               );
             });
 
-            _showNotification('Nama ruangan diperbarui: $oldName -> $newName', 'info');
+            _showNotification(
+                'Nama ruangan diperbarui: $oldName -> $newName',
+                'info');
           }
         }
       }
@@ -17093,24 +17360,23 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
       if (_isMounted && data['buildingId'] == widget.room.buildingId) {
         final newBuildingName = data['newBuildingName'];
 
-        print('🏢 Building name updated for this room: $newBuildingName');
-
         setState(() {
           _currentRoomData = Room(
-  id: _currentRoomData.id,
-  name: _currentRoomData.name,
-  buildingId: _currentRoomData.buildingId,
-  buildingName: newBuildingName,
-  dataSource: _currentRoomData.dataSource,
-  iotDeviceId: _currentRoomData.iotDeviceId,
-  currentAQI: _currentRoomData.currentAQI,
-  currentData: _currentRoomData.currentData,
-  createdAt: _currentRoomData.createdAt,
-  updatedAt: _currentRoomData.updatedAt,
-);
+            id: _currentRoomData.id,
+            name: _currentRoomData.name,
+            buildingId: _currentRoomData.buildingId,
+            buildingName: newBuildingName,
+            dataSource: _currentRoomData.dataSource,
+            iotDeviceId: _currentRoomData.iotDeviceId,
+            currentAQI: _currentRoomData.currentAQI,
+            currentData: _currentRoomData.currentData,
+            createdAt: _currentRoomData.createdAt,
+            updatedAt: _currentRoomData.updatedAt,
+          );
         });
 
-        _showNotification('Nama gedung diperbarui: $newBuildingName', 'info');
+        _showNotification('Nama gedung diperbarui: $newBuildingName',
+            'info');
       }
     });
   }
@@ -17131,8 +17397,6 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
         _showNotification(data['message'], data['type'] ?? 'info');
       }
     });
-
-    _socketConnected = _socketService.isConnected;
   }
 
   void _handleRoomUpdate(dynamic data) {
@@ -17143,32 +17407,33 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
       final nameChanged = oldName != newName;
 
       setState(() {
-  _currentRoomData = Room(
-    id: _currentRoomData.id,
-    name: newName,
-    buildingId: _currentRoomData.buildingId,
-    buildingName: _currentRoomData.buildingName,
-    dataSource: _currentRoomData.dataSource,
-    iotDeviceId: _currentRoomData.iotDeviceId,
-    currentAQI: roomData['currentAQI'],
-    currentData: RoomData(
-      pm25: roomData['currentData']['pm25'].toDouble(),
-      pm10: roomData['currentData']['pm10'].toDouble(),
-      co2: roomData['currentData']['co2'].toDouble(),
-      temperature: roomData['currentData']['temperature'].toDouble(),
-      humidity: roomData['currentData']['humidity'].toDouble(),
-      updatedAt: DateTime.parse(roomData['currentData']['updatedAt']),
-    ),
-    createdAt: _currentRoomData.createdAt,
-    updatedAt: DateTime.parse(roomData['updatedAt']),
-  );
-});
+        _currentRoomData = Room(
+          id: _currentRoomData.id,
+          name: newName,
+          buildingId: _currentRoomData.buildingId,
+          buildingName: _currentRoomData.buildingName,
+          dataSource: _currentRoomData.dataSource,
+          iotDeviceId: _currentRoomData.iotDeviceId,
+          currentAQI: roomData['currentAQI'],
+          currentData: RoomData(
+            pm25: roomData['currentData']['pm25'].toDouble(),
+            pm10: roomData['currentData']['pm10'].toDouble(),
+            co2: roomData['currentData']['co2'].toDouble(),
+            temperature:
+                roomData['currentData']['temperature'].toDouble(),
+            humidity: roomData['currentData']['humidity'].toDouble(),
+            updatedAt: DateTime.parse(
+                roomData['currentData']['updatedAt']),
+          ),
+          createdAt: _currentRoomData.createdAt,
+          updatedAt: DateTime.parse(roomData['updatedAt']),
+        );
+      });
 
       if (nameChanged) {
-        _showNotification('Nama ruangan diperbarui: $oldName -> $newName', 'info');
+        _showNotification(
+            'Nama ruangan diperbarui: $oldName -> $newName', 'info');
       }
-
-      print('🔄 Real-time update: Room ${_currentRoomData.name} - AQI ${_currentRoomData.currentAQI}');
     } catch (e) {
       print('❌ Error handling room update: $e');
     }
@@ -17201,11 +17466,11 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
         content: Row(
           children: [
             Icon(icon, color: Colors.white, size: 20),
-            SizedBox(width: 12),
+            const SizedBox(width: 12),
             Expanded(
               child: Text(
                 message,
-                style: TextStyle(
+                style: const TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w500,
                 ),
@@ -17214,7 +17479,7 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
           ],
         ),
         backgroundColor: backgroundColor,
-        duration: Duration(seconds: 3),
+        duration: const Duration(seconds: 3),
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
@@ -17223,48 +17488,41 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
     );
   }
 
-  void _checkSocketConnection() {
-    setState(() {
-      _socketConnected = _socketService.isConnected;
-    });
-
-    if (!_socketConnected && _isMounted) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _showNotification('Koneksi real-time terputus. Mencoba reconnect...', 'warning');
-        _reconnectSocket();
-      });
-    }
-  }
-
-  Future<void> _reconnectSocket() async {
-    try {
-      await _socketService.connect();
-      await Future.delayed(Duration(seconds: 2));
-      if (_socketService.isConnected) {
-        _joinRoomForUpdates();
-        setState(() {
-          _socketConnected = true;
-        });
-        _showNotification('Koneksi real-time berhasil dipulihkan', 'success');
-      }
-    } catch (e) {
-      print('❌ Failed to reconnect: $e');
-    }
-  }
-
+  /// Fetch data terbaru dari server.
   Future<void> _refreshData() async {
     if (!_isMounted) return;
 
     setState(() => _isRefreshing = true);
-    await Future.delayed(Duration(seconds: 1));
 
-    if (_isMounted) {
-      setState(() => _isRefreshing = false);
+    try {
+      final freshRoom =
+          await _roomRepository.getRoomById(widget.room.id);
+      if (_isMounted) {
+        setState(() {
+          _currentRoomData = freshRoom;
+        });
+      }
+    } catch (e) {
+      if (_isMounted) {
+        if (Helpers.isNetworkError(e)) {
+          Helpers.showServerError(context);
+        } else {
+          Helpers.showSnackBar(
+            context,
+            'Gagal refresh data ruangan',
+            isError: true,
+          );
+        }
+      }
+    } finally {
+      if (_isMounted) {
+        setState(() => _isRefreshing = false);
+      }
     }
   }
 
   // ------------------------------------------------------------
-  // UI BUILDING METHODS
+  // UI BUILDING METHODS (tidak berubah dari versi sebelumnya)
   // ------------------------------------------------------------
 
   Widget _buildAQICard() {
@@ -17312,9 +17570,9 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
                   ),
                 ],
               ),
-              // Sumber data
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
                   color: Colors.white.withOpacity(0.2),
                   borderRadius: BorderRadius.circular(10),
@@ -17331,7 +17589,9 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
                     ),
                     const SizedBox(width: 4),
                     Text(
-                      _currentRoomData.dataSource == 'iot' ? 'IoT' : 'Simulasi',
+                      _currentRoomData.dataSource == 'iot'
+                          ? 'IoT'
+                          : 'Simulasi',
                       style: const TextStyle(
                         fontSize: 10,
                         fontWeight: FontWeight.w700,
@@ -17360,7 +17620,8 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 4),
                       decoration: BoxDecoration(
                         color: Colors.white.withOpacity(0.2),
                         borderRadius: BorderRadius.circular(20),
@@ -17374,9 +17635,6 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
                         ),
                       ),
                     ),
-                    const SizedBox(height: 4),
-                    // Progress bar
-                    
                   ],
                 ),
               ),
@@ -17387,7 +17645,8 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
     );
   }
 
-  Widget _buildParameterCard(String label, String value, String status, Color color) {
+  Widget _buildParameterCard(
+      String label, String value, String status, Color color) {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -17424,7 +17683,8 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
           ),
           const SizedBox(height: 8),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            padding:
+                const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
               color: Colors.white.withOpacity(0.2),
               borderRadius: BorderRadius.circular(12),
@@ -17443,165 +17703,159 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
     );
   }
 
- Widget _buildHealthRecommendations() {
-  final aqi = _currentRoomData.currentAQI;
-  Helpers.getAQIColor(aqi);
-  Helpers.getAQILabel(aqi);
-  final recommendations = Helpers.getDetailedRecommendations(_currentRoomData);
+  Widget _buildHealthRecommendations() {
+    final aqi = _currentRoomData.currentAQI;
+    final recommendations =
+        Helpers.getDetailedRecommendations(_currentRoomData);
 
-  return Container(
-    width: double.infinity, // Tambahkan ini agar lebar penuh seperti grafik
-    padding: const EdgeInsets.all(12), // Sama dengan padding grafik (12)
-    decoration: BoxDecoration(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(12), // Sama dengan radius grafik (12)
-      boxShadow: [
-        BoxShadow(
-          color: Colors.black.withOpacity(0.05), // Sama dengan shadow grafik
-          blurRadius: 8,
-          offset: const Offset(0, 3), // Sama dengan offset grafik
-        ),
-      ],
-    ),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Judul dengan gaya seperti grafik historis
-        Row(
-          children: [
-            Icon(
-              Icons.health_and_safety_rounded, // Icon health
-              color: Colors.blue,
-              size: 18,
-            ),
-            const SizedBox(width: 6),
-            const Text(
-              'REKOMENDASI KESEHATAN',
-              style: TextStyle(
-                fontSize: 14, // Sama dengan font grafik
-                fontWeight: FontWeight.w600,
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.health_and_safety_rounded,
+                color: Colors.blue,
+                size: 18,
               ),
-            ),
-            const Spacer(),
-            // Status chip seperti di grafik
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: Colors.blue.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(6),
+              const SizedBox(width: 6),
+              const Text(
+                'REKOMENDASI KESEHATAN',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
-              child: Row(
-                children: [
-                  Container(
-                    width: 6,
-                    height: 6,
-                    decoration: BoxDecoration(
-                      color: Helpers.getAQIColor(_currentRoomData.currentAQI),
-                      shape: BoxShape.circle,
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.blue.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 6,
+                      height: 6,
+                      decoration: BoxDecoration(
+                        color: Helpers.getAQIColor(
+                            _currentRoomData.currentAQI),
+                        shape: BoxShape.circle,
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    'AQI: ${_currentRoomData.currentAQI}',
-                    style: TextStyle(
-                      fontSize: 10,
-                      color: Colors.blue.shade700,
-                      fontWeight: FontWeight.w500,
+                    const SizedBox(width: 4),
+                    Text(
+                      'AQI: $aqi',
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: Colors.blue.shade700,
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12), // Jarak setelah header
-        
-        // Parameter status chips
-        _buildParameterStatus(),
-        
-        const SizedBox(height: 16),
-        
-        // Daftar rekomendasi
-        ...recommendations.map(_buildRecommendationItem),
-      ],
-    ),
-  );
-}
+            ],
+          ),
+          const SizedBox(height: 12),
+          _buildParameterStatus(),
+          const SizedBox(height: 16),
+          ...recommendations.map(_buildRecommendationItem),
+        ],
+      ),
+    );
+  }
 
   Widget _buildParameterStatus() {
-  final data = _currentRoomData.currentData;
+    final data = _currentRoomData.currentData;
 
-  return Wrap(
-    spacing: 10,
-    runSpacing: 10,
-    children: [
-      _buildStatusChip('PM2.5: ${data.pm25.toStringAsFixed(1)}', Helpers.getPM25Color(data.pm25)),
-      _buildStatusChip('PM10: ${data.pm10.toStringAsFixed(1)}', Helpers.getPM10Color(data.pm10)),
-      _buildStatusChip('CO₂: ${data.co2.round()}', Helpers.getCO2Color(data.co2)),
-      _buildStatusChip('Suhu: ${data.temperature.toStringAsFixed(1)}°C', Helpers.getTemperatureColor(data.temperature)),
-      _buildStatusChip('Lembab: ${data.humidity.round()}%', Helpers.getHumidityColor(data.humidity)),
-    ],
-  );
-}
-
- Widget _buildStatusChip(String text, Color color) {
-  return Container(
-    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-    decoration: BoxDecoration(
-      color: color,
-      borderRadius: BorderRadius.circular(20),
-    ),
-    child: Text(
-      text,
-      style: const TextStyle(
-        fontSize: 12,
-        fontWeight: FontWeight.w700,
-        color: Colors.white,
-      ),
-    ),
-  );
-}
-
-Widget _buildRecommendationItem(String text) {
-  return Padding(
-    padding: const EdgeInsets.only(bottom: 8),
-    child: Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    return Wrap(
+      spacing: 10,
+      runSpacing: 10,
       children: [
-        const Icon(
-          Icons.arrow_right,
-          size: 16,
-          color: Colors.grey,
+        _buildStatusChip('PM2.5: ${data.pm25.toStringAsFixed(1)}',
+            Helpers.getPM25Color(data.pm25)),
+        _buildStatusChip('PM10: ${data.pm10.toStringAsFixed(1)}',
+            Helpers.getPM10Color(data.pm10)),
+        _buildStatusChip(
+            'CO₂: ${data.co2.round()}', Helpers.getCO2Color(data.co2)),
+        _buildStatusChip(
+            'Suhu: ${data.temperature.toStringAsFixed(1)}°C',
+            Helpers.getTemperatureColor(data.temperature)),
+        _buildStatusChip(
+            'Lembab: ${data.humidity.round()}%',
+            Helpers.getHumidityColor(data.humidity)),
+      ],
+    );
+  }
+
+  Widget _buildStatusChip(String text, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        text,
+        style: const TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+          color: Colors.white,
         ),
-        const SizedBox(width: 4),
-        Expanded(
-          child: Text(
-            text,
-            style: const TextStyle(
-              fontFamily: 'Inter',
-              fontSize: 15,                       // ✅ sama seperti label parameter
-              fontWeight: FontWeight.w400,        // ✅ eksplisit normal (tidak bold)
-              color: Colors.black,     // ✅ abu-abu seperti label parameter
-              height: 1.4,                        // ✅ spacing antar baris
+      ),
+    );
+  }
+
+  Widget _buildRecommendationItem(String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.arrow_right, size: 16, color: Colors.grey),
+          const SizedBox(width: 4),
+          Expanded(
+            child: Text(
+              text,
+              style: const TextStyle(
+                fontFamily: 'Inter',
+                fontSize: 15,
+                fontWeight: FontWeight.w400,
+                color: Colors.black,
+                height: 1.4,
+              ),
             ),
           ),
-        ),
-      ],
-    ),
-  );
-}
+        ],
+      ),
+    );
+  }
 
-    Widget _buildRoomInfoHeader() {
+  Widget _buildRoomInfoHeader() {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [
-            Colors.white,
-            Colors.grey.shade50,
-          ],
+          colors: [Colors.white, Colors.grey.shade50],
         ),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: Colors.grey.shade200, width: 1),
@@ -17620,9 +17874,8 @@ Widget _buildRecommendationItem(String text) {
         ],
       ),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center, // Bisa diubah ke .start jika ikon terlihat aneh saat teks jadi 2 baris
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          // Modern icon dengan gradient
           Container(
             width: 52,
             height: 52,
@@ -17630,10 +17883,7 @@ Widget _buildRecommendationItem(String text) {
               gradient: LinearGradient(
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
-                colors: [
-                  Colors.blue.shade400,
-                  Colors.blue.shade600,
-                ],
+                colors: [Colors.blue.shade400, Colors.blue.shade600],
               ),
               borderRadius: BorderRadius.circular(16),
               boxShadow: [
@@ -17651,13 +17901,10 @@ Widget _buildRecommendationItem(String text) {
             ),
           ),
           const SizedBox(width: 16),
-
-          // Informasi ruangan
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // ✅ Nama ruangan (maxLines & overflow dihapus)
                 Text(
                   _currentRoomData.name,
                   style: const TextStyle(
@@ -17668,8 +17915,6 @@ Widget _buildRecommendationItem(String text) {
                   ),
                 ),
                 const SizedBox(height: 6),
-
-                // ✅ Lokasi gedung (maxLines & overflow dihapus)
                 Row(
                   children: [
                     Icon(
@@ -17691,8 +17936,6 @@ Widget _buildRecommendationItem(String text) {
                   ],
                 ),
                 const SizedBox(height: 6),
-
-                // Informasi update terakhir
                 Row(
                   children: [
                     Icon(
@@ -17728,7 +17971,7 @@ Widget _buildRecommendationItem(String text) {
           onPressed: () => Navigator.pop(context),
           splashRadius: 20,
         ),
-        title: Text(
+        title: const Text(
           'Detail Ruangan',
           style: TextStyle(
             fontSize: 18,
@@ -17740,6 +17983,7 @@ Widget _buildRecommendationItem(String text) {
         elevation: 0,
         backgroundColor: Colors.white,
         actions: [
+          const ServerStatusIndicator(),
           IconButton(
             icon: _isRefreshing
                 ? SizedBox(
@@ -17750,7 +17994,7 @@ Widget _buildRecommendationItem(String text) {
                       color: AppColors.primary,
                     ),
                   )
-                : Icon(
+                : const Icon(
                     Icons.refresh_rounded,
                     size: 22,
                     color: AppColors.textSecondary,
@@ -17770,104 +18014,34 @@ Widget _buildRecommendationItem(String text) {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Real-time connection status
-              if (!_socketConnected)
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  margin: const EdgeInsets.only(bottom: 16),
-                  decoration: BoxDecoration(
-                    color: Colors.orange.withOpacity(0.08),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: Colors.orange.withOpacity(0.2)),
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 40,
-                        height: 40,
-                        decoration: BoxDecoration(
-                          color: Colors.orange.withOpacity(0.1),
-                          shape: BoxShape.circle,
-                        ),
-                        child: Icon(
-                          Icons.wifi_off_rounded,
-                          size: 20,
-                          color: Colors.orange,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Koneksi terputus',
-                              style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w700,
-                                color: Colors.orange.shade700,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              'Mencoba reconnect otomatis...',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.orange.shade600,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      IconButton(
-                        icon: Icon(
-                          Icons.refresh_rounded,
-                          size: 20,
-                          color: Colors.orange,
-                        ),
-                        onPressed: _reconnectSocket,
-                        splashRadius: 20,
-                      ),
-                    ],
-                  ),
-                ),
-
-              // Room info header
               _buildRoomInfoHeader(),
-
               const SizedBox(height: 16),
-
-              // AQI Card
               _buildAQICard(),
-
               const SizedBox(height: 16),
 
-              // Last update info
-             
-
-            
-
-              // Section Title
-              
-
-              // Parameter Grid - First Row
               Row(
                 children: [
                   Expanded(
                     child: _buildParameterCard(
                       'PM2.5',
-                      _currentRoomData.currentData.pm25.toStringAsFixed(1),
-                      Helpers.getPM25Status(_currentRoomData.currentData.pm25),
-                      Helpers.getPM25Color(_currentRoomData.currentData.pm25),
+                      _currentRoomData.currentData.pm25
+                          .toStringAsFixed(1),
+                      Helpers.getPM25Status(
+                          _currentRoomData.currentData.pm25),
+                      Helpers.getPM25Color(
+                          _currentRoomData.currentData.pm25),
                     ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
                     child: _buildParameterCard(
                       'PM10',
-                      _currentRoomData.currentData.pm10.toStringAsFixed(1),
-                      Helpers.getPM10Status(_currentRoomData.currentData.pm10),
-                      Helpers.getPM10Color(_currentRoomData.currentData.pm10),
+                      _currentRoomData.currentData.pm10
+                          .toStringAsFixed(1),
+                      Helpers.getPM10Status(
+                          _currentRoomData.currentData.pm10),
+                      Helpers.getPM10Color(
+                          _currentRoomData.currentData.pm10),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -17875,24 +18049,25 @@ Widget _buildRecommendationItem(String text) {
                     child: _buildParameterCard(
                       'CO₂',
                       '${_currentRoomData.currentData.co2.round()}',
-                      Helpers.getCO2Status(_currentRoomData.currentData.co2),
-                      Helpers.getCO2Color(_currentRoomData.currentData.co2),
+                      Helpers.getCO2Status(
+                          _currentRoomData.currentData.co2),
+                      Helpers.getCO2Color(
+                          _currentRoomData.currentData.co2),
                     ),
                   ),
                 ],
               ),
-
               const SizedBox(height: 12),
-
-              // Parameter Grid - Second Row
               Row(
                 children: [
                   Expanded(
                     child: _buildParameterCard(
                       'SUHU',
                       '${_currentRoomData.currentData.temperature.toStringAsFixed(1)}°C',
-                      Helpers.getTemperatureStatus(_currentRoomData.currentData.temperature),
-                      Helpers.getTemperatureColor(_currentRoomData.currentData.temperature),
+                      Helpers.getTemperatureStatus(
+                          _currentRoomData.currentData.temperature),
+                      Helpers.getTemperatureColor(
+                          _currentRoomData.currentData.temperature),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -17900,22 +18075,20 @@ Widget _buildRecommendationItem(String text) {
                     child: _buildParameterCard(
                       'KELEMBABAN',
                       '${_currentRoomData.currentData.humidity.round()}%',
-                      Helpers.getHumidityStatus(_currentRoomData.currentData.humidity),
-                      Helpers.getHumidityColor(_currentRoomData.currentData.humidity),
+                      Helpers.getHumidityStatus(
+                          _currentRoomData.currentData.humidity),
+                      Helpers.getHumidityColor(
+                          _currentRoomData.currentData.humidity),
                     ),
                   ),
                   const Spacer(),
                 ],
               ),
-
               const SizedBox(height: 24),
 
-              // Health Recommendations
               _buildHealthRecommendations(),
-
               const SizedBox(height: 24),
 
-              // History Chart Section (tidak diubah)
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(12),
@@ -17933,38 +18106,27 @@ Widget _buildRecommendationItem(String text) {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
+                    const Row(
                       children: [
-                        const Icon(
-                          Icons.timeline,
-                          color: Colors.blue,
-                          size: 18,
-                        ),
-                        const SizedBox(width: 6),
-                        const Text(
+                        Icon(Icons.timeline,
+                            color: Colors.blue, size: 18),
+                        SizedBox(width: 6),
+                        Text(
                           'GRAFIK HISTORIS',
                           style: TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
                           ),
                         ),
-                        const Spacer(),
-          
+                        Spacer(),
                       ],
                     ),
                     const SizedBox(height: 8),
-
-                    // Chart Widget
                     HistoryChart(
                       roomId: _currentRoomData.id,
                       roomName: _currentRoomData.name,
                       buildingName: _currentRoomData.buildingName,
                     ),
-
-               
-
-                    // Info tambahan
-                   
                   ],
                 ),
               ),
@@ -17979,10 +18141,8 @@ Widget _buildRecommendationItem(String text) {
   void dispose() {
     _isMounted = false;
 
-    // Leave room
     _socketService.leaveRoom(widget.room.id);
 
-    // Remove event listeners
     _socketService.off('room-update');
     _socketService.off('notification');
     _socketService.off('room-building-updated');
@@ -18714,13 +18874,15 @@ lib/presentation/widgets/chart/history_chart.dart:
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
+import 'package:unila_aqi/core/services/api_service.dart';
+import 'package:unila_aqi/core/utils/helpers.dart';
 import 'package:unila_aqi/data/models/sensor_data.dart';
 
 class HistoryChart extends StatefulWidget {
   final String roomId;
   final String roomName;
   final String buildingName;
-  
+
   const HistoryChart({
     super.key,
     required this.roomId,
@@ -18740,9 +18902,16 @@ class _HistoryChartState extends State<HistoryChart> {
   bool _isLoading = false;
   String _error = '';
   final ScrollController _scrollController = ScrollController();
-  
+
   // Parameter options
-  final List<String> _parameters = ['aqi', 'pm25', 'pm10', 'co2', 'temperature', 'humidity'];
+  final List<String> _parameters = [
+    'aqi',
+    'pm25',
+    'pm10',
+    'co2',
+    'temperature',
+    'humidity'
+  ];
   final Map<String, String> _parameterLabels = {
     'aqi': 'AQI',
     'pm25': 'PM2.5',
@@ -18751,7 +18920,7 @@ class _HistoryChartState extends State<HistoryChart> {
     'temperature': 'Suhu',
     'humidity': 'Kelembaban',
   };
-  
+
   // Color for each parameter
   final Map<String, Color> _parameterColors = {
     'aqi': Colors.blue,
@@ -18761,106 +18930,108 @@ class _HistoryChartState extends State<HistoryChart> {
     'temperature': Colors.purple,
     'humidity': Colors.teal,
   };
-  
+
   @override
   void initState() {
     super.initState();
     _loadHistoryData();
-    // Auto scroll ke data terbaru setelah data dimuat
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      Future.delayed(Duration(milliseconds: 300), () {
+      Future.delayed(const Duration(milliseconds: 300), () {
         if (_scrollController.hasClients) {
           _scrollController.animateTo(
             _scrollController.position.maxScrollExtent,
-            duration: Duration(milliseconds: 500),
+            duration: const Duration(milliseconds: 500),
             curve: Curves.easeOut,
           );
         }
       });
     });
   }
-  
+
   @override
   void dispose() {
     _scrollController.dispose();
     super.dispose();
   }
-  
-  Future<void> _loadHistoryData() async {
-    if (mounted) {
-      setState(() {
-        _isLoading = true;
-        _error = '';
-      });
-    }
-    
+
+    Future<void> _loadHistoryData() async {
+    if (!mounted) return;
+
+    final hadData = _historyData.isNotEmpty;
+
+    setState(() {
+      // Spinner hanya saat belum ada data sama sekali
+      _isLoading = !hadData;
+      _error = '';
+    });
+
+    bool failed = false;
+    bool isNetworkFailure = false;
+
     try {
-      await _generateSampleData();
+      final dateStr =
+          '${_selectedDate.year}-${_selectedDate.month.toString().padLeft(2, '0')}-${_selectedDate.day.toString().padLeft(2, '0')}';
+
+      final response =
+          await ApiService().getSensorHistory(widget.roomId, dateStr);
+
+      if (!mounted) return;
+
+      if (response is Map && response['success'] == true) {
+        final List<dynamic> data = response['data'] ?? [];
+        final parsed = data
+            .map((json) =>
+                SensorData.fromJson(Map<String, dynamic>.from(json)))
+            .toList();
+
+        // Jika backend balas sukses tapi kosong → kosongkan (tanggal memang tidak ada data)
+        setState(() {
+          _historyData = parsed;
+        });
+      } else {
+        failed = true;
+        final errStr =
+            (response is Map) ? (response['error']?.toString() ?? '') : '';
+        isNetworkFailure = Helpers.isNetworkError(errStr);
+      }
     } catch (e) {
-      if (mounted) {
-        setState(() {
-          _error = 'Error loading data: $e';
-        });
-      }
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
+      failed = true;
+      isNetworkFailure = Helpers.isNetworkError(e);
     }
-  }
-  
-  // Helper function untuk mendapatkan kategori AQI
-  String _getAQICategory(int aqi) {
-    if (aqi <= 50) return 'baik';
-    if (aqi <= 100) return 'sedang';
-    if (aqi <= 150) return 'tidak_sehat';
-    if (aqi <= 200) return 'sangat_tidak_sehat';
-    if (aqi <= 300) return 'berbahaya';
-    return 'error';
-  }
-  
-  Future<void> _generateSampleData() async {
-    // Simulasi data dari 00:00 sampai 23:30 setiap 30 menit
-    final now = DateTime.now();
-    final startDate = DateTime(now.year, now.month, now.day);
-    final data = <SensorData>[];
-    
-    for (int hour = 0; hour < 24; hour++) {
-      for (int minute = 0; minute < 60; minute += 30) {
-        final timestamp = startDate.add(Duration(hours: hour, minutes: minute));
-        
-        final randomFactor = (DateTime.now().millisecond % 20) - 10;
-        
-        final aqiValue = (30 + hour * 2 + randomFactor).toInt();
-        
-        final sensorData = SensorData(
-          id: '${timestamp.millisecondsSinceEpoch}',
-          roomId: widget.roomId,
-          roomName: widget.roomName,
-          buildingName: widget.buildingName,
-          aqi: aqiValue,
-          pm25: 15.0 + hour * 1.5 + randomFactor.toDouble(),
-          pm10: 25.0 + hour * 2.0 + randomFactor.toDouble(),
-          co2: 400.0 + hour * 20.0 + randomFactor * 5.0,
-          temperature: 22.0 + hour * 0.5 + randomFactor * 0.2,
-          humidity: 50.0 + hour * 1.0 + randomFactor * 2.0,
-          category: _getAQICategory(aqiValue),
-          timestamp: timestamp,
+
+    if (!mounted) return;
+
+    if (failed) {
+      // ❗ TIDAK generate sample baru.
+      // Data lama (_historyData) tetap dipakai.
+      // UI error penuh hanya muncul kalau memang belum pernah ada data.
+      if (!hadData) {
+        setState(() {
+          _error = isNetworkFailure
+              ? 'Tidak dapat memuat data grafik karena server tidak dapat dihubungi.'
+              : 'Gagal memuat data grafik.';
+        });
+      }
+
+      if (isNetworkFailure) {
+        Helpers.showServerError(context);
+      } else {
+        Helpers.showSnackBar(
+          context,
+          'Gagal memuat data grafik',
+          isError: true,
         );
-        
-        data.add(sensorData);
       }
     }
-    
+
     if (mounted) {
-      setState(() {
-        _historyData = data;
-      });
+      setState(() => _isLoading = false);
     }
   }
-  
+
+  // Helper function untuk mendapatkan kategori AQI
+
+
   Future<void> _selectDate(BuildContext context) async {
     final DateTime? picked = await showDatePicker(
       context: context,
@@ -18868,7 +19039,7 @@ class _HistoryChartState extends State<HistoryChart> {
       firstDate: DateTime.now().subtract(const Duration(days: 30)),
       lastDate: DateTime.now(),
     );
-    
+
     if (picked != null && picked != _selectedDate) {
       setState(() {
         _selectedDate = picked;
@@ -18876,14 +19047,14 @@ class _HistoryChartState extends State<HistoryChart> {
       await _loadHistoryData();
     }
   }
-  
+
   List<FlSpot> _getDataPoints() {
     final spots = <FlSpot>[];
-    
+
     for (int i = 0; i < _historyData.length; i++) {
       final data = _historyData[i];
-      final x = i.toDouble(); // Menggunakan index sebagai x untuk spacing konsisten
-      
+      final x = i.toDouble();
+
       double y;
       switch (_selectedParameter) {
         case 'aqi':
@@ -18907,28 +19078,30 @@ class _HistoryChartState extends State<HistoryChart> {
         default:
           y = 0;
       }
-      
+
       spots.add(FlSpot(x, y));
     }
-    
+
     return spots;
   }
-  
+
   SideTitles _getBottomTitles() {
     return SideTitles(
       showTitles: true,
       reservedSize: 30,
-      interval: 2, // Tampilkan setiap 2 data point (setiap jam)
+      interval: 2,
       getTitlesWidget: (value, meta) {
-        if (value < 0 || value >= _historyData.length) return const SizedBox.shrink();
-        
+        if (value < 0 || value >= _historyData.length) {
+          return const SizedBox.shrink();
+        }
+
         final data = _historyData[value.toInt()];
         final hour = data.timestamp.hour;
         final minute = data.timestamp.minute;
-        
-        // Hanya tampilkan label setiap jam (00 menit)
+
         if (minute == 0) {
-          final hourLabel = hour == 0 ? '00' : hour.toString().padLeft(2, '0');
+          final hourLabel =
+              hour == 0 ? '00' : hour.toString().padLeft(2, '0');
           return Padding(
             padding: const EdgeInsets.only(top: 8.0),
             child: Text(
@@ -18944,16 +19117,16 @@ class _HistoryChartState extends State<HistoryChart> {
       },
     );
   }
-  
+
   Widget _buildChart() {
     final spots = _getDataPoints();
     final color = _parameterColors[_selectedParameter]!;
-    
-    // Hitung lebar chart berdasarkan jumlah data
+
     final chartWidth = _historyData.length * 60.0;
     final minChartWidth = MediaQuery.of(context).size.width * 1.5;
-    final actualChartWidth = chartWidth > minChartWidth ? chartWidth : minChartWidth;
-    
+    final actualChartWidth =
+        chartWidth > minChartWidth ? chartWidth : minChartWidth;
+
     return Container(
       height: 350,
       padding: const EdgeInsets.all(16),
@@ -18970,7 +19143,6 @@ class _HistoryChartState extends State<HistoryChart> {
       ),
       child: Column(
         children: [
-          // Chart Header
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -18982,7 +19154,8 @@ class _HistoryChartState extends State<HistoryChart> {
                 ),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
                   color: color.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(8),
@@ -19012,8 +19185,6 @@ class _HistoryChartState extends State<HistoryChart> {
             ],
           ),
           const SizedBox(height: 16),
-          
-          // Scrollable Chart Area
           Expanded(
             child: SingleChildScrollView(
               controller: _scrollController,
@@ -19025,22 +19196,22 @@ class _HistoryChartState extends State<HistoryChart> {
                     gridData: FlGridData(
                       show: true,
                       drawVerticalLine: true,
-                      drawHorizontalLine: false, // HAPUS: garis horizontal Y
+                      drawHorizontalLine: false,
                       horizontalInterval: 20,
                       getDrawingHorizontalLine: (value) {
-                        return FlLine(
-                          color: Colors.transparent, // HAPUS: transparan
+                        return const FlLine(
+                          color: Colors.transparent,
                           strokeWidth: 0,
                         );
                       },
                       getDrawingVerticalLine: (value) {
-                        if (value % 2 == 0) { // Setiap 2 data point (setiap jam)
+                        if (value % 2 == 0) {
                           return FlLine(
                             color: Colors.grey.withOpacity(0.1),
                             strokeWidth: 0.5,
                           );
                         }
-                        return FlLine(
+                        return const FlLine(
                           color: Colors.transparent,
                           strokeWidth: 0,
                         );
@@ -19057,17 +19228,15 @@ class _HistoryChartState extends State<HistoryChart> {
                       bottomTitles: AxisTitles(
                         sideTitles: _getBottomTitles(),
                       ),
-                      leftTitles: AxisTitles(
-                        sideTitles: SideTitles(
-                          showTitles: false, // HAPUS: label sumbu Y
-                        ),
+                      leftTitles: const AxisTitles(
+                        sideTitles: SideTitles(showTitles: false),
                       ),
                     ),
-                    borderData: FlBorderData(
-                      show: false, // HAPUS: border chart
-                    ),
+                    borderData: FlBorderData(show: false),
                     minX: 0,
-                    maxX: _historyData.length > 0 ? (_historyData.length - 1).toDouble() : 0,
+                    maxX: _historyData.length > 0
+                        ? (_historyData.length - 1).toDouble()
+                        : 0,
                     minY: _getMinY(),
                     maxY: _getMaxY(),
                     lineBarsData: [
@@ -19079,7 +19248,8 @@ class _HistoryChartState extends State<HistoryChart> {
                         isStrokeCapRound: true,
                         dotData: FlDotData(
                           show: true,
-                          getDotPainter: (spot, percent, barData, index) {
+                          getDotPainter:
+                              (spot, percent, barData, index) {
                             return FlDotCirclePainter(
                               radius: 3.5,
                               color: color,
@@ -19111,29 +19281,36 @@ class _HistoryChartState extends State<HistoryChart> {
                         tooltipPadding: const EdgeInsets.all(12),
                         fitInsideHorizontally: true,
                         fitInsideVertically: true,
-                        maxContentWidth: MediaQuery.of(context).size.width * 0.7,
-                        getTooltipItems: (List<LineBarSpot> touchedSpots) {
-                          return touchedSpots.map((spot) {
+                        maxContentWidth:
+                            MediaQuery.of(context).size.width * 0.7,
+                        getTooltipItems:
+                            (List<LineBarSpot> touchedSpots) {
+                          return touchedSpots
+                              .map((spot) {
                             final index = spot.spotIndex;
-                            if (index < 0 || index >= _historyData.length) {
+                            if (index < 0 ||
+                                index >= _historyData.length) {
                               return null;
                             }
-                            
+
                             final data = _historyData[index];
                             final hour = data.timestamp.hour;
                             final minute = data.timestamp.minute;
-                            final time = '${hour.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')}';
-                            
-                            // Get all values for this time point
+                            final time =
+                                '${hour.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')}';
+
                             final values = {
                               'AQI': '${data.aqi}',
-                              'PM2.5': '${data.pm25.toStringAsFixed(1)} μg/m³',
-                              'PM10': '${data.pm10.toStringAsFixed(1)} μg/m³',
+                              'PM2.5':
+                                  '${data.pm25.toStringAsFixed(1)} μg/m³',
+                              'PM10':
+                                  '${data.pm10.toStringAsFixed(1)} μg/m³',
                               'CO₂': '${data.co2.round()} ppm',
-                              'Suhu': '${data.temperature.toStringAsFixed(1)}°C',
+                              'Suhu':
+                                  '${data.temperature.toStringAsFixed(1)}°C',
                               'Kelembaban': '${data.humidity.round()}%',
                             };
-                            
+
                             return LineTooltipItem(
                               'Waktu: $time\n\n${values.entries.map((e) => '${e.key}: ${e.value}').join('\n')}',
                               const TextStyle(
@@ -19142,7 +19319,10 @@ class _HistoryChartState extends State<HistoryChart> {
                                 fontSize: 12,
                               ),
                             );
-                          }).where((element) => element != null).cast<LineTooltipItem>().toList();
+                          })
+                              .where((element) => element != null)
+                              .cast<LineTooltipItem>()
+                              .toList();
                         },
                       ),
                     ),
@@ -19151,16 +19331,15 @@ class _HistoryChartState extends State<HistoryChart> {
               ),
             ),
           ),
-          
           const SizedBox(height: 8),
         ],
       ),
     );
   }
-  
+
   double _getMinY() {
     if (_historyData.isEmpty) return 0.0;
-    
+
     double minValue = double.infinity;
     for (var data in _historyData) {
       double value;
@@ -19188,13 +19367,13 @@ class _HistoryChartState extends State<HistoryChart> {
       }
       if (value < minValue) minValue = value;
     }
-    
+
     return minValue - (minValue * 0.1);
   }
-  
+
   double _getMaxY() {
     if (_historyData.isEmpty) return 100.0;
-    
+
     double maxValue = double.negativeInfinity;
     for (var data in _historyData) {
       double value;
@@ -19222,10 +19401,10 @@ class _HistoryChartState extends State<HistoryChart> {
       }
       if (value > maxValue) maxValue = value;
     }
-    
+
     return maxValue + (maxValue * 0.1);
   }
-  
+
   Widget _buildParameterSelector() {
     return Container(
       height: 50,
@@ -19237,7 +19416,7 @@ class _HistoryChartState extends State<HistoryChart> {
           final parameter = _parameters[index];
           final isSelected = _selectedParameter == parameter;
           final color = _parameterColors[parameter]!;
-          
+
           return GestureDetector(
             onTap: () {
               setState(() {
@@ -19246,7 +19425,8 @@ class _HistoryChartState extends State<HistoryChart> {
             },
             child: Container(
               margin: const EdgeInsets.only(right: 8),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               decoration: BoxDecoration(
                 color: isSelected ? color : color.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(25),
@@ -19282,7 +19462,7 @@ class _HistoryChartState extends State<HistoryChart> {
       ),
     );
   }
-  
+
   Widget _buildDateSelector() {
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -19304,7 +19484,6 @@ class _HistoryChartState extends State<HistoryChart> {
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-             
               const SizedBox(height: 4),
               Text(
                 DateFormat('EEEE, dd MMMM yyyy').format(_selectedDate),
@@ -19315,32 +19494,39 @@ class _HistoryChartState extends State<HistoryChart> {
               ),
             ],
           ),
-          IconButton(
-            onPressed: () => _selectDate(context),
-            icon: const Icon(Icons.calendar_today),
-            tooltip: 'Pilih tanggal lain',
+          Row(
+            children: [
+              IconButton(
+                onPressed: () => _selectDate(context),
+                icon: const Icon(Icons.calendar_today),
+                tooltip: 'Pilih tanggal lain',
+              ),
+              IconButton(
+                onPressed: _isLoading ? null : _loadHistoryData,
+                icon: const Icon(Icons.refresh),
+                tooltip: 'Refresh data',
+              ),
+            ],
           ),
         ],
       ),
     );
   }
-  
+
   @override
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _buildDateSelector(),
-        
         _buildParameterSelector(),
-        
         if (_isLoading)
           Container(
             height: 350,
             alignment: Alignment.center,
             child: const CircularProgressIndicator(),
           )
-        else if (_error.isNotEmpty)
+        else if (_error.isNotEmpty && _historyData.isEmpty)
           Container(
             height: 350,
             alignment: Alignment.center,
@@ -20116,6 +20302,98 @@ class RoomCard extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+---------------------------------------------------------------------------------------------------------------------------------------
+lib/presentation/widgets/common/server_status_indicator.dart
+
+import 'dart:async';
+import 'package:flutter/material.dart';
+import '../../../core/services/api_service.dart';
+
+/// Indikator titik kecil hijau (online) / merah (offline) /
+/// abu-abu (sedang cek pertama kali).
+///
+/// Auto polling setiap [pollInterval] (default 10 detik).
+class ServerStatusIndicator extends StatefulWidget {
+  final Duration pollInterval;
+  final double size;
+
+  const ServerStatusIndicator({
+    super.key,
+    this.pollInterval = const Duration(seconds: 10),
+    this.size = 10,
+  });
+
+  @override
+  State<ServerStatusIndicator> createState() => _ServerStatusIndicatorState();
+}
+
+class _ServerStatusIndicatorState extends State<ServerStatusIndicator> {
+  final ApiService _api = ApiService();
+  Timer? _timer;
+  bool? _isOnline; // null = belum pernah cek
+  bool _checking = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _check();
+    _timer = Timer.periodic(widget.pollInterval, (_) => _check());
+  }
+
+  Future<void> _check() async {
+    if (_checking) return;
+    _checking = true;
+
+    final online = await _api.checkServerHealth();
+    _checking = false;
+
+    if (!mounted) return;
+    if (_isOnline != online) {
+      setState(() => _isOnline = online);
+    }
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final Color color;
+    if (_isOnline == null) {
+      color = Colors.grey;
+    } else if (_isOnline == true) {
+      color = Colors.green;
+    } else {
+      color = Colors.red;
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 6),
+      child: Center(
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 300),
+          width: widget.size,
+          height: widget.size,
+          decoration: BoxDecoration(
+            color: color,
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: color.withOpacity(0.55),
+                blurRadius: 6,
+                spreadRadius: 1,
+              ),
+            ],
+          ),
         ),
       ),
     );

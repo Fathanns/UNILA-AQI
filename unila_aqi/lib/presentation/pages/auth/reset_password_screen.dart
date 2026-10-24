@@ -66,18 +66,18 @@ void dispose() {
   // ============================================================
   // RESET PASSWORD (VALIDASI KODE + SIMPAN PASSWORD BARU)
   // ============================================================
-  Future<void> _handleResetPassword() async {
-  if (!_formKey.currentState!.validate()) return;
+   Future<void> _handleResetPassword() async {
+    if (!_formKey.currentState!.validate()) return;
 
-  final code = _codeController.text;   // ✅ langsung
-  if (code.length != 6) {
-    Helpers.showSnackBar(
-      context,
-      'Masukkan 6 digit kode dengan lengkap',
-      isError: true,
-    );
-    return;
-  }
+    final code = _codeController.text;
+    if (code.length != 6) {
+      Helpers.showSnackBar(
+        context,
+        'Masukkan 6 digit kode dengan lengkap',
+        isError: true,
+      );
+      return;
+    }
 
     setState(() => _isLoading = true);
 
@@ -103,16 +103,20 @@ void dispose() {
       }
     } catch (e) {
       if (!mounted) return;
-
       setState(() => _isLoading = false);
 
-      final rawMsg = e.toString().replaceFirst('Exception: ', '');
+      // Server mati -> SnackBar khusus, tidak reset password
+      if (Helpers.isNetworkError(e)) {
+        Helpers.showServerError(context);
+        return;
+      }
 
-      // Pesan yang lebih user-friendly
+      final rawMsg = e.toString().replaceFirst('Exception: ', '');
       String message = rawMsg;
       if (rawMsg.toLowerCase().contains('kode') &&
           rawMsg.toLowerCase().contains('salah')) {
-        message = 'Kode verifikasi salah. Periksa kembali kode yang Anda masukkan.';
+        message =
+            'Kode verifikasi salah. Periksa kembali kode yang Anda masukkan.';
       } else if (rawMsg.toLowerCase().contains('kedaluwarsa') ||
           rawMsg.toLowerCase().contains('expired')) {
         message = 'Kode sudah kedaluwarsa. Silakan kirim ulang kode.';
@@ -158,8 +162,12 @@ void dispose() {
       }
     } catch (e) {
       if (!mounted) return;
-
       setState(() => _isLoading = false);
+
+      if (Helpers.isNetworkError(e)) {
+        Helpers.showServerError(context);
+        return;
+      }
 
       final rawMsg = e.toString().replaceFirst('Exception: ', '');
       Helpers.showSnackBar(

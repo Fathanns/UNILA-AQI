@@ -68,6 +68,17 @@ class ApiService {
     }
   }
 
+  /// Health check ringan — return true jika server merespons 200.
+  Future<bool> checkServerHealth() async {
+    try {
+      final response = await _client
+          .get(Uri.parse('$baseUrl/simple-test'))
+          .timeout(const Duration(seconds: 5));
+      return response.statusCode == 200;
+    } catch (_) {
+      return false;
+    }
+  }
   // API Methods
   Future<dynamic> get(String endpoint, {Map<String, String>? queryParams}) async {
     final response = await _request('GET', endpoint, queryParams: queryParams);

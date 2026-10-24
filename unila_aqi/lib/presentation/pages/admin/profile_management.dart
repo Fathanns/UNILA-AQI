@@ -9,6 +9,8 @@ import '../../../data/repositories/building_repository.dart';
 import '../../../data/repositories/room_repository.dart';
 import '../../../data/repositories/iot_device_repository.dart';
 import '../../providers/auth_provider.dart';
+import '../../../core/services/storage_service.dart';
+import '../../widgets/common/server_status_indicator.dart';
 
 class ProfileManagementScreen extends StatefulWidget {
   const ProfileManagementScreen({super.key});
@@ -23,9 +25,12 @@ class _ProfileManagementScreenState extends State<ProfileManagementScreen> {
   final _buildingRepository = BuildingRepository();
   final _roomRepository = RoomRepository();
   final _deviceRepository = IoTDeviceRepository();
+  final StorageService _storage = StorageService();
+  static const String _cacheKey = 'cache_profile';
 
   bool _isLoading = true;
-  String? _error;
+  bool _hasError = false;
+  String _errorForLog = ''; // hanya untuk debugging, TIDAK ditampilkan
 
   String _username = '';
   String _email = '';
@@ -41,7 +46,6 @@ class _ProfileManagementScreenState extends State<ProfileManagementScreen> {
     _loadData();
   }
 
-  /// Helper: ambil panjang list, kalau error kembalikan 0
   Future<int> _safeCount<T>(Future<List<T>> future) async {
     try {
       return (await future).length;
@@ -51,13 +55,40 @@ class _ProfileManagementScreenState extends State<ProfileManagementScreen> {
   }
 
   Future<void> _loadData() async {
+    // 1) Muat cache dulu (jika ada)
+    bool hadCache = false;
+    try {
+      final cached = _storage.getJson(_cacheKey);
+      if (cached != null) {
+        if (mounted) {
+          setState(() {
+            _username = cached['username']?.toString() ?? '';
+            _email = cached['email']?.toString() ?? '';
+            _lastLogin = cached['lastLogin'] != null
+                ? DateTime.tryParse(cached['lastLogin'].toString())
+                : null;
+            _buildingCount =
+                (cached['buildingCount'] as num?)?.toInt() ?? 0;
+            _roomCount = (cached['roomCount'] as num?)?.toInt() ?? 0;
+            _deviceCount =
+                (cached['deviceCount'] as num?)?.toInt() ?? 0;
+            _isLoading = false;
+          });
+          hadCache = _username.isNotEmpty;
+        }
+      }
+    } catch (_) {
+      // cache rusak — abaikan, lanjut fetch server
+    }
+
     setState(() {
-      _isLoading = true;
-      _error = null;
+      _isLoading = !hadCache;
+      _hasError = false;
+      _errorForLog = '';
     });
 
+    // 2) Fetch dari server
     try {
-      // Jalankan profile & hitungan paralel
       final profileFuture = _profileRepository.getProfile();
       final countsFuture = Future.wait<int>([
         _safeCount(_buildingRepository.getBuildings()),
@@ -81,13 +112,40 @@ class _ProfileManagementScreenState extends State<ProfileManagementScreen> {
         _roomCount = counts[1];
         _deviceCount = counts[2];
         _isLoading = false;
+        _hasError = false;
       });
+
+      // Simpan cache
+      try {
+        await _storage.setJson(_cacheKey, {
+          'username': _username,
+          'email': _email,
+          'lastLogin': _lastLogin?.toIso8601String(),
+          'buildingCount': _buildingCount,
+          'roomCount': _roomCount,
+          'deviceCount': _deviceCount,
+        });
+      } catch (_) {}
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = e.toString();
         _isLoading = false;
+        // Tampilkan error state HANYA jika tidak ada cache
+        if (!hadCache) {
+          _hasError = true;
+          _errorForLog = e.toString(); // untuk debug saja
+        }
       });
+
+      if (Helpers.isNetworkError(e)) {
+        Helpers.showServerError(context);
+      } else {
+        Helpers.showSnackBar(
+          context,
+          'Gagal memuat profil',
+          isError: true,
+        );
+      }
     }
   }
 
@@ -96,7 +154,8 @@ class _ProfileManagementScreenState extends State<ProfileManagementScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Logout'),
-        content: const Text('Apakah Anda yakin ingin keluar dari akun ini?'),
+        content: const Text(
+            'Apakah Anda yakin ingin keluar dari akun ini?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -112,7 +171,8 @@ class _ProfileManagementScreenState extends State<ProfileManagementScreen> {
     );
     if (confirmed != true) return;
 
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final authProvider =
+        Provider.of<AuthProvider>(context, listen: false);
     await authProvider.logout();
     if (mounted) {
       Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
@@ -135,7 +195,8 @@ class _ProfileManagementScreenState extends State<ProfileManagementScreen> {
   void _navigateToChangePassword() {
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (context) => const ChangePasswordScreen()),
+      MaterialPageRoute(
+          builder: (context) => const ChangePasswordScreen()),
     );
   }
 
@@ -145,6 +206,7 @@ class _ProfileManagementScreenState extends State<ProfileManagementScreen> {
       appBar: AppBar(
         title: const Text('Profil Admin'),
         actions: [
+          const ServerStatusIndicator(),
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _loadData,
@@ -154,31 +216,49 @@ class _ProfileManagementScreenState extends State<ProfileManagementScreen> {
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : _error != null
+          : _hasError
               ? _buildErrorState()
               : _buildContent(),
     );
   }
 
   Widget _buildErrorState() {
+    // Pesan di sini DIJAMIN ramah — tidak bergantung pada string error.
+    final isNetwork = Helpers.isNetworkError(_errorForLog);
+
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.error_outline, size: 64, color: AppColors.error),
+            const Icon(
+              Icons.cloud_off_rounded,
+              size: 72,
+              color: AppColors.textHint,
+            ),
             const SizedBox(height: 16),
-            Text('Gagal memuat profil',
-                style: Theme.of(context).textTheme.titleLarge),
+            Text(
+              'Tidak dapat memuat profil',
+              style: Theme.of(context).textTheme.titleLarge,
+              textAlign: TextAlign.center,
+            ),
             const SizedBox(height: 8),
-            Text(_error ?? '',
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: AppColors.textSecondary)),
-            const SizedBox(height: 16),
+            Text(
+              isNetwork
+                  ? 'Tidak dapat terhubung ke server.\nPeriksa koneksi internet Anda atau coba beberapa saat lagi.'
+                  : 'Terjadi kesalahan saat memuat data.\nSilakan coba lagi.',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 14,
+                color: AppColors.textSecondary,
+                height: 1.5,
+              ),
+            ),
+            const SizedBox(height: 24),
             ElevatedButton.icon(
               onPressed: _loadData,
-              icon: const Icon(Icons.refresh),
+              icon: const Icon(Icons.refresh, size: 18),
               label: const Text('Coba Lagi'),
             ),
           ],
@@ -235,8 +315,8 @@ class _ProfileManagementScreenState extends State<ProfileManagementScreen> {
             decoration: BoxDecoration(
               color: Colors.white.withOpacity(0.25),
               shape: BoxShape.circle,
-              border:
-                  Border.all(color: Colors.white.withOpacity(0.5), width: 3),
+              border: Border.all(
+                  color: Colors.white.withOpacity(0.5), width: 3),
             ),
             child: const Icon(Icons.admin_panel_settings,
                 size: 48, color: Colors.white),
@@ -253,7 +333,8 @@ class _ProfileManagementScreenState extends State<ProfileManagementScreen> {
           ),
           const SizedBox(height: 6),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            padding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
             decoration: BoxDecoration(
               color: Colors.white.withOpacity(0.25),
               borderRadius: BorderRadius.circular(20),
@@ -274,7 +355,8 @@ class _ProfileManagementScreenState extends State<ProfileManagementScreen> {
             width: double.infinity,
             child: OutlinedButton.icon(
               onPressed: _navigateToEditProfile,
-              icon: const Icon(Icons.edit, size: 18, color: Colors.white),
+              icon: const Icon(Icons.edit,
+                  size: 18, color: Colors.white),
               label: const Text(
                 'EDIT PROFIL',
                 style: TextStyle(
@@ -285,7 +367,8 @@ class _ProfileManagementScreenState extends State<ProfileManagementScreen> {
               ),
               style: OutlinedButton.styleFrom(
                 foregroundColor: Colors.white,
-                side: const BorderSide(color: Colors.white, width: 1.5),
+                side: const BorderSide(
+                    color: Colors.white, width: 1.5),
                 padding: const EdgeInsets.symmetric(vertical: 12),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(8),
@@ -525,7 +608,9 @@ class _ProfileManagementScreenState extends State<ProfileManagementScreen> {
         style: TextStyle(
           fontSize: 15,
           fontWeight: FontWeight.w600,
-          color: isDestructive ? AppColors.error : AppColors.textPrimary,
+          color: isDestructive
+              ? AppColors.error
+              : AppColors.textPrimary,
           fontFamily: 'Inter',
         ),
       ),
@@ -549,7 +634,7 @@ class _ProfileManagementScreenState extends State<ProfileManagementScreen> {
 }
 
 // ============================================================
-// EDIT PROFILE (dengan verifikasi email 6 digit)
+// EDIT PROFILE
 // ============================================================
 class EditProfileScreen extends StatefulWidget {
   final String currentUsername;
@@ -630,12 +715,16 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         'Kode verifikasi telah dikirim ke $email',
       );
     } catch (e) {
-      if (mounted) {
-        Helpers.showSnackBar(
-          context,
-          e.toString().replaceFirst('Exception: ', ''),
-          isError: true,
+      if (!mounted) return;
+
+      if (Helpers.isNetworkError(e)) {
+        Helpers.showServerError(context);
+      } else {
+        final msg = Helpers.extractBackendMessage(
+          e,
+          fallback: 'Gagal mengirim kode verifikasi. Coba lagi.',
         );
+        Helpers.showSnackBar(context, msg, isError: true);
       }
     } finally {
       if (mounted) {
@@ -648,8 +737,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     if (!_formKey.currentState!.validate()) return;
 
     final email = _emailController.text.trim();
-    final emailChanged =
-        email.toLowerCase() != widget.currentEmail.trim().toLowerCase();
+    final emailChanged = email.toLowerCase() !=
+        widget.currentEmail.trim().toLowerCase();
 
     if (emailChanged) {
       final code = _codeController.text.trim();
@@ -670,16 +759,17 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       await _profileRepository.updateProfile(
         username: _usernameController.text.trim(),
         email: email.isEmpty ? null : email,
-        emailChangeCode: emailChanged ? _codeController.text.trim() : null,
+        emailChangeCode:
+            emailChanged ? _codeController.text.trim() : null,
       );
 
-      // Update prefs username agar drawer mengikuti
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('username', _usernameController.text.trim());
+      await prefs.setString(
+          'username', _usernameController.text.trim());
 
-      // Refresh AuthProvider agar drawer langsung update
       if (mounted) {
-        final authProvider = Provider.of<AuthProvider>(context, listen: false);
+        final authProvider =
+            Provider.of<AuthProvider>(context, listen: false);
         await authProvider.initialize();
       }
 
@@ -690,12 +780,16 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         Navigator.pop(context);
       }
     } catch (e) {
-      if (mounted) {
-        Helpers.showSnackBar(
-          context,
-          'Gagal menyimpan profil: ${e.toString().replaceFirst('Exception: ', '')}',
-          isError: true,
+      if (!mounted) return;
+
+      if (Helpers.isNetworkError(e)) {
+        Helpers.showServerError(context);
+      } else {
+        final msg = Helpers.extractBackendMessage(
+          e,
+          fallback: 'Gagal menyimpan profil. Coba lagi.',
         );
+        Helpers.showSnackBar(context, msg, isError: true);
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -727,7 +821,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text('Username*',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
+                  style: TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.w500)),
               const SizedBox(height: 8),
               TextFormField(
                 controller: _usernameController,
@@ -741,7 +836,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               ),
               const SizedBox(height: 16),
               const Text('Email',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
+                  style: TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.w500)),
               const SizedBox(height: 8),
               TextFormField(
                 controller: _emailController,
@@ -761,12 +857,12 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 },
               ),
 
-              // Verifikasi email — muncul hanya jika email berubah
               if (_isEmailChanged) ...[
                 const SizedBox(height: 16),
                 const Text(
                   'Kode Verifikasi Email*',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+                  style: TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.w500),
                 ),
                 const SizedBox(height: 8),
                 Row(
@@ -785,7 +881,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                         ),
                         validator: (value) {
                           if (!_isEmailChanged) return null;
-                          if (value == null || value.trim().length != 6) {
+                          if (value == null ||
+                              value.trim().length != 6) {
                             return 'Masukkan 6 digit kode verifikasi';
                           }
                           return null;
@@ -796,15 +893,18 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     SizedBox(
                       height: 56,
                       child: OutlinedButton(
-                        onPressed: _isSendingCode ? null : _sendEmailCode,
+                        onPressed:
+                            _isSendingCode ? null : _sendEmailCode,
                         child: _isSendingCode
                             ? const SizedBox(
                                 width: 18,
                                 height: 18,
-                                child:
-                                    CircularProgressIndicator(strokeWidth: 2),
+                                child: CircularProgressIndicator(
+                                    strokeWidth: 2),
                               )
-                            : Text(_codeSent ? 'Kirim Ulang' : 'Kirim Kode'),
+                            : Text(_codeSent
+                                ? 'Kirim Ulang'
+                                : 'Kirim Kode'),
                       ),
                     ),
                   ],
@@ -830,8 +930,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                   onPressed: _isLoading ? null : _save,
                   child: const Text(
                     'SIMPAN PERUBAHAN',
-                    style:
-                        TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                    style: TextStyle(
+                        fontSize: 16, fontWeight: FontWeight.w600),
                   ),
                 ),
               ),
@@ -850,7 +950,8 @@ class ChangePasswordScreen extends StatefulWidget {
   const ChangePasswordScreen({super.key});
 
   @override
-  State<ChangePasswordScreen> createState() => _ChangePasswordScreenState();
+  State<ChangePasswordScreen> createState() =>
+      _ChangePasswordScreenState();
 }
 
 class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
@@ -887,9 +988,16 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
         Navigator.pop(context);
       }
     } catch (e) {
-      if (mounted) {
-        Helpers.showSnackBar(context, 'Gagal mengubah password: $e',
-            isError: true);
+      if (!mounted) return;
+
+      if (Helpers.isNetworkError(e)) {
+        Helpers.showServerError(context);
+      } else {
+        final msg = Helpers.extractBackendMessage(
+          e,
+          fallback: 'Gagal mengubah password. Coba lagi.',
+        );
+        Helpers.showSnackBar(context, msg, isError: true);
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -921,7 +1029,8 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text('Password Lama*',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
+                  style: TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.w500)),
               const SizedBox(height: 8),
               TextFormField(
                 controller: _oldController,
@@ -943,7 +1052,8 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
               ),
               const SizedBox(height: 16),
               const Text('Password Baru*',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
+                  style: TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.w500)),
               const SizedBox(height: 8),
               TextFormField(
                 controller: _newController,
@@ -964,7 +1074,8 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
               ),
               const SizedBox(height: 16),
               const Text('Konfirmasi Password Baru*',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
+                  style: TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.w500)),
               const SizedBox(height: 8),
               TextFormField(
                 controller: _confirmController,
@@ -977,11 +1088,12 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                     icon: Icon(_obscureConfirm
                         ? Icons.visibility_off
                         : Icons.visibility),
-                    onPressed: () =>
-                        setState(() => _obscureConfirm = !_obscureConfirm),
+                    onPressed: () => setState(
+                        () => _obscureConfirm = !_obscureConfirm),
                   ),
                 ),
-                validator: (value) => Validators.validateConfirmPassword(
+                validator: (value) =>
+                    Validators.validateConfirmPassword(
                   value,
                   _newController.text,
                 ),
@@ -1025,8 +1137,8 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                   onPressed: _isLoading ? null : _save,
                   child: const Text(
                     'GANTI PASSWORD',
-                    style:
-                        TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                    style: TextStyle(
+                        fontSize: 16, fontWeight: FontWeight.w600),
                   ),
                 ),
               ),
