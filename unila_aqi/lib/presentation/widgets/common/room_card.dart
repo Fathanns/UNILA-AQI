@@ -181,47 +181,61 @@ class RoomCard extends StatelessWidget {
                   ),
 
                   // Last Update
-                  Container(
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF8F9FA),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: const Color(0xFFE9ECEF)),
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.all(10),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const SizedBox(height: 4),
-                          Text(
-                            'UPDATE',
-                            style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.grey[700],
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            crossAxisAlignment: CrossAxisAlignment.baseline,
-                            textBaseline: TextBaseline.alphabetic,
-                            children: [
-                              Text(
-                                Helpers.formatLastUpdate(room.currentData.updatedAt),
-                                style: const TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w700,
-                                  color: Color(0xFF212529),
+                    Container(
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF8F9FA),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xFFE9ECEF)),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.all(10),
+                        child: Builder(
+                          builder: (context) {
+                            final updateInfo =
+                                Helpers.formatCompactLastUpdate(room.currentData.updatedAt);
+                            final label = updateInfo['label'] ?? '';
+                            final time = updateInfo['time'] ?? '';
+
+                            // Jika hari ini, tampilkan label "UPDATE" di atas jam.
+                            // Jika kemarin/tanggal, tampilkan label tanggal di atas jam.
+                            final topLabel = label == 'HARI INI' ? 'UPDATE' : label;
+
+                            return Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const SizedBox(height: 4),
+                                // Label atas (UPDATE / KEMARIN / 17/01)
+                                Text(
+                                  topLabel,
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.grey[700],
+                                    letterSpacing: 0.3,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                 ),
-                              ),
-                              const SizedBox(width: 2),
-                            ],
-                          ),
-                        ],
+                                const SizedBox(height: 4),
+                                // Jam
+                                Text(
+                                  time,
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w700,
+                                    color: Color(0xFF212529),
+                                  ),
+                                  textAlign: TextAlign.center,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
+                            );
+                          },
+                        ),
                       ),
                     ),
-                  ),
                 ],
               ),
 

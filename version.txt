@@ -9456,6 +9456,112 @@ class ApiService {
 }
 
 ---------------------------------------------------------------------------------------------------------------------------------------
+lib\core\services\auth_service.dart
+
+import 'package:shared_preferences/shared_preferences.dart';
+import 'api_service.dart';
+
+class AuthService {
+  static final AuthService _instance = AuthService._internal();
+  factory AuthService() => _instance;
+  AuthService._internal();
+
+  final ApiService _apiService = ApiService();
+
+  // Check if admin is already registered
+  Future<bool> isAdminRegistered() async {
+    try {
+      final response = await _apiService.checkAdminRegistered();
+      return response['isRegistered'] ?? false;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // Admin login
+  Future<Map<String, dynamic>> loginAdmin(String username, String password) async {
+    try {
+      final response = await _apiService.adminLogin(username, password);
+      
+      if (response['success'] == true) {
+        await _saveAuthData(response);
+      }
+      
+      return response;
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  // Save authentication data
+  Future<void> _saveAuthData(Map<String, dynamic> response) async {
+    final prefs = await SharedPreferences.getInstance();
+    
+    await prefs.setString('auth_token', response['token']);
+    await prefs.setString('user_id', response['user']['id']);
+    await prefs.setString('username', response['user']['username']);
+    await prefs.setString('role', response['user']['role']);
+    await prefs.setBool('is_logged_in', true);
+  }
+
+  // Check if user is logged in
+  Future<bool> isLoggedIn() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool('is_logged_in') ?? false;
+  }
+
+  // Get current user
+  Future<Map<String, dynamic>> getCurrentUser() async {
+    final prefs = await SharedPreferences.getInstance();
+    
+    return {
+      'id': prefs.getString('user_id'),
+      'username': prefs.getString('username'),
+      'role': prefs.getString('role'),
+    };
+  }
+
+  // Get auth token
+  Future<String?> getToken() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString('auth_token');
+  }
+
+  // Logout
+  Future<void> logout() async {
+    final prefs = await SharedPreferences.getInstance();
+    
+    await prefs.remove('auth_token');
+    await prefs.remove('user_id');
+    await prefs.remove('username');
+    await prefs.remove('role');
+    await prefs.setBool('is_logged_in', false);
+  }
+
+  // Change password
+  Future<Map<String, dynamic>> changePassword(
+    String oldPassword,
+    String newPassword,
+  ) async {
+    try {
+      final token = await getToken();
+      if (token == null) {
+        throw Exception('Not authenticated');
+      }
+
+      // This would call your backend API
+      // For now, return a mock response
+      return {
+        'success': true,
+        'message': 'Password changed successfully',
+      };
+    } catch (e) {
+      rethrow;
+    }
+  }
+}
+
+---------------------------------------------------------------------------------------------------------------------------------------
 lib/core/services/server_status_service.dart
 
 import 'package:flutter/foundation.dart';
@@ -10912,6 +11018,39 @@ class Helpers {
   static String colorToHex(Color color) {
     return '#${color.value.toRadixString(16).padLeft(8, '0').substring(2)}';
   }
+
+  /// Format untuk widget compact (room card).
+/// Mengembalikan Map berisi label (hari) dan time (jam).
+/// - Hari ini        : { label: 'HARI INI', time: '14:30' }
+/// - Kemarin         : { label: 'KEMARIN',  time: '14:30' }
+/// - Lebih lama      : { label: '17/01',    time: '14:30' }
+static Map<String, String> formatCompactLastUpdate(DateTime dateTime) {
+  final localTime = dateTime.toLocal();
+  final now = DateTime.now().toLocal();
+
+  final timeStr = _formatLocalTime(localTime);
+
+  // Hari ini
+  if (localTime.year == now.year &&
+      localTime.month == now.month &&
+      localTime.day == now.day) {
+    return {'label': 'HARI INI', 'time': timeStr};
+  }
+
+  // Kemarin
+  final yesterday = DateTime(now.year, now.month, now.day - 1);
+  if (localTime.year == yesterday.year &&
+      localTime.month == yesterday.month &&
+      localTime.day == yesterday.day) {
+    return {'label': 'KEMARIN', 'time': timeStr};
+  }
+
+  // Lebih lama: tanggal + jam
+  return {
+    'label': DateFormat('dd/MM').format(localTime),
+    'time': timeStr,
+  };
+}
 
   static List<String> getDetailedRecommendations(Room room) {
     final recommendations = <String>[];
@@ -20563,6 +20702,7 @@ class AppDrawer extends StatelessWidget {
 ---------------------------------------------------------------------------------------------------------------------------------------
 lib/presentation/widgets/common/room_card.dart:
 
+
 import 'package:flutter/material.dart';
 import '../../../data/models/room.dart';
 import '../../../core/utils/helpers.dart';
@@ -20746,47 +20886,61 @@ class RoomCard extends StatelessWidget {
                   ),
 
                   // Last Update
-                  Container(
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF8F9FA),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: const Color(0xFFE9ECEF)),
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.all(10),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const SizedBox(height: 4),
-                          Text(
-                            'UPDATE',
-                            style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.grey[700],
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            crossAxisAlignment: CrossAxisAlignment.baseline,
-                            textBaseline: TextBaseline.alphabetic,
-                            children: [
-                              Text(
-                                Helpers.formatLastUpdate(room.currentData.updatedAt),
-                                style: const TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w700,
-                                  color: Color(0xFF212529),
+                    Container(
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF8F9FA),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xFFE9ECEF)),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.all(10),
+                        child: Builder(
+                          builder: (context) {
+                            final updateInfo =
+                                Helpers.formatCompactLastUpdate(room.currentData.updatedAt);
+                            final label = updateInfo['label'] ?? '';
+                            final time = updateInfo['time'] ?? '';
+
+                            // Jika hari ini, tampilkan label "UPDATE" di atas jam.
+                            // Jika kemarin/tanggal, tampilkan label tanggal di atas jam.
+                            final topLabel = label == 'HARI INI' ? 'UPDATE' : label;
+
+                            return Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const SizedBox(height: 4),
+                                // Label atas (UPDATE / KEMARIN / 17/01)
+                                Text(
+                                  topLabel,
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.grey[700],
+                                    letterSpacing: 0.3,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                 ),
-                              ),
-                              const SizedBox(width: 2),
-                            ],
-                          ),
-                        ],
+                                const SizedBox(height: 4),
+                                // Jam
+                                Text(
+                                  time,
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w700,
+                                    color: Color(0xFF212529),
+                                  ),
+                                  textAlign: TextAlign.center,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
+                            );
+                          },
+                        ),
                       ),
                     ),
-                  ),
                 ],
               ),
 
@@ -20944,112 +21098,6 @@ class RoomCard extends StatelessWidget {
         ),
       ),
     );
-  }
-}
-
----------------------------------------------------------------------------------------------------------------------------------------
-lib\core\services\auth_service.dart
-
-import 'package:shared_preferences/shared_preferences.dart';
-import 'api_service.dart';
-
-class AuthService {
-  static final AuthService _instance = AuthService._internal();
-  factory AuthService() => _instance;
-  AuthService._internal();
-
-  final ApiService _apiService = ApiService();
-
-  // Check if admin is already registered
-  Future<bool> isAdminRegistered() async {
-    try {
-      final response = await _apiService.checkAdminRegistered();
-      return response['isRegistered'] ?? false;
-    } catch (e) {
-      return false;
-    }
-  }
-
-  // Admin login
-  Future<Map<String, dynamic>> loginAdmin(String username, String password) async {
-    try {
-      final response = await _apiService.adminLogin(username, password);
-      
-      if (response['success'] == true) {
-        await _saveAuthData(response);
-      }
-      
-      return response;
-    } catch (e) {
-      rethrow;
-    }
-  }
-
-  // Save authentication data
-  Future<void> _saveAuthData(Map<String, dynamic> response) async {
-    final prefs = await SharedPreferences.getInstance();
-    
-    await prefs.setString('auth_token', response['token']);
-    await prefs.setString('user_id', response['user']['id']);
-    await prefs.setString('username', response['user']['username']);
-    await prefs.setString('role', response['user']['role']);
-    await prefs.setBool('is_logged_in', true);
-  }
-
-  // Check if user is logged in
-  Future<bool> isLoggedIn() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getBool('is_logged_in') ?? false;
-  }
-
-  // Get current user
-  Future<Map<String, dynamic>> getCurrentUser() async {
-    final prefs = await SharedPreferences.getInstance();
-    
-    return {
-      'id': prefs.getString('user_id'),
-      'username': prefs.getString('username'),
-      'role': prefs.getString('role'),
-    };
-  }
-
-  // Get auth token
-  Future<String?> getToken() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString('auth_token');
-  }
-
-  // Logout
-  Future<void> logout() async {
-    final prefs = await SharedPreferences.getInstance();
-    
-    await prefs.remove('auth_token');
-    await prefs.remove('user_id');
-    await prefs.remove('username');
-    await prefs.remove('role');
-    await prefs.setBool('is_logged_in', false);
-  }
-
-  // Change password
-  Future<Map<String, dynamic>> changePassword(
-    String oldPassword,
-    String newPassword,
-  ) async {
-    try {
-      final token = await getToken();
-      if (token == null) {
-        throw Exception('Not authenticated');
-      }
-
-      // This would call your backend API
-      // For now, return a mock response
-      return {
-        'success': true,
-        'message': 'Password changed successfully',
-      };
-    } catch (e) {
-      rethrow;
-    }
   }
 }
 

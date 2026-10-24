@@ -426,6 +426,39 @@ class Helpers {
     return '#${color.value.toRadixString(16).padLeft(8, '0').substring(2)}';
   }
 
+  /// Format untuk widget compact (room card).
+/// Mengembalikan Map berisi label (hari) dan time (jam).
+/// - Hari ini        : { label: 'HARI INI', time: '14:30' }
+/// - Kemarin         : { label: 'KEMARIN',  time: '14:30' }
+/// - Lebih lama      : { label: '17/01',    time: '14:30' }
+static Map<String, String> formatCompactLastUpdate(DateTime dateTime) {
+  final localTime = dateTime.toLocal();
+  final now = DateTime.now().toLocal();
+
+  final timeStr = _formatLocalTime(localTime);
+
+  // Hari ini
+  if (localTime.year == now.year &&
+      localTime.month == now.month &&
+      localTime.day == now.day) {
+    return {'label': 'HARI INI', 'time': timeStr};
+  }
+
+  // Kemarin
+  final yesterday = DateTime(now.year, now.month, now.day - 1);
+  if (localTime.year == yesterday.year &&
+      localTime.month == yesterday.month &&
+      localTime.day == yesterday.day) {
+    return {'label': 'KEMARIN', 'time': timeStr};
+  }
+
+  // Lebih lama: tanggal + jam
+  return {
+    'label': DateFormat('dd/MM').format(localTime),
+    'time': timeStr,
+  };
+}
+
   static List<String> getDetailedRecommendations(Room room) {
     final recommendations = <String>[];
     final data = room.currentData;
