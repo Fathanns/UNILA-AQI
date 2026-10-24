@@ -229,7 +229,7 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
       buildingId: room.building._id ? room.building._id.toString() : room.building.toString(),
       buildingName: room.buildingName,
       dataSource: room.dataSource,
-      iotDeviceId: room.iotDeviceId
+      iotDeviceId: room.iotDeviceId || null
     };
 
     console.log(`🔄 Room update request for: ${room.name}`);
@@ -297,6 +297,13 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
     if (name) {
       room.name = name.trim();
     }
+
+    // ============================================================
+    // FIXED: deteksi perubahan data source / device SEBELUM diubah
+    // ============================================================
+    const prevDataSource = oldData.dataSource;
+    const prevIotDeviceId = oldData.iotDeviceId || null;
+
     if (dataSource !== undefined) {
       room.dataSource = dataSource;
       room.iotDeviceId = dataSource === 'iot' ? iotDeviceId : null;
@@ -305,6 +312,27 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
       room.iotDeviceId = iotDeviceId;
     }
     room.updatedAt = new Date();
+
+    const deviceChanged =
+      (prevDataSource !== room.dataSource) ||
+      (prevIotDeviceId !== (room.iotDeviceId || null));
+
+    // FIXED: reset data partikel supaya UI tidak menampilkan angka device LAMA
+    // saat admin mengganti device. Data baru akan diisi oleh force-fetch di bawah.
+    if (deviceChanged) {
+      room.currentAQI = 0;
+      room.currentData = {
+        pm25: 0,
+        pm10: 0,
+        co2: 0,
+        temperature: 0,
+        humidity: 0,
+        updatedAt: new Date()
+      };
+      console.log(
+        `🔄 Room "${room.name}" device changed (${prevIotDeviceId} → ${room.iotDeviceId}). Data partikel direset.`
+      );
+    }
 
     if (!buildingChanged) {
       const currentBuilding = await Building.findById(room.building);
@@ -315,11 +343,57 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
 
     await room.save();
 
+    // ============================================================
+    // FIXED: jika device berubah & sekarang mode IoT → force-fetch data
+    // fresh dari device baru SEKARANG juga, sebelum response dikirim.
+    // ============================================================
+    let deviceFetchStatus = null;
+
+    if (deviceChanged && room.dataSource === 'iot' && room.iotDeviceId) {
+      try {
+        const iotService = require('../services/iotService');
+        const fetchResult = await iotService.forceUpdateRoom(
+          room._id.toString()
+        );
+
+        if (fetchResult.success) {
+          deviceFetchStatus = 'success';
+
+          // Re-fetch dari DB supaya object `room` di memori ikut terbarui
+          const refreshed = await Room.findById(room._id)
+            .populate('building', 'name');
+
+          if (refreshed) {
+            room.currentAQI = refreshed.currentAQI;
+            room.currentData = refreshed.currentData;
+            room.updatedAt = refreshed.updatedAt;
+          }
+
+          console.log(
+            `✅ Device baru langsung fetch: AQI ${room.currentAQI}`
+          );
+        } else {
+          deviceFetchStatus = 'failed';
+          console.warn(
+            `⚠️  Force-fetch device baru gagal: ${fetchResult.message}. Data akan diupdate pada poll berikutnya.`
+          );
+        }
+      } catch (iotError) {
+        deviceFetchStatus = 'error';
+        console.error(
+          '⚠️  Error force-fetch device baru:',
+          iotError.message
+        );
+      }
+    }
+
     if (buildingChanged) {
       if (oldBuildingId) {
         const oldBuilding = await Building.findById(oldBuildingId);
         if (oldBuilding) {
-          oldBuilding.roomCount = await Room.countDocuments({ building: oldBuildingId });
+          oldBuilding.roomCount = await Room.countDocuments({
+            building: oldBuildingId
+          });
           await oldBuilding.save();
 
           if (io) {
@@ -335,7 +409,9 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
       }
 
       if (newBuilding) {
-        newBuilding.roomCount = await Room.countDocuments({ building: buildingId });
+        newBuilding.roomCount = await Room.countDocuments({
+          building: buildingId
+        });
         await newBuilding.save();
 
         if (io) {
@@ -351,7 +427,9 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
     } else {
       const currentBuilding = await Building.findById(room.building);
       if (currentBuilding) {
-        currentBuilding.roomCount = await Room.countDocuments({ building: room.building });
+        currentBuilding.roomCount = await Room.countDocuments({
+          building: room.building
+        });
         await currentBuilding.save();
       }
     }
@@ -370,15 +448,35 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
       }
     }
 
+    // FIXED: tambah deviceChanged & deviceFetchStatus ke response `changes`
     const changes = {
       nameChanged: name && name !== oldData.name,
       buildingChanged: buildingChanged,
-      dataSourceChanged: dataSource && dataSource !== oldData.dataSource
+      dataSourceChanged: dataSource && dataSource !== oldData.dataSource,
+      deviceChanged: deviceChanged,
+      deviceFetchStatus: deviceFetchStatus
     };
+
+    // FIXED: pesan response menyesuaikan status force-fetch
+    let responseMessage = 'Room updated successfully';
+    if (deviceChanged && room.dataSource === 'iot') {
+      if (deviceFetchStatus === 'success') {
+        responseMessage =
+          'Room updated & data partikel device baru berhasil dimuat.';
+      } else if (
+        deviceFetchStatus === 'failed' ||
+        deviceFetchStatus === 'error'
+      ) {
+        responseMessage =
+          'Room updated. Data partikel akan dimuat pada poll berikutnya karena device baru tidak merespons.';
+      } else {
+        responseMessage = 'Room updated.';
+      }
+    }
 
     res.json({
       success: true,
-      message: 'Room updated successfully',
+      message: responseMessage,
       data: room,
       changes: changes
     });

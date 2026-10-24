@@ -201,6 +201,116 @@ class IoTService {
     }
   }
 
+  async updateRoomFromIoTForce(room, iotData, deviceName) {
+  try {
+    const aqiInfo = getAQICategory(iotData.aqi);
+
+    room.currentAQI = iotData.aqi;
+    room.currentData = {
+      pm25: iotData.pm25,
+      pm10: iotData.pm10,
+      co2: iotData.co2,
+      temperature: iotData.temperature,
+      humidity: iotData.humidity,
+      updatedAt: new Date()
+    };
+    room.updatedAt = new Date();
+
+    await room.save();
+
+    const historicalData = new SensorData({
+      roomId: room._id,
+      roomName: room.name,
+      buildingName: room.buildingName,
+      ...iotData,
+      category: aqiInfo.category,
+      timestamp: new Date()
+    });
+    await historicalData.save();
+
+    this.broadcastRoomUpdate(room, iotData, 'iot', deviceName);
+
+    console.log(`✅ FORCE-updated IoT room ${room.name}: AQI ${iotData.aqi}`);
+  } catch (error) {
+    console.error(`❌ Error force-updating room ${room.name}:`, error.message);
+  }
+}
+
+async forceUpdateRoom(roomId) {
+  try {
+    const room = await Room.findById(roomId);
+    if (!room) return { success: false, message: 'Room not found' };
+
+    if (room.dataSource !== 'iot' || !room.iotDeviceId) {
+      return { success: false, message: 'Room is not configured for IoT' };
+    }
+
+    const device = await IoTDevice.findById(room.iotDeviceId);
+    if (!device) return { success: false, message: 'IoT device not found' };
+
+    const response = await axios.get(device.apiEndpoint, { timeout: 5000 });
+
+    if (response.data?.success !== true) {
+      return { success: false, message: 'Device did not return success' };
+    }
+
+    const iotData = response.data.data;
+    if (!this.isValidIoTData(iotData)) {
+      return { success: false, message: 'Invalid IoT data structure' };
+    }
+
+    // Update device metadata
+    device.status = 'online';
+    device.lastUpdate = new Date();
+    await device.save();
+
+    // Sinkronkan cache supaya polling reguler berikutnya tidak
+    // broadcast data yang sama sekali lagi.
+    this.deviceLastData.set(device._id.toString(), iotData);
+
+    // FORCE update room (abaikan threshold)
+    await this.updateRoomFromIoTForce(room, iotData, device.name);
+
+    return { success: true, data: iotData, deviceName: device.name };
+  } catch (error) {
+    console.error(`❌ forceUpdateRoom(${roomId}) error:`, error.message);
+    return { success: false, error: error.message };
+  }
+}
+
+async pollDeviceForce(device) {
+  try {
+    const response = await axios.get(device.apiEndpoint, { timeout: 5000 });
+
+    if (response.data?.success !== true) {
+      return { success: false, message: 'Device did not return success' };
+    }
+
+    const iotData = response.data.data;
+    if (!this.isValidIoTData(iotData)) {
+      return { success: false, message: 'Invalid IoT data' };
+    }
+
+    // Update cache agar polling berikutnya tahu baseline terbaru
+    this.deviceLastData.set(device._id.toString(), iotData);
+
+    device.status = 'online';
+    device.lastUpdate = new Date();
+    await device.save();
+
+    const rooms = await Room.find({ iotDeviceId: device._id.toString() });
+    for (const room of rooms) {
+      await this.updateRoomFromIoTForce(room, iotData, device.name);
+    }
+
+    return { success: true, changed: true };
+  } catch (error) {
+    device.status = 'offline';
+    await device.save().catch(() => {});
+    return { success: false, error: error.message };
+  }
+}
+
   broadcastRoomUpdate(room, data, source, deviceName = null) {
     if (this.io) {
       const updateData = {
@@ -230,10 +340,33 @@ class IoTService {
   }
 
   async forcePollAll() {
-    console.log('🔄 Force polling all IoT devices...');
-    await this.pollAllIoTDevices();
-    return { success: true, message: 'Force poll completed' };
+  console.log('🔄 FORCE polling all IoT devices...');
+  try {
+    const devices = await IoTDevice.find({});
+    if (devices.length === 0) {
+      return { success: true, message: 'No IoT devices to poll', count: 0 };
+    }
+
+    const results = await Promise.allSettled(
+      devices.map(d => this.pollDeviceForce(d).catch(e => null))
+    );
+
+    const successCount = results.filter(
+      r => r.status === 'fulfilled' && r.value?.success
+    ).length;
+
+    console.log(`✅ FORCE poll completed: ${successCount}/${devices.length}`);
+    return {
+      success: true,
+      message: 'Force poll completed',
+      polled: devices.length,
+      successful: successCount
+    };
+  } catch (error) {
+    console.error('❌ forcePollAll error:', error.message);
+    return { success: false, error: error.message };
   }
+}
 
   getStatus() {
     return {

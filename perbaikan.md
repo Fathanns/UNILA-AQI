@@ -21,6 +21,7 @@ tambahan feature:
 
 *STATUS AKTIF RUANGAN DAN ALAT IOT*
 
+
 ~~perjelas mengenasi sebenarnya status aktif dan tidak aktif itu buat apa, dan yang menandakan status aktif atau tidak aktif nya itu kan alat iot, bukan ruangan nya, jadi dibuat terintegrasi:~~
 - ~~ketika ruangan dinonaktifkan maka akan menampilkan ruangan itu nonaktif~~
 - ~~tapi ketika yang dinonaktifkan adalah alatnya, maka seluruh ruangan yang memakai alat itu maupun di halaman kelola ruangan dan dashboard ya menjadi nonaktif dan tidak bisa di aktifkan~~
@@ -95,18 +96,18 @@ tambahan feature:
 
 - perlengkap ambang batas tiap partikel, perbaiki jadi lebih bagus
 - perbaiki ambang batas simuasi pada siang dan malam
-- tambah halaman yang dapat mengetahui aktif atau tidak nya server atau alat iot yang ada
-- hilangkan drawer di kanan atas pada dashboard
+- ~~tambah halaman yang dapat mengetahui aktif atau tidak nya server atau alat iot yang ada~~
+- ~~hilangkan drawer di kanan atas pada dashboard~~
 
 *REFRESH*
 
-- perbaiki ketika device pada ruangan diganti, ketika klik tombol refresh tidak langsung mengganti data, harus tunggu 30 detik dulu
-- katana refresh pada room detil tidak bekerja
+- ~~perbaiki ketika device pada ruangan diganti, ketika klik tombol refresh tidak langsung mengganti data, harus tunggu 30 detik dulu~~
+- ~~katana refresh pada room detil tidak bekerja~~
 
 *SORTING*
 
 - perbaiki sorting alphabet pada dashbaord
 
-*DASHBOARD*
+~~*DASHBOARD*~~
 
-- over margin keterangan terakhir update
+- ~~over margin keterangan terakhir update~~

@@ -1820,7 +1820,7 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
       buildingId: room.building._id ? room.building._id.toString() : room.building.toString(),
       buildingName: room.buildingName,
       dataSource: room.dataSource,
-      iotDeviceId: room.iotDeviceId
+      iotDeviceId: room.iotDeviceId || null
     };
 
     console.log(`🔄 Room update request for: ${room.name}`);
@@ -1888,6 +1888,13 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
     if (name) {
       room.name = name.trim();
     }
+
+    // ============================================================
+    // FIXED: deteksi perubahan data source / device SEBELUM diubah
+    // ============================================================
+    const prevDataSource = oldData.dataSource;
+    const prevIotDeviceId = oldData.iotDeviceId || null;
+
     if (dataSource !== undefined) {
       room.dataSource = dataSource;
       room.iotDeviceId = dataSource === 'iot' ? iotDeviceId : null;
@@ -1896,6 +1903,27 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
       room.iotDeviceId = iotDeviceId;
     }
     room.updatedAt = new Date();
+
+    const deviceChanged =
+      (prevDataSource !== room.dataSource) ||
+      (prevIotDeviceId !== (room.iotDeviceId || null));
+
+    // FIXED: reset data partikel supaya UI tidak menampilkan angka device LAMA
+    // saat admin mengganti device. Data baru akan diisi oleh force-fetch di bawah.
+    if (deviceChanged) {
+      room.currentAQI = 0;
+      room.currentData = {
+        pm25: 0,
+        pm10: 0,
+        co2: 0,
+        temperature: 0,
+        humidity: 0,
+        updatedAt: new Date()
+      };
+      console.log(
+        `🔄 Room "${room.name}" device changed (${prevIotDeviceId} → ${room.iotDeviceId}). Data partikel direset.`
+      );
+    }
 
     if (!buildingChanged) {
       const currentBuilding = await Building.findById(room.building);
@@ -1906,11 +1934,57 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
 
     await room.save();
 
+    // ============================================================
+    // FIXED: jika device berubah & sekarang mode IoT → force-fetch data
+    // fresh dari device baru SEKARANG juga, sebelum response dikirim.
+    // ============================================================
+    let deviceFetchStatus = null;
+
+    if (deviceChanged && room.dataSource === 'iot' && room.iotDeviceId) {
+      try {
+        const iotService = require('../services/iotService');
+        const fetchResult = await iotService.forceUpdateRoom(
+          room._id.toString()
+        );
+
+        if (fetchResult.success) {
+          deviceFetchStatus = 'success';
+
+          // Re-fetch dari DB supaya object `room` di memori ikut terbarui
+          const refreshed = await Room.findById(room._id)
+            .populate('building', 'name');
+
+          if (refreshed) {
+            room.currentAQI = refreshed.currentAQI;
+            room.currentData = refreshed.currentData;
+            room.updatedAt = refreshed.updatedAt;
+          }
+
+          console.log(
+            `✅ Device baru langsung fetch: AQI ${room.currentAQI}`
+          );
+        } else {
+          deviceFetchStatus = 'failed';
+          console.warn(
+            `⚠️  Force-fetch device baru gagal: ${fetchResult.message}. Data akan diupdate pada poll berikutnya.`
+          );
+        }
+      } catch (iotError) {
+        deviceFetchStatus = 'error';
+        console.error(
+          '⚠️  Error force-fetch device baru:',
+          iotError.message
+        );
+      }
+    }
+
     if (buildingChanged) {
       if (oldBuildingId) {
         const oldBuilding = await Building.findById(oldBuildingId);
         if (oldBuilding) {
-          oldBuilding.roomCount = await Room.countDocuments({ building: oldBuildingId });
+          oldBuilding.roomCount = await Room.countDocuments({
+            building: oldBuildingId
+          });
           await oldBuilding.save();
 
           if (io) {
@@ -1926,7 +2000,9 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
       }
 
       if (newBuilding) {
-        newBuilding.roomCount = await Room.countDocuments({ building: buildingId });
+        newBuilding.roomCount = await Room.countDocuments({
+          building: buildingId
+        });
         await newBuilding.save();
 
         if (io) {
@@ -1942,7 +2018,9 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
     } else {
       const currentBuilding = await Building.findById(room.building);
       if (currentBuilding) {
-        currentBuilding.roomCount = await Room.countDocuments({ building: room.building });
+        currentBuilding.roomCount = await Room.countDocuments({
+          building: room.building
+        });
         await currentBuilding.save();
       }
     }
@@ -1961,15 +2039,35 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
       }
     }
 
+    // FIXED: tambah deviceChanged & deviceFetchStatus ke response `changes`
     const changes = {
       nameChanged: name && name !== oldData.name,
       buildingChanged: buildingChanged,
-      dataSourceChanged: dataSource && dataSource !== oldData.dataSource
+      dataSourceChanged: dataSource && dataSource !== oldData.dataSource,
+      deviceChanged: deviceChanged,
+      deviceFetchStatus: deviceFetchStatus
     };
+
+    // FIXED: pesan response menyesuaikan status force-fetch
+    let responseMessage = 'Room updated successfully';
+    if (deviceChanged && room.dataSource === 'iot') {
+      if (deviceFetchStatus === 'success') {
+        responseMessage =
+          'Room updated & data partikel device baru berhasil dimuat.';
+      } else if (
+        deviceFetchStatus === 'failed' ||
+        deviceFetchStatus === 'error'
+      ) {
+        responseMessage =
+          'Room updated. Data partikel akan dimuat pada poll berikutnya karena device baru tidak merespons.';
+      } else {
+        responseMessage = 'Room updated.';
+      }
+    }
 
     res.json({
       success: true,
-      message: 'Room updated successfully',
+      message: responseMessage,
       data: room,
       changes: changes
     });
@@ -2136,44 +2234,6 @@ router.post('/:id/sync-building', authMiddleware, adminMiddleware, async (req, r
       success: false,
       message: 'Error syncing building name',
       error: error.message
-    });
-  }
-});
-
-module.exports = router;
-
----------------------------------------------------------------------------------------------------------------------------------------
-src/routes/seedRoute.js:
-
-const express = require('express');
-const router = express.Router();
-const { seedSampleData, clearSampleData } = require('../utils/seedData');
-const { authMiddleware, adminMiddleware } = require('../middleware/authMiddleware');
-
-// Seed sample data (admin only)
-router.post('/seed', authMiddleware, adminMiddleware, async (req, res) => {
-  try {
-    const result = await seedSampleData();
-    res.json(result);
-  } catch (error) {
-    res.status(500).json({ 
-      success: false, 
-      message: 'Error seeding data',
-      error: error.message 
-    });
-  }
-});
-
-// Clear sample data (admin only)
-router.post('/clear', authMiddleware, adminMiddleware, async (req, res) => {
-  try {
-    const result = await clearSampleData();
-    res.json(result);
-  } catch (error) {
-    res.status(500).json({ 
-      success: false, 
-      message: 'Error clearing data',
-      error: error.message 
     });
   }
 });
@@ -2504,7 +2564,7 @@ router.get('/rooms', async (req, res) => {
 module.exports = router;
 
 ---------------------------------------------------------------------------------------------------------------------------------------
-iotService.js
+src/services/iotService.js
 
 const axios = require('axios');
 const cron = require('node-cron');
@@ -2709,6 +2769,116 @@ class IoTService {
     }
   }
 
+  async updateRoomFromIoTForce(room, iotData, deviceName) {
+  try {
+    const aqiInfo = getAQICategory(iotData.aqi);
+
+    room.currentAQI = iotData.aqi;
+    room.currentData = {
+      pm25: iotData.pm25,
+      pm10: iotData.pm10,
+      co2: iotData.co2,
+      temperature: iotData.temperature,
+      humidity: iotData.humidity,
+      updatedAt: new Date()
+    };
+    room.updatedAt = new Date();
+
+    await room.save();
+
+    const historicalData = new SensorData({
+      roomId: room._id,
+      roomName: room.name,
+      buildingName: room.buildingName,
+      ...iotData,
+      category: aqiInfo.category,
+      timestamp: new Date()
+    });
+    await historicalData.save();
+
+    this.broadcastRoomUpdate(room, iotData, 'iot', deviceName);
+
+    console.log(`✅ FORCE-updated IoT room ${room.name}: AQI ${iotData.aqi}`);
+  } catch (error) {
+    console.error(`❌ Error force-updating room ${room.name}:`, error.message);
+  }
+}
+
+async forceUpdateRoom(roomId) {
+  try {
+    const room = await Room.findById(roomId);
+    if (!room) return { success: false, message: 'Room not found' };
+
+    if (room.dataSource !== 'iot' || !room.iotDeviceId) {
+      return { success: false, message: 'Room is not configured for IoT' };
+    }
+
+    const device = await IoTDevice.findById(room.iotDeviceId);
+    if (!device) return { success: false, message: 'IoT device not found' };
+
+    const response = await axios.get(device.apiEndpoint, { timeout: 5000 });
+
+    if (response.data?.success !== true) {
+      return { success: false, message: 'Device did not return success' };
+    }
+
+    const iotData = response.data.data;
+    if (!this.isValidIoTData(iotData)) {
+      return { success: false, message: 'Invalid IoT data structure' };
+    }
+
+    // Update device metadata
+    device.status = 'online';
+    device.lastUpdate = new Date();
+    await device.save();
+
+    // Sinkronkan cache supaya polling reguler berikutnya tidak
+    // broadcast data yang sama sekali lagi.
+    this.deviceLastData.set(device._id.toString(), iotData);
+
+    // FORCE update room (abaikan threshold)
+    await this.updateRoomFromIoTForce(room, iotData, device.name);
+
+    return { success: true, data: iotData, deviceName: device.name };
+  } catch (error) {
+    console.error(`❌ forceUpdateRoom(${roomId}) error:`, error.message);
+    return { success: false, error: error.message };
+  }
+}
+
+async pollDeviceForce(device) {
+  try {
+    const response = await axios.get(device.apiEndpoint, { timeout: 5000 });
+
+    if (response.data?.success !== true) {
+      return { success: false, message: 'Device did not return success' };
+    }
+
+    const iotData = response.data.data;
+    if (!this.isValidIoTData(iotData)) {
+      return { success: false, message: 'Invalid IoT data' };
+    }
+
+    // Update cache agar polling berikutnya tahu baseline terbaru
+    this.deviceLastData.set(device._id.toString(), iotData);
+
+    device.status = 'online';
+    device.lastUpdate = new Date();
+    await device.save();
+
+    const rooms = await Room.find({ iotDeviceId: device._id.toString() });
+    for (const room of rooms) {
+      await this.updateRoomFromIoTForce(room, iotData, device.name);
+    }
+
+    return { success: true, changed: true };
+  } catch (error) {
+    device.status = 'offline';
+    await device.save().catch(() => {});
+    return { success: false, error: error.message };
+  }
+}
+
   broadcastRoomUpdate(room, data, source, deviceName = null) {
     if (this.io) {
       const updateData = {
@@ -2738,10 +2908,33 @@ class IoTService {
   }
 
   async forcePollAll() {
-    console.log('🔄 Force polling all IoT devices...');
-    await this.pollAllIoTDevices();
-    return { success: true, message: 'Force poll completed' };
+  console.log('🔄 FORCE polling all IoT devices...');
+  try {
+    const devices = await IoTDevice.find({});
+    if (devices.length === 0) {
+      return { success: true, message: 'No IoT devices to poll', count: 0 };
+    }
+
+    const results = await Promise.allSettled(
+      devices.map(d => this.pollDeviceForce(d).catch(e => null))
+    );
+
+    const successCount = results.filter(
+      r => r.status === 'fulfilled' && r.value?.success
+    ).length;
+
+    console.log(`✅ FORCE poll completed: ${successCount}/${devices.length}`);
+    return {
+      success: true,
+      message: 'Force poll completed',
+      polled: devices.length,
+      successful: successCount
+    };
+  } catch (error) {
+    console.error('❌ forcePollAll error:', error.message);
+    return { success: false, error: error.message };
   }
+}
 
   getStatus() {
     return {
@@ -15045,6 +15238,7 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
 ---------------------------------------------------------------------------------------------------------------------------------------
 lib/presentation/pages/admin/room_management.dart:
 
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../../data/repositories/room_repository.dart';
 import '../../../data/repositories/building_repository.dart';
@@ -15053,6 +15247,8 @@ import '../../../data/models/building.dart';
 import '../../../core/utils/helpers.dart';
 import '../../../core/constants/colors.dart';
 import '../../../core/services/storage_service.dart';
+import '../../../core/services/socket_service.dart';
+import '../../../core/services/api_service.dart';
 import '../../../data/repositories/iot_device_repository.dart';
 import '../../../data/models/iot_device.dart';
 import '../../widgets/common/server_status_indicator.dart';
@@ -15067,6 +15263,8 @@ class RoomManagementScreen extends StatefulWidget {
 class _RoomManagementScreenState extends State<RoomManagementScreen> {
   final RoomRepository _roomRepository = RoomRepository();
   final BuildingRepository _buildingRepository = BuildingRepository();
+  final SocketService _socketService = SocketService();
+  final ApiService _apiService = ApiService();
   final StorageService _storage = StorageService();
   final TextEditingController _searchController = TextEditingController();
 
@@ -15078,14 +15276,131 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
   String _selectedBuildingFilter = 'Semua Gedung';
   bool _isLoading = false;
   bool _hasError = false;
+  bool _isRefreshing = false;
   String _errorMessage = '';
+
+  Timer? _reloadDebounce;
 
   @override
   void initState() {
     super.initState();
     _loadCacheThenFetch();
+    _setupSocketListeners();
   }
 
+  // ============================================================
+  // SOCKET LISTENERS — auto-update saat data berubah
+  // ============================================================
+  Map<String, dynamic>? _asMap(dynamic data) {
+    if (data == null) return null;
+    if (data is Map<String, dynamic>) return data;
+    if (data is Map) {
+      try {
+        return Map<String, dynamic>.from(data);
+      } catch (_) {
+        return null;
+      }
+    }
+    return null;
+  }
+
+  void _setupSocketListeners() {
+    // Pastikan socket terkoneksi. Kalau belum (mis. user buka halaman ini
+    // pertama kali tanpa lewat Dashboard), coba connect.
+    if (!_socketService.isConnected && !_socketService.isConnecting) {
+      _socketService.connect();
+    }
+
+    _socketService.on('dashboard-update', _handleDashboardUpdate);
+    _socketService.on('dashboard-room-updated', _handleDashboardRoomUpdated);
+    _socketService.on('room-deleted', _handleRoomDeleted);
+    _socketService.on('room-name-changed', _handleRoomNameChanged);
+    _socketService.on('room-building-changed', _handleRoomBuildingChanged);
+  }
+
+  void _handleDashboardUpdate(dynamic data) {
+    if (!mounted) return;
+    final map = _asMap(data);
+    if (map == null) return;
+    if (map['type'] != 'room-data-updated') return;
+
+    // 1) Update AQI di memori secara instan supaya UI terasa real-time.
+    final roomId = map['roomId']?.toString();
+    final aqi = (map['aqi'] as num?)?.toInt();
+    if (roomId != null && aqi != null) {
+      final idx = _rooms.indexWhere((r) => r.id == roomId);
+      if (idx != -1 && _rooms[idx].currentAQI != aqi) {
+        final old = _rooms[idx];
+        _rooms[idx] = Room(
+          id: old.id,
+          name: old.name,
+          buildingId: old.buildingId,
+          buildingName: old.buildingName,
+          dataSource: old.dataSource,
+          iotDeviceId: old.iotDeviceId,
+          currentAQI: aqi,
+          currentData: old.currentData,
+          createdAt: old.createdAt,
+          updatedAt: DateTime.now(),
+        );
+        _filterRooms(); // setState → rebuild UI dgn AQI terbaru
+      }
+    }
+
+    // 2) Reload lengkap (debounced) supaya currentData terbaru
+    //    (PM2.5, PM10, CO2, suhu, kelembaban) juga ikut ter-update.
+    _scheduleReload();
+  }
+
+  void _handleDashboardRoomUpdated(dynamic data) {
+    if (!mounted) return;
+    _scheduleReload();
+  }
+
+  void _handleRoomDeleted(dynamic data) {
+    if (!mounted) return;
+    final map = _asMap(data);
+    if (map == null) return;
+    final roomId = map['roomId']?.toString();
+    if (roomId == null) return;
+    setState(() {
+      _rooms.removeWhere((r) => r.id == roomId);
+    });
+    _filterRooms();
+  }
+
+  void _handleRoomNameChanged(dynamic data) {
+    if (!mounted) return;
+    _scheduleReload();
+  }
+
+  void _handleRoomBuildingChanged(dynamic data) {
+    if (!mounted) return;
+    _scheduleReload();
+  }
+
+  void _scheduleReload() {
+    _reloadDebounce?.cancel();
+    _reloadDebounce = Timer(const Duration(milliseconds: 1200), () {
+      if (mounted) _loadData();
+    });
+  }
+
+  @override
+  void dispose() {
+    _reloadDebounce?.cancel();
+    _socketService.off('dashboard-update', _handleDashboardUpdate);
+    _socketService.off('dashboard-room-updated', _handleDashboardRoomUpdated);
+    _socketService.off('room-deleted', _handleRoomDeleted);
+    _socketService.off('room-name-changed', _handleRoomNameChanged);
+    _socketService.off('room-building-changed', _handleRoomBuildingChanged);
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  // ============================================================
+  // LOAD DATA
+  // ============================================================
   Future<void> _loadCacheThenFetch() async {
     Map<String, dynamic>? cached;
     try {
@@ -15161,6 +15476,31 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  /// Refresh button handler:
+  /// 1) Picu health-check indikator server.
+  /// 2) Minta backend poll device/simulasi SEKARANG (force-refresh).
+  ///    Ini yang membuat nilai AQI langsung berubah tanpa menunggu
+  ///    siklus cron 60 detik / 10 detik.
+  /// 3) Reload data dari server.
+  Future<void> _handleManualRefresh() async {
+    if (_isRefreshing) return;
+    setState(() => _isRefreshing = true);
+
+    try {
+      ServerStatusIndicator.checkNow();
+
+      try {
+        await _apiService.forceRefresh();
+      } catch (_) {
+        // best-effort: kalau token expired / server sibuk, abaikan
+      }
+
+      await _loadData();
+    } finally {
+      if (mounted) setState(() => _isRefreshing = false);
     }
   }
 
@@ -15272,16 +15612,16 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
       appBar: AppBar(
         title: const Text('Kelola Ruangan'),
         actions: [
-          // FIXED: indikator status server ditambahkan di sini.
           const ServerStatusIndicator(),
           IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: () {
-              // FIXED: picu health check paralel agar indikator langsung
-              // update ke hijau/merah begitu tombol ditekan.
-              ServerStatusIndicator.checkNow();
-              _loadData();
-            },
+            icon: _isRefreshing
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.refresh),
+            onPressed: _isRefreshing ? null : _handleManualRefresh,
             tooltip: 'Refresh',
           ),
         ],
@@ -15575,6 +15915,9 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
   }
 }
 
+// ============================================================
+// ADD / EDIT ROOM SCREEN
+// ============================================================
 class AddEditRoomScreen extends StatefulWidget {
   final Room? room;
   final List<Building> buildings;
@@ -15662,6 +16005,12 @@ class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
 
     try {
       if (widget.isEditing) {
+        // Deteksi apakah device / data source berubah
+        final dataSourceChanged =
+            _selectedDataSource != (widget.room?.dataSource ?? 'simulation');
+        final deviceChanged =
+            _selectedIotDeviceId != widget.room?.iotDeviceId;
+
         await _roomRepository.updateRoom(
           id: widget.room!.id,
           name: _nameController.text.trim(),
@@ -15670,8 +16019,22 @@ class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
           iotDeviceId:
               _selectedDataSource == 'iot' ? _selectedIotDeviceId : null,
         );
+
         if (!mounted) return;
-        Helpers.showSnackBar(context, 'Ruangan berhasil diperbarui');
+
+        // Reload DULU sebelum pop supaya data fresh dari server
+        // — backend sudah force-fetch partikel device baru pada PUT.
+        widget.onRoomSaved();
+
+        final String message;
+        if (_selectedDataSource == 'iot' &&
+            (dataSourceChanged || deviceChanged)) {
+          message =
+              'Ruangan diperbarui. Data partikel device baru sedang dimuat…';
+        } else {
+          message = 'Ruangan berhasil diperbarui';
+        }
+        Helpers.showSnackBar(context, message);
       } else {
         await _roomRepository.createRoom(
           name: _nameController.text.trim(),
@@ -15682,9 +16045,9 @@ class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
         );
         if (!mounted) return;
         Helpers.showSnackBar(context, 'Ruangan berhasil ditambahkan');
-      }
 
-      widget.onRoomSaved();
+        widget.onRoomSaved();
+      }
 
       if (mounted) Navigator.pop(context);
     } catch (e) {

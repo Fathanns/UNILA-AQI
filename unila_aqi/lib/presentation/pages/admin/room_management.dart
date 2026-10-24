@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../../data/repositories/room_repository.dart';
 import '../../../data/repositories/building_repository.dart';
@@ -6,6 +7,8 @@ import '../../../data/models/building.dart';
 import '../../../core/utils/helpers.dart';
 import '../../../core/constants/colors.dart';
 import '../../../core/services/storage_service.dart';
+import '../../../core/services/socket_service.dart';
+import '../../../core/services/api_service.dart';
 import '../../../data/repositories/iot_device_repository.dart';
 import '../../../data/models/iot_device.dart';
 import '../../widgets/common/server_status_indicator.dart';
@@ -20,6 +23,8 @@ class RoomManagementScreen extends StatefulWidget {
 class _RoomManagementScreenState extends State<RoomManagementScreen> {
   final RoomRepository _roomRepository = RoomRepository();
   final BuildingRepository _buildingRepository = BuildingRepository();
+  final SocketService _socketService = SocketService();
+  final ApiService _apiService = ApiService();
   final StorageService _storage = StorageService();
   final TextEditingController _searchController = TextEditingController();
 
@@ -31,14 +36,131 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
   String _selectedBuildingFilter = 'Semua Gedung';
   bool _isLoading = false;
   bool _hasError = false;
+  bool _isRefreshing = false;
   String _errorMessage = '';
+
+  Timer? _reloadDebounce;
 
   @override
   void initState() {
     super.initState();
     _loadCacheThenFetch();
+    _setupSocketListeners();
   }
 
+  // ============================================================
+  // SOCKET LISTENERS — auto-update saat data berubah
+  // ============================================================
+  Map<String, dynamic>? _asMap(dynamic data) {
+    if (data == null) return null;
+    if (data is Map<String, dynamic>) return data;
+    if (data is Map) {
+      try {
+        return Map<String, dynamic>.from(data);
+      } catch (_) {
+        return null;
+      }
+    }
+    return null;
+  }
+
+  void _setupSocketListeners() {
+    // Pastikan socket terkoneksi. Kalau belum (mis. user buka halaman ini
+    // pertama kali tanpa lewat Dashboard), coba connect.
+    if (!_socketService.isConnected && !_socketService.isConnecting) {
+      _socketService.connect();
+    }
+
+    _socketService.on('dashboard-update', _handleDashboardUpdate);
+    _socketService.on('dashboard-room-updated', _handleDashboardRoomUpdated);
+    _socketService.on('room-deleted', _handleRoomDeleted);
+    _socketService.on('room-name-changed', _handleRoomNameChanged);
+    _socketService.on('room-building-changed', _handleRoomBuildingChanged);
+  }
+
+  void _handleDashboardUpdate(dynamic data) {
+    if (!mounted) return;
+    final map = _asMap(data);
+    if (map == null) return;
+    if (map['type'] != 'room-data-updated') return;
+
+    // 1) Update AQI di memori secara instan supaya UI terasa real-time.
+    final roomId = map['roomId']?.toString();
+    final aqi = (map['aqi'] as num?)?.toInt();
+    if (roomId != null && aqi != null) {
+      final idx = _rooms.indexWhere((r) => r.id == roomId);
+      if (idx != -1 && _rooms[idx].currentAQI != aqi) {
+        final old = _rooms[idx];
+        _rooms[idx] = Room(
+          id: old.id,
+          name: old.name,
+          buildingId: old.buildingId,
+          buildingName: old.buildingName,
+          dataSource: old.dataSource,
+          iotDeviceId: old.iotDeviceId,
+          currentAQI: aqi,
+          currentData: old.currentData,
+          createdAt: old.createdAt,
+          updatedAt: DateTime.now(),
+        );
+        _filterRooms(); // setState → rebuild UI dgn AQI terbaru
+      }
+    }
+
+    // 2) Reload lengkap (debounced) supaya currentData terbaru
+    //    (PM2.5, PM10, CO2, suhu, kelembaban) juga ikut ter-update.
+    _scheduleReload();
+  }
+
+  void _handleDashboardRoomUpdated(dynamic data) {
+    if (!mounted) return;
+    _scheduleReload();
+  }
+
+  void _handleRoomDeleted(dynamic data) {
+    if (!mounted) return;
+    final map = _asMap(data);
+    if (map == null) return;
+    final roomId = map['roomId']?.toString();
+    if (roomId == null) return;
+    setState(() {
+      _rooms.removeWhere((r) => r.id == roomId);
+    });
+    _filterRooms();
+  }
+
+  void _handleRoomNameChanged(dynamic data) {
+    if (!mounted) return;
+    _scheduleReload();
+  }
+
+  void _handleRoomBuildingChanged(dynamic data) {
+    if (!mounted) return;
+    _scheduleReload();
+  }
+
+  void _scheduleReload() {
+    _reloadDebounce?.cancel();
+    _reloadDebounce = Timer(const Duration(milliseconds: 1200), () {
+      if (mounted) _loadData();
+    });
+  }
+
+  @override
+  void dispose() {
+    _reloadDebounce?.cancel();
+    _socketService.off('dashboard-update', _handleDashboardUpdate);
+    _socketService.off('dashboard-room-updated', _handleDashboardRoomUpdated);
+    _socketService.off('room-deleted', _handleRoomDeleted);
+    _socketService.off('room-name-changed', _handleRoomNameChanged);
+    _socketService.off('room-building-changed', _handleRoomBuildingChanged);
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  // ============================================================
+  // LOAD DATA
+  // ============================================================
   Future<void> _loadCacheThenFetch() async {
     Map<String, dynamic>? cached;
     try {
@@ -114,6 +236,31 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  /// Refresh button handler:
+  /// 1) Picu health-check indikator server.
+  /// 2) Minta backend poll device/simulasi SEKARANG (force-refresh).
+  ///    Ini yang membuat nilai AQI langsung berubah tanpa menunggu
+  ///    siklus cron 60 detik / 10 detik.
+  /// 3) Reload data dari server.
+  Future<void> _handleManualRefresh() async {
+    if (_isRefreshing) return;
+    setState(() => _isRefreshing = true);
+
+    try {
+      ServerStatusIndicator.checkNow();
+
+      try {
+        await _apiService.forceRefresh();
+      } catch (_) {
+        // best-effort: kalau token expired / server sibuk, abaikan
+      }
+
+      await _loadData();
+    } finally {
+      if (mounted) setState(() => _isRefreshing = false);
     }
   }
 
@@ -225,16 +372,16 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
       appBar: AppBar(
         title: const Text('Kelola Ruangan'),
         actions: [
-          // FIXED: indikator status server ditambahkan di sini.
           const ServerStatusIndicator(),
           IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: () {
-              // FIXED: picu health check paralel agar indikator langsung
-              // update ke hijau/merah begitu tombol ditekan.
-              ServerStatusIndicator.checkNow();
-              _loadData();
-            },
+            icon: _isRefreshing
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.refresh),
+            onPressed: _isRefreshing ? null : _handleManualRefresh,
             tooltip: 'Refresh',
           ),
         ],
@@ -528,6 +675,9 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
   }
 }
 
+// ============================================================
+// ADD / EDIT ROOM SCREEN
+// ============================================================
 class AddEditRoomScreen extends StatefulWidget {
   final Room? room;
   final List<Building> buildings;
@@ -615,6 +765,12 @@ class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
 
     try {
       if (widget.isEditing) {
+        // Deteksi apakah device / data source berubah
+        final dataSourceChanged =
+            _selectedDataSource != (widget.room?.dataSource ?? 'simulation');
+        final deviceChanged =
+            _selectedIotDeviceId != widget.room?.iotDeviceId;
+
         await _roomRepository.updateRoom(
           id: widget.room!.id,
           name: _nameController.text.trim(),
@@ -623,8 +779,22 @@ class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
           iotDeviceId:
               _selectedDataSource == 'iot' ? _selectedIotDeviceId : null,
         );
+
         if (!mounted) return;
-        Helpers.showSnackBar(context, 'Ruangan berhasil diperbarui');
+
+        // Reload DULU sebelum pop supaya data fresh dari server
+        // — backend sudah force-fetch partikel device baru pada PUT.
+        widget.onRoomSaved();
+
+        final String message;
+        if (_selectedDataSource == 'iot' &&
+            (dataSourceChanged || deviceChanged)) {
+          message =
+              'Ruangan diperbarui. Data partikel device baru sedang dimuat…';
+        } else {
+          message = 'Ruangan berhasil diperbarui';
+        }
+        Helpers.showSnackBar(context, message);
       } else {
         await _roomRepository.createRoom(
           name: _nameController.text.trim(),
@@ -635,9 +805,9 @@ class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
         );
         if (!mounted) return;
         Helpers.showSnackBar(context, 'Ruangan berhasil ditambahkan');
-      }
 
-      widget.onRoomSaved();
+        widget.onRoomSaved();
+      }
 
       if (mounted) Navigator.pop(context);
     } catch (e) {
