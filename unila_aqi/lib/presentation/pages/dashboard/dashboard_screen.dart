@@ -41,14 +41,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     // Delay initialization to avoid setState during build
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_isMounted) {
-        _loadInitialData();
-        // _startAutoRefresh();
-        _setupBuildingUpdateListener();
-        _setupRoomNameUpdateListener(); // 🔥 BARU: Tambah listener untuk update nama ruangan
-      }
-    });
-  }
+    if (!_isMounted) return;
+
+    // 🔥 FIXED: sinkronkan search field dengan state provider.
+    // Kalau provider masih menyimpan query lama (mis. dari sesi
+    // sebelumnya), UI tidak akan menampilkan "Belum ada data"
+    // tanpa filter yang terlihat.
+    final roomProvider = Provider.of<RoomProvider>(context, listen: false);
+    if (roomProvider.searchQuery.isNotEmpty) {
+      _searchController.text = roomProvider.searchQuery;
+    }
+
+    _loadInitialData();
+    _setupBuildingUpdateListener();
+    _setupRoomNameUpdateListener();
+  });
+}
 
   // 🔥 BARU: Setup listener untuk update nama ruangan
   // FIXED: guard data agar tidak TypeError saat payload rusak.
@@ -266,21 +274,23 @@ class _DashboardScreenState extends State<DashboardScreen> {
   // FIXED: sebelumnya tidak ada try-catch → unhandled exception saat server
   // mati. Sekarang: error di-log, navigasi tetap dijalankan di `finally`.
   void _handleLogout() async {
-    try {
-      final authProvider = Provider.of<AuthProvider>(context, listen: false);
-      await authProvider.logout();
-    } catch (e) {
-      debugPrint('❌ Logout error: $e');
-    } finally {
-      if (mounted) {
-        Navigator.pushNamedAndRemoveUntil(
-          context,
-          '/',
-          (route) => false,
-        );
-      }
+  try {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final roomProvider = Provider.of<RoomProvider>(context, listen: false);
+
+    await authProvider.logout();
+
+    // 🔥 FIXED: bersihkan state filter ruangan agar tidak "bocor"
+    // ke sesi login berikutnya (search, filter gedung, sort).
+    roomProvider.clearFilters();
+  } catch (e) {
+    debugPrint('❌ Logout error: $e');
+  } finally {
+    if (mounted) {
+      Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
     }
   }
+}
 
   void _handleHelpTap() {
     Navigator.push(
@@ -466,69 +476,69 @@ class _DashboardScreenState extends State<DashboardScreen> {
       child: Padding(
         padding: const EdgeInsets.all(24),
         child: Builder(
-          builder: (context) {
-            final hasSearch = _searchController.text.trim().isNotEmpty;
-            final hasBuildingFilter =
-                roomProvider.selectedBuilding != 'Semua Gedung';
-            final hasFilter = hasSearch || hasBuildingFilter;
+            builder: (context) {
+              // 🔥 FIXED: baca dari provider (sumber kebenaran filter),
+              // bukan dari _searchController yang bisa saja belum disinkronkan.
+              final hasSearch = roomProvider.searchQuery.trim().isNotEmpty;
+              final hasBuildingFilter =
+                  roomProvider.selectedBuilding != 'Semua Gedung';
+              final hasFilter = hasSearch || hasBuildingFilter;
 
-            // Icon menyesuaikan penyebab empty state
-            final IconData icon;
-            if (hasSearch) {
-              icon = Icons.search_off;
-            } else if (hasBuildingFilter) {
-              icon = Icons.filter_alt_off_outlined;
-            } else {
-              icon = Icons.meeting_room_outlined;
-            }
+              final IconData icon;
+              if (hasSearch) {
+                icon = Icons.search_off;
+              } else if (hasBuildingFilter) {
+                icon = Icons.filter_alt_off_outlined;
+              } else {
+                icon = Icons.meeting_room_outlined;
+              }
 
-            // Pesan spesifik sesuai penyebab
-            final String message;
-            if (hasSearch && hasBuildingFilter) {
-              message =
-                  'Tidak ada ruangan atau gedung yang cocok dengan\n'
-                  '"${_searchController.text.trim()}"\n'
-                  'di ${roomProvider.selectedBuilding}';
-            } else if (hasSearch) {
-              message =
-                  'Tidak ada ruangan atau gedung yang cocok dengan\n'
-                  '"${_searchController.text.trim()}"';
-            } else if (hasBuildingFilter) {
-              message =
-                  'Tidak ada ruangan di gedung\n'
-                  '"${roomProvider.selectedBuilding}"';
-            } else {
-              message = 'Belum ada data ruangan';
-            }
+              final String message;
+              if (hasSearch && hasBuildingFilter) {
+                message =
+                    'Tidak ada ruangan atau gedung yang cocok dengan\n'
+                    '"${roomProvider.searchQuery.trim()}"\n'
+                    'di ${roomProvider.selectedBuilding}';
+              } else if (hasSearch) {
+                message =
+                    'Tidak ada ruangan atau gedung yang cocok dengan\n'
+                    '"${roomProvider.searchQuery.trim()}"';
+              } else if (hasBuildingFilter) {
+                message =
+                    'Tidak ada ruangan di gedung\n'
+                    '"${roomProvider.selectedBuilding}"';
+              } else {
+                message = 'Belum ada data ruangan';
+              }
 
-            return Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(icon, size: 64, color: Colors.grey),
-                const SizedBox(height: 16),
-                Text(
-                  message,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontSize: 16,
-                    color: Colors.grey,
-                    height: 1.5,
+              return Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(icon, size: 64, color: Colors.grey),
+                  const SizedBox(height: 16),
+                  Text(
+                    message,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      color: Colors.grey,
+                      height: 1.5,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 8),
-                if (hasFilter)
-                  TextButton.icon(
-                    onPressed: () {
-                      roomProvider.clearFilters();
-                      _searchController.clear();
-                    },
-                    icon: const Icon(Icons.refresh, size: 18),
-                    label: const Text('Reset Filter & Pencarian'),
-                  ),
-              ],
-            );
-          },
-        ),
+                  const SizedBox(height: 8),
+                  if (hasFilter)
+                    TextButton.icon(
+                      onPressed: () {
+                        roomProvider.clearFilters();
+                        _searchController.clear();  // ← tetap clear controller
+                      },
+                      icon: const Icon(Icons.refresh, size: 18),
+                      label: const Text('Reset Filter & Pencarian'),
+                    ),
+                ],
+              );
+            },
+          )
       ),
     ),
   )
