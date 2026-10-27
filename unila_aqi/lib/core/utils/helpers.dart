@@ -7,9 +7,19 @@ import '../constants/app_constants.dart';
 
 class Helpers {
 
-    static bool isNetworkError(dynamic error) {
+  // FIXED: hapus substring generic 'failed to fetch' dari daftar pencocokan
+  // karena bertabrakan dengan pesan error kita sendiri di repository
+  // (mis. 'Failed to fetch history data: 401'). Sebelumnya ini menyebabkan
+  // HTTP 401 (unauthenticated) terdeteksi sebagai network error, sehingga
+  // snackbar "server mati" muncul padahal server hidup.
+  //
+  // Sekarang:
+  //  - 'clientexception' / 'socketexception' → tetap menangkap error jaringan asli
+  //  - 'typeerror: failed to fetch'          → tetap menangkap error Fetch API browser asli
+  static bool isNetworkError(dynamic error) {
     final s = (error?.toString() ?? '').toLowerCase();
     return s.contains('socketexception') ||
+        s.contains('clientexception') ||
         s.contains('network error') ||
         s.contains('failed host lookup') ||
         s.contains('host lookup') ||
@@ -19,14 +29,13 @@ class Helpers {
         s.contains('connection reset') ||
         s.contains('connection error') ||
         s.contains('connection failed') ||
-        s.contains('clientexception') ||
         s.contains('xmlhttprequest') ||
         s.contains('timeout') ||
         s.contains('unable to connect') ||
-        s.contains('failed to fetch');
+        s.contains('typeerror: failed to fetch');
   }
 
-   static void showServerError(BuildContext context) {
+  static void showServerError(BuildContext context) {
     showSnackBar(
       context,
       'Tidak dapat terhubung ke server. Periksa koneksi internet Anda atau coba beberapa saat lagi.',
@@ -127,7 +136,6 @@ class Helpers {
     if (value <= 350) return AppColors.aqiVeryUnhealthy; // hitam
     return AppColors.aqiHazardous; // hitam
   }
-  
 
   static String getTemperatureStatus(double value) {
     if (value >= 22 && value <= 26) return 'IDEAL';
@@ -178,8 +186,7 @@ class Helpers {
     return DateFormat(format).format(dateTime);
   }
 
-  // Tambah method format baru untuk waktu update
-   static String formatLastUpdate(DateTime dateTime) {
+  static String formatLastUpdate(DateTime dateTime) {
     final localTime = dateTime.toLocal();
     final now = DateTime.now().toLocal();
 
@@ -203,31 +210,26 @@ class Helpers {
   }
 
   static String formatLastUpdateWithDate(DateTime dateTime) {
-    // Konversi ke waktu lokal
     final localTime = dateTime.toLocal();
     final now = DateTime.now().toLocal();
-    
-    // Jika tanggal sama dengan hari ini
+
     if (localTime.year == now.year &&
         localTime.month == now.month &&
         localTime.day == now.day) {
       return 'Hari ini ${_formatLocalTime(localTime)}';
     }
-    
-    // Jika tanggal kemarin
+
     final yesterday = DateTime(now.year, now.month, now.day - 1);
     if (localTime.year == yesterday.year &&
         localTime.month == yesterday.month &&
         localTime.day == yesterday.day) {
       return 'Kemarin ${_formatLocalTime(localTime)}';
     }
-    
-    // Format dengan tanggal (menggunakan format lokal)
+
     return DateFormat('dd/MM HH:mm').format(localTime);
   }
 
   static String _formatLocalTime(DateTime localTime) {
-    // Format 24 jam
     final hour = localTime.hour.toString().padLeft(2, '0');
     final minute = localTime.minute.toString().padLeft(2, '0');
     return '$hour:$minute';
@@ -235,29 +237,25 @@ class Helpers {
 
   static String formatLocalTimeForDisplay(DateTime dateTime) {
     final localTime = dateTime.toLocal();
-    
-    // Cek preferensi waktu 12/24 jam berdasarkan locale
-    final format = DateFormat.Hm(); // Otomatis menggunakan 12/24 jam sesuai locale
+    final format = DateFormat.Hm();
     return format.format(localTime);
   }
 
   static String formatLocalTimeWithAmPm(DateTime dateTime) {
     final localTime = dateTime.toLocal();
-    final format = DateFormat('hh:mm a'); // Contoh: 02:30 PM
+    final format = DateFormat('hh:mm a');
     return format.format(localTime);
   }
 
   static String formatLocalDateTimeFull(DateTime dateTime) {
     final localTime = dateTime.toLocal();
-    return DateFormat('dd MMM yyyy HH:mm').format(localTime); // Contoh: 15 Jan 2024 14:30
+    return DateFormat('dd MMM yyyy HH:mm').format(localTime);
   }
 
-  // Method untuk format real-time (akan diupdate setiap detik)
   static String formatRealTimeUpdate(DateTime dateTime) {
     final now = DateTime.now();
     final difference = now.difference(dateTime);
-    
-    // Format yang berbeda berdasarkan berapa lama yang lalu
+
     if (difference.inSeconds < 10) {
       return 'Live • Baru saja';
     } else if (difference.inSeconds < 60) {
@@ -269,15 +267,14 @@ class Helpers {
     }
   }
 
-  // Method untuk format dengan indikator status
   static Map<String, dynamic> formatUpdateWithStatus(DateTime dateTime) {
     final now = DateTime.now();
     final difference = now.difference(dateTime);
-    
+
     String text;
     Color color;
     IconData icon;
-    
+
     if (difference.inSeconds < 30) {
       text = 'Live • ${DateFormat('HH:mm').format(dateTime)}';
       color = Colors.green;
@@ -299,7 +296,7 @@ class Helpers {
       color = Colors.grey;
       icon = Icons.circle;
     }
-    
+
     return {
       'text': text,
       'color': color,
@@ -397,7 +394,7 @@ class Helpers {
       return '{}';
     }
   }
-  
+
   static String getAQICategory(int aqi) {
     if (aqi <= 50) return 'baik';
     if (aqi <= 100) return 'sedang';
@@ -406,7 +403,7 @@ class Helpers {
     if (aqi <= 300) return 'berbahaya';
     return 'error';
   }
-  
+
   // Network Helpers
   static String formatBytes(int bytes) {
     if (bytes < 1024) return '$bytes B';
@@ -426,54 +423,45 @@ class Helpers {
     return '#${color.value.toRadixString(16).padLeft(8, '0').substring(2)}';
   }
 
-  /// Format untuk widget compact (room card).
-/// Mengembalikan Map berisi label (hari) dan time (jam).
-/// - Hari ini        : { label: 'HARI INI', time: '14:30' }
-/// - Kemarin         : { label: 'KEMARIN',  time: '14:30' }
-/// - Lebih lama      : { label: '17/01',    time: '14:30' }
-static Map<String, String> formatCompactLastUpdate(DateTime dateTime) {
-  final localTime = dateTime.toLocal();
-  final now = DateTime.now().toLocal();
+  static Map<String, String> formatCompactLastUpdate(DateTime dateTime) {
+    final localTime = dateTime.toLocal();
+    final now = DateTime.now().toLocal();
 
-  final timeStr = _formatLocalTime(localTime);
+    final timeStr = _formatLocalTime(localTime);
 
-  // Hari ini
-  if (localTime.year == now.year &&
-      localTime.month == now.month &&
-      localTime.day == now.day) {
-    return {'label': 'HARI INI', 'time': timeStr};
+    if (localTime.year == now.year &&
+        localTime.month == now.month &&
+        localTime.day == now.day) {
+      return {'label': 'HARI INI', 'time': timeStr};
+    }
+
+    final yesterday = DateTime(now.year, now.month, now.day - 1);
+    if (localTime.year == yesterday.year &&
+        localTime.month == yesterday.month &&
+        localTime.day == yesterday.day) {
+      return {'label': 'KEMARIN', 'time': timeStr};
+    }
+
+    return {
+      'label': DateFormat('dd/MM').format(localTime),
+      'time': timeStr,
+    };
   }
-
-  // Kemarin
-  final yesterday = DateTime(now.year, now.month, now.day - 1);
-  if (localTime.year == yesterday.year &&
-      localTime.month == yesterday.month &&
-      localTime.day == yesterday.day) {
-    return {'label': 'KEMARIN', 'time': timeStr};
-  }
-
-  // Lebih lama: tanggal + jam
-  return {
-    'label': DateFormat('dd/MM').format(localTime),
-    'time': timeStr,
-  };
-}
 
   static List<String> getDetailedRecommendations(Room room) {
     final recommendations = <String>[];
     final data = room.currentData;
 
-    // AQI based recommendations
     final aqi = room.currentAQI;
-     if (aqi > 300) {
+    if (aqi > 300) {
       recommendations.add('KONDISI SANGAT BERBAHAYA - TIDAK ADA AKTIVITAS AKADEMIK TATAP MUKA');
       recommendations.add('Tim manajemen gedung melakukan pemantauan AQI setiap jam');
       recommendations.add('Nyalakan air purifier dengan kecepatan maksimum selama 24 jam non-stop untuk membersihkan ruangan');
-    }else if (aqi > 200) {
+    } else if (aqi > 200) {
       recommendations.add('Kualitas udara dalam kelas sangat berbahaya untuk perkuliahan tatap muka');
       recommendations.add('Segera alihkan seluruh perkuliahan ke metode daring atau asynchronous');
       recommendations.add('Nyalakan air purifier dengan kecepatan maksimum selama 24 jam non-stop untuk membersihkan ruangan');
-    }else if (aqi > 150) {
+    } else if (aqi > 150) {
       recommendations.add('Kualitas udara dalam kelas buruk dan berisiko bagi semua penghuni ruangan');
       recommendations.add('Gunakan masker ketika berada di ruangan ini');
       recommendations.add('Wjib menyalakan air purifier di setiap kelas yang digunakan');
@@ -488,36 +476,31 @@ static Map<String, String> formatCompactLastUpdate(DateTime dateTime) {
       recommendations.add('Kualitas udara sangat baik dan optimal untuk proses belajar mengajar');
       recommendations.add('Aman untuk perkuliahan dengan durasi berapapun');
     }
-    
-    // PM2.5 specific
+
     if (data.pm25 > 35.4) {
       recommendations.add('PM2.5 tinggi: Gunakan air purifier');
     }
 
-     // PM10 specific
     if (data.pm10 > 100) {
       recommendations.add('PM10 tinggi: Bersihkan kelas secara basah sebelum perkuliahan');
     }
-    
-    // CO2 specific
+
     if (data.co2 > 1000) {
       recommendations.add('CO₂ tinggi: Buka jendela untuk ventilasi');
     }
-    
-    // Temperature specific
+
     if (data.temperature > 28) {
       recommendations.add('Suhu panas: Nyalakan AC atau kipas');
     } else if (data.temperature < 22) {
       recommendations.add('Suhu dingin: Gunakan pemanas ruangan');
-    } 
-    
-    // Humidity specific
+    }
+
     if (data.humidity > 70) {
       recommendations.add('Kelembaban tinggi: Gunakan dehumidifier');
     } else if (data.humidity < 40) {
       recommendations.add('Kelembaban rendah: Gunakan humidifier');
     }
-    
+
     return recommendations;
   }
 }

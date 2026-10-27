@@ -68,7 +68,9 @@ class RoomRepository {
 
         throw Exception('Access denied. Please login as admin or try user mode.');
       } else {
-        throw Exception('Failed to fetch rooms: ${response.statusCode}');
+        // FIXED: ganti prefix 'Failed to fetch' → 'Rooms request failed'
+        // agar tidak memicu Helpers.isNetworkError (false positive).
+        throw Exception('Rooms request failed: ${response.statusCode}');
       }
     } catch (e) {
       print('❌ Room Repository Error: $e');
@@ -92,7 +94,8 @@ class RoomRepository {
           throw Exception(jsonResponse['message'] ?? 'Failed to fetch room');
         }
       } else {
-        throw Exception('Failed to fetch room: ${response.statusCode}');
+        // FIXED: prefix 'Failed to fetch' → 'Room request failed'
+        throw Exception('Room request failed: ${response.statusCode}');
       }
     } catch (e) {
       rethrow;

@@ -23,6 +23,7 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
   List<IoTDevice> _devices = [];
   List<IoTDevice> _filteredDevices = [];
   bool _isLoading = false;
+  bool _isRefreshing = false;
   bool _hasError = false;
   String _errorMessage = '';
 
@@ -95,6 +96,16 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
       if (mounted) setState(() => _isLoading = false);
     }
   }
+
+  Future<void> _handleManualRefresh() async {
+  if (_isRefreshing) return;
+  setState(() => _isRefreshing = true);
+  try {
+    await _loadData();
+  } finally {
+    if (mounted) setState(() => _isRefreshing = false);
+  }
+}
 
   void _filterDevices(String query) {
     if (query.isEmpty) {
@@ -179,20 +190,34 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Kelola Device IoT'),
-        actions: [
-          const ServerStatusIndicator(),
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: () {
-              ServerStatusIndicator.checkNow();
-              _loadData();
-            },
-            tooltip: 'Refresh',
-          ),
-        ],
-      ),
+     appBar: AppBar(
+      title: const Text('Kelola Device IoT'),
+      actions: [
+        const ServerStatusIndicator(),
+        IconButton(
+          icon: _isRefreshing
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: AppColors.primary,
+                  ),
+                )
+              : const Icon(
+                  Icons.refresh_rounded,
+                  size: 22,
+                  color: AppColors.textSecondary,
+                ),
+          onPressed: () {
+            ServerStatusIndicator.checkNow();
+            _handleManualRefresh();
+          },
+          splashRadius: 20,
+          tooltip: 'Refresh',
+        ),
+      ],
+    ),
       body: Column(
         children: [
           Padding(

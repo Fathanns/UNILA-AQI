@@ -41,6 +41,21 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
 
   Timer? _reloadDebounce;
 
+  List<String> get _availableBuildings {
+  final set = <String>{'Semua Gedung'};
+  for (final b in _buildings) {
+    final name = b.name.trim();
+    if (name.isNotEmpty) set.add(name);
+  }
+  for (final r in _rooms) {
+    final name = r.buildingName.trim();
+    if (name.isNotEmpty) set.add(name);
+  }
+  if (set.length <= 1) return set.toList();
+  final rest = set.toList().sublist(1)..sort();
+  return ['Semua Gedung', ...rest];
+}
+
   @override
   void initState() {
     super.initState();
@@ -162,29 +177,55 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
   // LOAD DATA
   // ============================================================
   Future<void> _loadCacheThenFetch() async {
-    Map<String, dynamic>? cached;
-    try {
-      cached = _storage.getJson(_cacheKey);
-    } catch (_) {
-      cached = null;
-    }
-
-    if (cached != null && cached['data'] is List) {
-      try {
-        final list = (cached['data'] as List)
-            .map((e) => Room.fromJson(Map<String, dynamic>.from(e as Map)))
-            .toList();
-        if (mounted) {
-          setState(() {
-            _rooms = list;
-          });
-          _filterRooms();
-        }
-      } catch (_) {}
-    }
-
-    await _loadData();
+  Map<String, dynamic>? cached;
+  try {
+    cached = _storage.getJson(_cacheKey);
+  } catch (_) {
+    cached = null;
   }
+
+  // 1) Hidrasi _rooms dari cache (perilaku lama)
+  if (cached != null && cached['data'] is List) {
+    try {
+      final list = (cached['data'] as List)
+          .map((e) => Room.fromJson(Map<String, dynamic>.from(e as Map)))
+          .toList();
+      if (mounted) {
+        setState(() {
+          _rooms = list;
+        });
+      }
+    } catch (_) {
+      // cache rusak — abaikan
+    }
+  }
+
+  // 2) Hidrasi _buildings dari cache (BARU)
+  //    Supaya dropdown filter gedung langsung terisi saat cold-start,
+  //    tanpa menunggu _loadData() selesai.
+  if (cached != null && cached['buildings'] is List) {
+    try {
+      final bList = (cached['buildings'] as List)
+          .map((e) =>
+              Building.fromJson(Map<String, dynamic>.from(e as Map)))
+          .toList();
+      if (mounted) {
+        setState(() {
+          _buildings = bList;
+        });
+      }
+    } catch (_) {
+      // cache rusak — abaikan
+    }
+  }
+
+  // 3) Terapkan filter setelah data cache masuk
+  //    (juga memvalidasi _selectedBuildingFilter terhadap _availableBuildings)
+  _filterRooms();
+
+  // 4) Fetch data terbaru dari server
+  await _loadData();
+}
 
   Future<void> _loadData() async {
     setState(() {
@@ -213,6 +254,7 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
       try {
         await _storage.setJson(_cacheKey, {
           'data': rooms.map((r) => r.toJson()).toList(),
+          'buildings': buildings.map((b) => b.toJson()).toList(),
         });
       } catch (_) {}
     } catch (e) {
@@ -265,29 +307,34 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
   }
 
   void _filterRooms() {
-    List<Room> filtered = _rooms;
-
-    if (_selectedBuildingFilter != 'Semua Gedung') {
-      filtered = filtered
-          .where((room) => room.buildingName == _selectedBuildingFilter)
-          .toList();
-    }
-
-    if (_searchController.text.isNotEmpty) {
-      final query = _searchController.text.toLowerCase();
-      filtered = filtered
-          .where((room) =>
-              room.name.toLowerCase().contains(query) ||
-              room.buildingName.toLowerCase().contains(query))
-          .toList();
-    }
-
-    if (mounted) {
-      setState(() => _filteredRooms = filtered);
-    } else {
-      _filteredRooms = filtered;
-    }
+  // Pastikan filter yang tersimpan masih valid; kalau tidak, reset.
+  if (!_availableBuildings.contains(_selectedBuildingFilter)) {
+    _selectedBuildingFilter = 'Semua Gedung';
   }
+
+  List<Room> filtered = _rooms;
+
+  if (_selectedBuildingFilter != 'Semua Gedung') {
+    filtered = filtered
+        .where((room) => room.buildingName == _selectedBuildingFilter)
+        .toList();
+  }
+
+  if (_searchController.text.isNotEmpty) {
+    final query = _searchController.text.toLowerCase();
+    filtered = filtered
+        .where((room) =>
+            room.name.toLowerCase().contains(query) ||
+            room.buildingName.toLowerCase().contains(query))
+        .toList();
+  }
+
+  if (mounted) {
+    setState(() => _filteredRooms = filtered);
+  } else {
+    _filteredRooms = filtered;
+  }
+}
 
   Future<void> _deleteRoom(String roomId) async {
     final confirmed = await showDialog<bool>(
@@ -376,12 +423,20 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
           IconButton(
             icon: _isRefreshing
                 ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: AppColors.primary,
+                    ),
                   )
-                : const Icon(Icons.refresh),
+                : const Icon(
+                    Icons.refresh_rounded,
+                    size: 22,
+                    color: AppColors.textSecondary,
+                  ),
             onPressed: _isRefreshing ? null : _handleManualRefresh,
+            splashRadius: 20,
             tooltip: 'Refresh',
           ),
         ],
@@ -432,10 +487,7 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
                           _filterRooms();
                         });
                       },
-                      items: [
-                        'Semua Gedung',
-                        ..._buildings.map((b) => b.name).toSet(),
-                      ].map((building) {
+                      items: _availableBuildings.map((building) {
                         return DropdownMenuItem(
                           value: building,
                           child: Text(building),

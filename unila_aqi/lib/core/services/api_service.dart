@@ -8,14 +8,11 @@ class ApiService {
   factory ApiService() => _instance;
   ApiService._internal();
 
-  // Base configuration
   static const String baseUrl = AppConstants.apiBaseUrl;
   static const Duration timeout = Duration(seconds: 30);
 
-  // HTTP client
   final http.Client _client = http.Client();
 
-  // Headers
   Future<Map<String, String>> _getHeaders() async {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('auth_token');
@@ -32,7 +29,6 @@ class ApiService {
     return headers;
   }
 
-  // Generic request method
   Future<http.Response> _request(
     String method,
     String endpoint, {
@@ -73,12 +69,6 @@ class ApiService {
     }
   }
 
-  /// Health check ringan — return true jika server merespons 200.
-  ///
-  /// FIXED: timeout dipendekkan ke 3 detik agar indikator server
-  /// cepat berubah ke merah saat tombol refresh ditekan ketika
-  /// backend mati. Untuk jaringan normal, health check selesai
-  /// <500ms sehingga indikator langsung berubah ke hijau.
   Future<bool> checkServerHealth() async {
     try {
       final response = await _client
@@ -90,7 +80,6 @@ class ApiService {
     }
   }
 
-  // API Methods
   Future<dynamic> get(String endpoint, {Map<String, String>? queryParams}) async {
     final response = await _request('GET', endpoint, queryParams: queryParams);
     return _handleResponse(response);
@@ -111,7 +100,6 @@ class ApiService {
     return _handleResponse(response);
   }
 
-  // Response handler
   dynamic _handleResponse(http.Response response) {
     final statusCode = response.statusCode;
     final responseBody = response.body;
@@ -153,82 +141,68 @@ class ApiService {
 
   // ==================== REAL DATA ENDPOINTS ====================
 
-  // REAL: Get all buildings from database
   Future<dynamic> getBuildings() async {
     return await get('buildings');
   }
 
-  // REAL: Get single building by ID
   Future<dynamic> getBuildingById(String id) async {
     return await get('buildings/$id');
   }
 
-  // REAL: Create building
   Future<dynamic> createBuilding(Map<String, dynamic> data) async {
     return await post('buildings', data);
   }
 
-  // REAL: Update building
   Future<dynamic> updateBuilding(String id, Map<String, dynamic> data) async {
     return await put('buildings/$id', data);
   }
 
-  // REAL: Delete building
   Future<dynamic> deleteBuilding(String id) async {
     return await delete('buildings/$id');
   }
 
-  // REAL: Get all rooms from database
   Future<dynamic> getRooms() async {
     return await get('rooms');
   }
 
-  // REAL: Get single room by ID
   Future<dynamic> getRoomById(String id) async {
     return await get('rooms/$id');
   }
 
-  // REAL: Create room
   Future<dynamic> createRoom(Map<String, dynamic> data) async {
     return await post('rooms', data);
   }
 
-  // REAL: Update room
   Future<dynamic> updateRoom(String id, Map<String, dynamic> data) async {
     return await put('rooms/$id', data);
   }
 
-  // REAL: Delete room
   Future<dynamic> deleteRoom(String id) async {
     return await delete('rooms/$id');
   }
 
-  // REAL: Get all IoT devices
   Future<dynamic> getIoTDevices() async {
     return await get('iot-devices');
   }
 
-  // REAL: Get single IoT device
   Future<dynamic> getIoTDeviceById(String id) async {
     return await get('iot-devices/$id');
   }
 
-  // REAL: Create IoT device
   Future<dynamic> createIoTDevice(Map<String, dynamic> data) async {
     return await post('iot-devices', data);
   }
 
-  // REAL: Update IoT device
   Future<dynamic> updateIoTDevice(String id, Map<String, dynamic> data) async {
     return await put('iot-devices/$id', data);
   }
 
-  // REAL: Delete IoT device
   Future<dynamic> deleteIoTDevice(String id) async {
     return await delete('iot-devices/$id');
   }
 
-  // REAL: Get sensor data for room
+  // FIXED: sertakan statusCode di response agar pemanggil bisa membedakan
+  // 401 (auth) vs 5xx (server error) vs network error.
   Future<dynamic> getSensorData(String roomId) async {
     try {
       final headers = await _getHeaders();
@@ -241,10 +215,11 @@ class ApiService {
       if (response.statusCode == 200) {
         return jsonDecode(response.body);
       } else {
-        // Return data kosong jika gagal
         return {
           'success': false,
           'data': [],
+          'error': 'Sensor data request failed: ${response.statusCode}',
+          'statusCode': response.statusCode,
         };
       }
     } catch (e) {
@@ -257,7 +232,6 @@ class ApiService {
   }
 
   // ==================== TEST/DEBUG ENDPOINTS ====================
-  // (Keep for debugging but not used in production)
   Future<dynamic> getTestBuildings() async {
     return await get('test/buildings');
   }
@@ -283,8 +257,6 @@ class ApiService {
     return await post('rooms/sync-building-names', {});
   }
 
-  // FIXED: forceRefresh dibungkus try-catch dan return format seragam
-  // agar pemanggil tidak crash saat server mati / 4xx / 5xx.
   Future<dynamic> forceRefresh() async {
     try {
       final response = await _request('POST', 'force-refresh', body: {});
@@ -310,7 +282,10 @@ class ApiService {
     }
   }
 
-  // REAL: Get sensor history data untuk grafik
+  // FIXED: prefix error diubah dari 'Failed to fetch history data'
+  // menjadi 'History request failed' agar tidak memicu false positive
+  // di Helpers.isNetworkError. Sertakan statusCode agar pemanggil
+  // dapat membedakan 401 (butuh login) vs error lain.
   Future<dynamic> getSensorHistory(String roomId, String date,
       {int interval = 30}) async {
     try {
@@ -329,7 +304,8 @@ class ApiService {
         return {
           'success': false,
           'data': [],
-          'error': 'Failed to fetch history data: ${response.statusCode}',
+          'error': 'History request failed: ${response.statusCode}',
+          'statusCode': response.statusCode,
         };
       }
     } catch (e) {
@@ -341,6 +317,7 @@ class ApiService {
     }
   }
 
+  // FIXED: prefix error + statusCode (konsisten dengan method lain).
   Future<dynamic> get24HoursSensorData(String roomId) async {
     try {
       final headers = await _getHeaders();
@@ -356,7 +333,8 @@ class ApiService {
         return {
           'success': false,
           'data': [],
-          'error': 'Failed to fetch 24h data: ${response.statusCode}',
+          'error': '24h data request failed: ${response.statusCode}',
+          'statusCode': response.statusCode,
         };
       }
     } catch (e) {
@@ -388,7 +366,6 @@ class ApiService {
     return await post('auth/resend-reset-code', {'email': email});
   }
 
-  // Dispose
   void dispose() {
     _client.close();
   }

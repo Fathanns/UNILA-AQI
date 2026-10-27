@@ -10,6 +10,8 @@ class RoomProvider with ChangeNotifier {
   final SocketService _socketService = SocketService();
   final StorageService _storageService = StorageService();
 
+  static const String _cacheKey = 'cache_dashboard_rooms';
+
   List<Room> _rooms = [];
   List<Room> _filteredRooms = [];
   String _selectedBuilding = 'Semua Gedung';
@@ -354,47 +356,83 @@ class RoomProvider with ChangeNotifier {
     await initSocket();
   }
 
-  Future<void> loadRooms() async {
-    _isLoading = true;
-    _hasError = false;
-    notifyListeners();
-
-    try {
-      if (!_socketConnected) {
-        await initSocket();
+  Future<void> loadFromCache() async {
+  try {
+    final cached = _storageService.getJson(_cacheKey);
+    if (cached != null && cached['data'] is List) {
+      final list = (cached['data'] as List)
+          .map((e) => Room.fromJson(Map<String, dynamic>.from(e as Map)))
+          .toList();
+      if (list.isNotEmpty && _rooms.isEmpty) {
+        _rooms = list;
+        _applyFilters();
+        _lastUpdate = DateTime.now();
+        notifyListeners();
       }
-
-      _rooms = await _roomRepository.getRooms();
-      _applyFilters();
-    } catch (e) {
-      _hasError = true;
-      _errorMessage = e.toString();
-      print('❌ Error loading rooms: $e');
-    } finally {
-      _isLoading = false;
-      notifyListeners();
     }
+  } catch (_) {
+    // cache rusak — abaikan, biarkan loadRooms yang isi
   }
+}
+
+  Future<void> loadRooms() async {
+  // FIXED: hanya tampilkan spinner jika belum ada data (cache kosong).
+  // Kalau cache ada, biarkan konten tampil dan fetch berjalan di background.
+  _isLoading = _rooms.isEmpty;
+  _hasError = false;
+  notifyListeners();
+
+  try {
+    if (!_socketConnected) {
+      await initSocket();
+    }
+
+    _rooms = await _roomRepository.getRooms();
+    _applyFilters();
+    _lastUpdate = DateTime.now();
+
+    // Simpan ke cache untuk cold-start berikutnya
+    try {
+      await _storageService.setJson(_cacheKey, {
+        'data': _rooms.map((r) => r.toJson()).toList(),
+      });
+    } catch (_) {}
+  } catch (e) {
+    _hasError = true;
+    _errorMessage = e.toString();
+    print('❌ Error loading rooms: $e');
+  } finally {
+    _isLoading = false;
+    notifyListeners();
+  }
+}
 
   Future<void> refresh() async {
-    if (_isRefreshing) return;
+  if (_isRefreshing) return;
 
-    _isRefreshing = true;
-    _hasError = false;
-    notifyListeners();
+  _isRefreshing = true;
+  _hasError = false;
+  notifyListeners();
 
+  try {
+    _rooms = await _roomRepository.getRooms();
+    _applyFilters();
+    _lastUpdate = DateTime.now();
+
+    // Simpan ke cache
     try {
-      _rooms = await _roomRepository.getRooms();
-      _applyFilters();
-      _lastUpdate = DateTime.now();
-    } catch (e) {
-      _hasError = true;
-      _errorMessage = e.toString();
-    } finally {
-      _isRefreshing = false;
-      notifyListeners();
-    }
+      await _storageService.setJson(_cacheKey, {
+        'data': _rooms.map((r) => r.toJson()).toList(),
+      });
+    } catch (_) {}
+  } catch (e) {
+    _hasError = true;
+    _errorMessage = e.toString();
+  } finally {
+    _isRefreshing = false;
+    notifyListeners();
   }
+}
 
   Future<void> _refreshData() async {
     try {

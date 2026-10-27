@@ -2,7 +2,9 @@ const express = require('express');
 const router = express.Router();
 const mongoose = require('mongoose');
 const SensorData = require('../models/SensorData');
-const { authMiddleware } = require('../middleware/authMiddleware');
+
+// FIXED: authMiddleware dihapus dari import karena kedua endpoint
+// di bawah kini PUBLIC (lihat penjelasan di masing-masing route).
 
 // Helper function untuk convert string ke ObjectId
 const toObjectId = (id) => {
@@ -14,10 +16,18 @@ const toObjectId = (id) => {
 };
 
 // GET sensor data for a room dengan data aggregation
-router.get('/:roomId', authMiddleware, async (req, res) => {
+// FIXED: route dibuat PUBLIC (authMiddleware dihapus).
+// Alasan:
+//  - Data historis 24 jam ini identik dengan data live yang sudah tampil
+//    di dashboard publik (endpoint /rooms juga public).
+//  - Visitor (tanpa login) harus bisa melihat grafik historis ruangan,
+//    sama seperti admin.
+//  - Sebelumnya endpoint butuh token → visitor mendapat 401 → grafik
+//    kosong padahal admin normal.
+router.get('/:roomId', async (req, res) => {
   try {
     const { roomId } = req.params;
-    
+
     // Validasi roomId
     if (!mongoose.Types.ObjectId.isValid(roomId)) {
       return res.status(400).json({
@@ -25,18 +35,18 @@ router.get('/:roomId', authMiddleware, async (req, res) => {
         message: 'Invalid room ID format'
       });
     }
-    
+
     // Ambil data 24 jam terakhir
     const now = new Date();
     const dateFilter = { timestamp: { $gte: new Date(now - 24 * 60 * 60 * 1000) } };
-    
+
     // Ambil SEMUA data 24 jam (tanpa limit)
     const sensorData = await SensorData.find({
       roomId: toObjectId(roomId),
       ...dateFilter
     })
     .sort({ timestamp: 1 });
-    
+
     res.json({
       success: true,
       data: sensorData,
@@ -54,11 +64,14 @@ router.get('/:roomId', authMiddleware, async (req, res) => {
 });
 
 // NEW: GET sensor data by date untuk grafik history
-router.get('/:roomId/history', authMiddleware, async (req, res) => {
+// FIXED: route dibuat PUBLIC (authMiddleware dihapus) — alasan sama
+// dengan endpoint di atas. Grafik historis per tanggal harus bisa
+// dilihat oleh visitor tanpa login.
+router.get('/:roomId/history', async (req, res) => {
   try {
     const { roomId } = req.params;
     const { date, interval = 30 } = req.query; // interval dalam menit
-    
+
     // Validasi roomId
     if (!mongoose.Types.ObjectId.isValid(roomId)) {
       return res.status(400).json({
@@ -66,7 +79,7 @@ router.get('/:roomId/history', authMiddleware, async (req, res) => {
         message: 'Invalid room ID format'
       });
     }
-    
+
     // Parse tanggal
     let startDate, endDate;
     if (date) {
@@ -80,9 +93,9 @@ router.get('/:roomId/history', authMiddleware, async (req, res) => {
       startDate = new Date(today.setHours(0, 0, 0, 0));
       endDate = new Date(today.setHours(23, 59, 59, 999));
     }
-    
+
     console.log(`📊 Fetching history data for room ${roomId} from ${startDate} to ${endDate}`);
-    
+
     // Aggregation pipeline untuk data per interval
     const aggregationPipeline = [
       {
@@ -134,7 +147,7 @@ router.get('/:roomId/history', authMiddleware, async (req, res) => {
             $concat: [
               { $toString: "$_id.hour" },
               ":",
-              { 
+              {
                 $cond: {
                   if: { $lt: ["$_id.interval", 10] },
                   then: "0",
@@ -155,9 +168,9 @@ router.get('/:roomId/history', authMiddleware, async (req, res) => {
         }
       }
     ];
-    
+
     const aggregatedData = await SensorData.aggregate(aggregationPipeline);
-    
+
     // Jika tidak ada data, coba ambil data mentah
     if (aggregatedData.length === 0) {
       const rawData = await SensorData.find({
@@ -165,7 +178,7 @@ router.get('/:roomId/history', authMiddleware, async (req, res) => {
         timestamp: { $gte: startDate, $lte: endDate }
       })
       .sort({ timestamp: 1 });
-      
+
       return res.json({
         success: true,
         data: rawData.map(item => ({
@@ -177,7 +190,7 @@ router.get('/:roomId/history', authMiddleware, async (req, res) => {
         message: 'Raw data loaded'
       });
     }
-    
+
     res.json({
       success: true,
       data: aggregatedData, // Atau rawData
@@ -187,7 +200,7 @@ router.get('/:roomId/history', authMiddleware, async (req, res) => {
       endDate: endDate,
       message: 'Aggregated history data loaded'
     });
-    
+
   } catch (error) {
     console.error('Error fetching history data:', error);
     res.status(500).json({

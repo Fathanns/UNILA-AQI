@@ -32,6 +32,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   // Timer? _autoRefreshTimer;
   // int _autoRefreshCountdown = 10;
   bool _isMounted = false;
+  bool _isRefreshing = false;
 
   @override
   void initState() {
@@ -164,44 +165,63 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Future<void> _loadInitialData() async {
-    if (!_isMounted) return;
+  if (!_isMounted) return;
 
-    final roomProvider = Provider.of<RoomProvider>(context, listen: false);
+  final roomProvider = Provider.of<RoomProvider>(context, listen: false);
 
-    try {
-      await roomProvider.loadRooms();
-    } catch (e) {
-      if (!_isMounted) return;
-      if (Helpers.isNetworkError(e)) {
+  // 1) Tampilkan cache dulu (instant, tanpa spinner)
+  await roomProvider.loadFromCache();
+  if (!_isMounted) return;
+
+  // 2) Fetch dari server
+  try {
+    await roomProvider.loadRooms();
+  } catch (_) {
+    // sudah ditangani di provider
+  }
+  if (!_isMounted) return;
+
+  // 3) Tangani state pasca-fetch
+  if (roomProvider.hasError) {
+    final isNetwork = Helpers.isNetworkError(roomProvider.errorMessage);
+
+    if (roomProvider.rooms.isEmpty) {
+      // Kasus yang diminta user:
+      // tidak ada cache SAMA SEKALI + server mati → build() akan
+      // menampilkan error state layar penuh. Snackbar sebagai
+      // pemberitahuan tambahan.
+      if (isNetwork) {
         Helpers.showServerError(context);
-      } else if (e.toString().contains('401') ||
-          e.toString().contains('Access denied')) {
-        Helpers.showSnackBar(
-          context,
-          'Tidak bisa mengakses data. Silakan login sebagai admin atau hubungi administrator.',
-          isError: true,
-        );
       } else {
         Helpers.showSnackBar(
           context,
-          'Gagal memuat data: $e',
+          'Gagal memuat data ruangan',
+          isError: true,
+        );
+      }
+    } else {
+      // Ada cache, fetch gagal → tetap tampilkan cache,
+      // cukup beri notifikasi bahwa data mungkin tidak terbaru.
+      if (isNetwork) {
+        Helpers.showSnackBar(
+          context,
+          'Server tidak dapat dihubungi. Menampilkan data terakhir.',
           isError: true,
         );
       }
     }
-
-    // Setelah load, cek apakah provider menyimpan error (loadRooms catch internal)
-    if (_isMounted && roomProvider.hasError && roomProvider.rooms.isEmpty) {
-      final msg = roomProvider.errorMessage.toLowerCase();
-      if (msg.contains('socketexception') ||
-          msg.contains('network') ||
-          msg.contains('connection') ||
-          msg.contains('timeout') ||
-          msg.contains('failed host')) {
-        Helpers.showServerError(context);
-      }
-    }
   }
+}
+
+  Future<void> _handleManualRefresh() async {
+  if (_isRefreshing) return;
+  setState(() => _isRefreshing = true);
+  try {
+    await _refreshData();
+  } finally {
+    if (mounted) setState(() => _isRefreshing = false);
+  }
+}
 
   Future<void> _refreshData() async {
     if (!_isMounted) return;
@@ -282,11 +302,25 @@ class _DashboardScreenState extends State<DashboardScreen> {
         actions: [
           const ServerStatusIndicator(),
           IconButton(
-            icon: const Icon(Icons.refresh),
+            icon: _isRefreshing
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: AppColors.primary,
+                    ),
+                  )
+                : const Icon(
+                    Icons.refresh_rounded,
+                    size: 22,
+                    color: AppColors.textSecondary,
+                  ),
             onPressed: () {
               ServerStatusIndicator.checkNow();
-              _refreshData();
+              _handleManualRefresh();
             },
+            splashRadius: 20,
             tooltip: 'Refresh',
           ),
         ],
@@ -386,56 +420,118 @@ class _DashboardScreenState extends State<DashboardScreen> {
             )
           // Error State — hanya jika TIDAK ada data sama sekali
           else if (roomProvider.hasError && roomProvider.rooms.isEmpty)
-            SliverFillRemaining(
-              child: Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.error_outline,
-                        size: 64, color: AppColors.error),
-                    const SizedBox(height: 16),
-                    Text(
-                      'Error: ${roomProvider.errorMessage}',
-                      style: const TextStyle(color: AppColors.error),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 16),
-                    ElevatedButton(
-                      onPressed: _refreshData,
-                      child: const Text('Coba Lagi'),
-                    ),
-                  ],
-                ),
+  SliverFillRemaining(
+    child: Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(
+              Icons.cloud_off_rounded,
+              size: 72,
+              color: AppColors.textHint,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Tidak dapat memuat data ruangan',
+              style: Theme.of(context).textTheme.titleLarge,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              Helpers.friendlyErrorMessage(roomProvider.errorMessage),
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 14,
+                color: AppColors.textSecondary,
+                height: 1.5,
               ),
-            )
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton.icon(
+              onPressed: _refreshData,
+              icon: const Icon(Icons.refresh, size: 18),
+              label: const Text('Coba Lagi'),
+            ),
+          ],
+        ),
+      ),
+    ),
+  )
           // Empty State
           else if (roomProvider.rooms.isEmpty)
-            SliverFillRemaining(
-              child: Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.search_off,
-                        size: 64, color: Colors.grey),
-                    const SizedBox(height: 16),
-                    const Text(
-                      'Tidak ada ruangan ditemukan',
-                      style: TextStyle(fontSize: 16, color: Colors.grey),
-                    ),
-                    const SizedBox(height: 8),
-                    if (_searchController.text.isNotEmpty ||
-                        roomProvider.selectedBuilding != 'Semua Gedung')
-                      TextButton(
-                        onPressed: () {
-                          roomProvider.clearFilters();
-                          _searchController.clear();
-                        },
-                        child: const Text('Reset Filter'),
-                      ),
-                  ],
+  SliverFillRemaining(
+    child: Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Builder(
+          builder: (context) {
+            final hasSearch = _searchController.text.trim().isNotEmpty;
+            final hasBuildingFilter =
+                roomProvider.selectedBuilding != 'Semua Gedung';
+            final hasFilter = hasSearch || hasBuildingFilter;
+
+            // Icon menyesuaikan penyebab empty state
+            final IconData icon;
+            if (hasSearch) {
+              icon = Icons.search_off;
+            } else if (hasBuildingFilter) {
+              icon = Icons.filter_alt_off_outlined;
+            } else {
+              icon = Icons.meeting_room_outlined;
+            }
+
+            // Pesan spesifik sesuai penyebab
+            final String message;
+            if (hasSearch && hasBuildingFilter) {
+              message =
+                  'Tidak ada ruangan atau gedung yang cocok dengan\n'
+                  '"${_searchController.text.trim()}"\n'
+                  'di ${roomProvider.selectedBuilding}';
+            } else if (hasSearch) {
+              message =
+                  'Tidak ada ruangan atau gedung yang cocok dengan\n'
+                  '"${_searchController.text.trim()}"';
+            } else if (hasBuildingFilter) {
+              message =
+                  'Tidak ada ruangan di gedung\n'
+                  '"${roomProvider.selectedBuilding}"';
+            } else {
+              message = 'Belum ada data ruangan';
+            }
+
+            return Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(icon, size: 64, color: Colors.grey),
+                const SizedBox(height: 16),
+                Text(
+                  message,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    color: Colors.grey,
+                    height: 1.5,
+                  ),
                 ),
-              ),
-            )
+                const SizedBox(height: 8),
+                if (hasFilter)
+                  TextButton.icon(
+                    onPressed: () {
+                      roomProvider.clearFilters();
+                      _searchController.clear();
+                    },
+                    icon: const Icon(Icons.refresh, size: 18),
+                    label: const Text('Reset Filter & Pencarian'),
+                  ),
+              ],
+            );
+          },
+        ),
+      ),
+    ),
+  )
           // Data State — tetap tampil walau refresh error
           else
             SliverList(

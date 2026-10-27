@@ -2288,7 +2288,9 @@ const express = require('express');
 const router = express.Router();
 const mongoose = require('mongoose');
 const SensorData = require('../models/SensorData');
-const { authMiddleware } = require('../middleware/authMiddleware');
+
+// FIXED: authMiddleware dihapus dari import karena kedua endpoint
+// di bawah kini PUBLIC (lihat penjelasan di masing-masing route).
 
 // Helper function untuk convert string ke ObjectId
 const toObjectId = (id) => {
@@ -2300,10 +2302,18 @@ const toObjectId = (id) => {
 };
 
 // GET sensor data for a room dengan data aggregation
-router.get('/:roomId', authMiddleware, async (req, res) => {
+// FIXED: route dibuat PUBLIC (authMiddleware dihapus).
+// Alasan:
+//  - Data historis 24 jam ini identik dengan data live yang sudah tampil
+//    di dashboard publik (endpoint /rooms juga public).
+//  - Visitor (tanpa login) harus bisa melihat grafik historis ruangan,
+//    sama seperti admin.
+//  - Sebelumnya endpoint butuh token → visitor mendapat 401 → grafik
+//    kosong padahal admin normal.
+router.get('/:roomId', async (req, res) => {
   try {
     const { roomId } = req.params;
-    
+
     // Validasi roomId
     if (!mongoose.Types.ObjectId.isValid(roomId)) {
       return res.status(400).json({
@@ -2311,18 +2321,18 @@ router.get('/:roomId', authMiddleware, async (req, res) => {
         message: 'Invalid room ID format'
       });
     }
-    
+
     // Ambil data 24 jam terakhir
     const now = new Date();
     const dateFilter = { timestamp: { $gte: new Date(now - 24 * 60 * 60 * 1000) } };
-    
+
     // Ambil SEMUA data 24 jam (tanpa limit)
     const sensorData = await SensorData.find({
       roomId: toObjectId(roomId),
       ...dateFilter
     })
     .sort({ timestamp: 1 });
-    
+
     res.json({
       success: true,
       data: sensorData,
@@ -2340,11 +2350,14 @@ router.get('/:roomId', authMiddleware, async (req, res) => {
 });
 
 // NEW: GET sensor data by date untuk grafik history
-router.get('/:roomId/history', authMiddleware, async (req, res) => {
+// FIXED: route dibuat PUBLIC (authMiddleware dihapus) — alasan sama
+// dengan endpoint di atas. Grafik historis per tanggal harus bisa
+// dilihat oleh visitor tanpa login.
+router.get('/:roomId/history', async (req, res) => {
   try {
     const { roomId } = req.params;
     const { date, interval = 30 } = req.query; // interval dalam menit
-    
+
     // Validasi roomId
     if (!mongoose.Types.ObjectId.isValid(roomId)) {
       return res.status(400).json({
@@ -2352,7 +2365,7 @@ router.get('/:roomId/history', authMiddleware, async (req, res) => {
         message: 'Invalid room ID format'
       });
     }
-    
+
     // Parse tanggal
     let startDate, endDate;
     if (date) {
@@ -2366,9 +2379,9 @@ router.get('/:roomId/history', authMiddleware, async (req, res) => {
       startDate = new Date(today.setHours(0, 0, 0, 0));
       endDate = new Date(today.setHours(23, 59, 59, 999));
     }
-    
+
     console.log(`📊 Fetching history data for room ${roomId} from ${startDate} to ${endDate}`);
-    
+
     // Aggregation pipeline untuk data per interval
     const aggregationPipeline = [
       {
@@ -2420,7 +2433,7 @@ router.get('/:roomId/history', authMiddleware, async (req, res) => {
             $concat: [
               { $toString: "$_id.hour" },
               ":",
-              { 
+              {
                 $cond: {
                   if: { $lt: ["$_id.interval", 10] },
                   then: "0",
@@ -2441,9 +2454,9 @@ router.get('/:roomId/history', authMiddleware, async (req, res) => {
         }
       }
     ];
-    
+
     const aggregatedData = await SensorData.aggregate(aggregationPipeline);
-    
+
     // Jika tidak ada data, coba ambil data mentah
     if (aggregatedData.length === 0) {
       const rawData = await SensorData.find({
@@ -2451,7 +2464,7 @@ router.get('/:roomId/history', authMiddleware, async (req, res) => {
         timestamp: { $gte: startDate, $lte: endDate }
       })
       .sort({ timestamp: 1 });
-      
+
       return res.json({
         success: true,
         data: rawData.map(item => ({
@@ -2463,7 +2476,7 @@ router.get('/:roomId/history', authMiddleware, async (req, res) => {
         message: 'Raw data loaded'
       });
     }
-    
+
     res.json({
       success: true,
       data: aggregatedData, // Atau rawData
@@ -2473,7 +2486,7 @@ router.get('/:roomId/history', authMiddleware, async (req, res) => {
       endDate: endDate,
       message: 'Aggregated history data loaded'
     });
-    
+
   } catch (error) {
     console.error('Error fetching history data:', error);
     res.status(500).json({
@@ -2487,7 +2500,7 @@ router.get('/:roomId/history', authMiddleware, async (req, res) => {
 module.exports = router;
 
 ---------------------------------------------------------------------------------------------------------------------------------------
-src/routes/testRoute.js:
+C:\develop\UNILA-AQI\unila-aqi-backend\src\routes\testRoutes.js
 
 const express = require('express');
 const router = express.Router();
@@ -9262,14 +9275,11 @@ class ApiService {
   factory ApiService() => _instance;
   ApiService._internal();
 
-  // Base configuration
   static const String baseUrl = AppConstants.apiBaseUrl;
   static const Duration timeout = Duration(seconds: 30);
 
-  // HTTP client
   final http.Client _client = http.Client();
 
-  // Headers
   Future<Map<String, String>> _getHeaders() async {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('auth_token');
@@ -9286,7 +9296,6 @@ class ApiService {
     return headers;
   }
 
-  // Generic request method
   Future<http.Response> _request(
     String method,
     String endpoint, {
@@ -9327,12 +9336,6 @@ class ApiService {
     }
   }
 
-  /// Health check ringan — return true jika server merespons 200.
-  ///
-  /// FIXED: timeout dipendekkan ke 3 detik agar indikator server
-  /// cepat berubah ke merah saat tombol refresh ditekan ketika
-  /// backend mati. Untuk jaringan normal, health check selesai
-  /// <500ms sehingga indikator langsung berubah ke hijau.
   Future<bool> checkServerHealth() async {
     try {
       final response = await _client
@@ -9344,7 +9347,6 @@ class ApiService {
     }
   }
 
-  // API Methods
   Future<dynamic> get(String endpoint, {Map<String, String>? queryParams}) async {
     final response = await _request('GET', endpoint, queryParams: queryParams);
     return _handleResponse(response);
@@ -9365,7 +9367,6 @@ class ApiService {
     return _handleResponse(response);
   }
 
-  // Response handler
   dynamic _handleResponse(http.Response response) {
     final statusCode = response.statusCode;
     final responseBody = response.body;
@@ -9407,82 +9408,68 @@ class ApiService {
 
   // ==================== REAL DATA ENDPOINTS ====================
 
-  // REAL: Get all buildings from database
   Future<dynamic> getBuildings() async {
     return await get('buildings');
   }
 
-  // REAL: Get single building by ID
   Future<dynamic> getBuildingById(String id) async {
     return await get('buildings/$id');
   }
 
-  // REAL: Create building
   Future<dynamic> createBuilding(Map<String, dynamic> data) async {
     return await post('buildings', data);
   }
 
-  // REAL: Update building
   Future<dynamic> updateBuilding(String id, Map<String, dynamic> data) async {
     return await put('buildings/$id', data);
   }
 
-  // REAL: Delete building
   Future<dynamic> deleteBuilding(String id) async {
     return await delete('buildings/$id');
   }
 
-  // REAL: Get all rooms from database
   Future<dynamic> getRooms() async {
     return await get('rooms');
   }
 
-  // REAL: Get single room by ID
   Future<dynamic> getRoomById(String id) async {
     return await get('rooms/$id');
   }
 
-  // REAL: Create room
   Future<dynamic> createRoom(Map<String, dynamic> data) async {
     return await post('rooms', data);
   }
 
-  // REAL: Update room
   Future<dynamic> updateRoom(String id, Map<String, dynamic> data) async {
     return await put('rooms/$id', data);
   }
 
-  // REAL: Delete room
   Future<dynamic> deleteRoom(String id) async {
     return await delete('rooms/$id');
   }
 
-  // REAL: Get all IoT devices
   Future<dynamic> getIoTDevices() async {
     return await get('iot-devices');
   }
 
-  // REAL: Get single IoT device
   Future<dynamic> getIoTDeviceById(String id) async {
     return await get('iot-devices/$id');
   }
 
-  // REAL: Create IoT device
   Future<dynamic> createIoTDevice(Map<String, dynamic> data) async {
     return await post('iot-devices', data);
   }
 
-  // REAL: Update IoT device
   Future<dynamic> updateIoTDevice(String id, Map<String, dynamic> data) async {
     return await put('iot-devices/$id', data);
   }
 
-  // REAL: Delete IoT device
   Future<dynamic> deleteIoTDevice(String id) async {
     return await delete('iot-devices/$id');
   }
 
-  // REAL: Get sensor data for room
+  // FIXED: sertakan statusCode di response agar pemanggil bisa membedakan
+  // 401 (auth) vs 5xx (server error) vs network error.
   Future<dynamic> getSensorData(String roomId) async {
     try {
       final headers = await _getHeaders();
@@ -9495,10 +9482,11 @@ class ApiService {
       if (response.statusCode == 200) {
         return jsonDecode(response.body);
       } else {
-        // Return data kosong jika gagal
         return {
           'success': false,
           'data': [],
+          'error': 'Sensor data request failed: ${response.statusCode}',
+          'statusCode': response.statusCode,
         };
       }
     } catch (e) {
@@ -9511,7 +9499,6 @@ class ApiService {
   }
 
   // ==================== TEST/DEBUG ENDPOINTS ====================
-  // (Keep for debugging but not used in production)
   Future<dynamic> getTestBuildings() async {
     return await get('test/buildings');
   }
@@ -9537,8 +9524,6 @@ class ApiService {
     return await post('rooms/sync-building-names', {});
   }
 
-  // FIXED: forceRefresh dibungkus try-catch dan return format seragam
-  // agar pemanggil tidak crash saat server mati / 4xx / 5xx.
   Future<dynamic> forceRefresh() async {
     try {
       final response = await _request('POST', 'force-refresh', body: {});
@@ -9564,7 +9549,10 @@ class ApiService {
     }
   }
 
-  // REAL: Get sensor history data untuk grafik
+  // FIXED: prefix error diubah dari 'Failed to fetch history data'
+  // menjadi 'History request failed' agar tidak memicu false positive
+  // di Helpers.isNetworkError. Sertakan statusCode agar pemanggil
+  // dapat membedakan 401 (butuh login) vs error lain.
   Future<dynamic> getSensorHistory(String roomId, String date,
       {int interval = 30}) async {
     try {
@@ -9583,7 +9571,8 @@ class ApiService {
         return {
           'success': false,
           'data': [],
-          'error': 'Failed to fetch history data: ${response.statusCode}',
+          'error': 'History request failed: ${response.statusCode}',
+          'statusCode': response.statusCode,
         };
       }
     } catch (e) {
@@ -9595,6 +9584,7 @@ class ApiService {
     }
   }
 
+  // FIXED: prefix error + statusCode (konsisten dengan method lain).
   Future<dynamic> get24HoursSensorData(String roomId) async {
     try {
       final headers = await _getHeaders();
@@ -9610,7 +9600,8 @@ class ApiService {
         return {
           'success': false,
           'data': [],
-          'error': 'Failed to fetch 24h data: ${response.statusCode}',
+          'error': '24h data request failed: ${response.statusCode}',
+          'statusCode': response.statusCode,
         };
       }
     } catch (e) {
@@ -9642,14 +9633,13 @@ class ApiService {
     return await post('auth/resend-reset-code', {'email': email});
   }
 
-  // Dispose
   void dispose() {
     _client.close();
   }
 }
 
 ---------------------------------------------------------------------------------------------------------------------------------------
-lib\core\services\auth_service.dart
+C:\develop\UNILA-AQI\unila_aqi\lib\core\services\auth_service.dart
 
 import 'package:shared_preferences/shared_preferences.dart';
 import 'api_service.dart';
@@ -10793,9 +10783,19 @@ import '../constants/app_constants.dart';
 
 class Helpers {
 
-    static bool isNetworkError(dynamic error) {
+  // FIXED: hapus substring generic 'failed to fetch' dari daftar pencocokan
+  // karena bertabrakan dengan pesan error kita sendiri di repository
+  // (mis. 'Failed to fetch history data: 401'). Sebelumnya ini menyebabkan
+  // HTTP 401 (unauthenticated) terdeteksi sebagai network error, sehingga
+  // snackbar "server mati" muncul padahal server hidup.
+  //
+  // Sekarang:
+  //  - 'clientexception' / 'socketexception' → tetap menangkap error jaringan asli
+  //  - 'typeerror: failed to fetch'          → tetap menangkap error Fetch API browser asli
+  static bool isNetworkError(dynamic error) {
     final s = (error?.toString() ?? '').toLowerCase();
     return s.contains('socketexception') ||
+        s.contains('clientexception') ||
         s.contains('network error') ||
         s.contains('failed host lookup') ||
         s.contains('host lookup') ||
@@ -10805,14 +10805,13 @@ class Helpers {
         s.contains('connection reset') ||
         s.contains('connection error') ||
         s.contains('connection failed') ||
-        s.contains('clientexception') ||
         s.contains('xmlhttprequest') ||
         s.contains('timeout') ||
         s.contains('unable to connect') ||
-        s.contains('failed to fetch');
+        s.contains('typeerror: failed to fetch');
   }
 
-   static void showServerError(BuildContext context) {
+  static void showServerError(BuildContext context) {
     showSnackBar(
       context,
       'Tidak dapat terhubung ke server. Periksa koneksi internet Anda atau coba beberapa saat lagi.',
@@ -10913,7 +10912,6 @@ class Helpers {
     if (value <= 350) return AppColors.aqiVeryUnhealthy; // hitam
     return AppColors.aqiHazardous; // hitam
   }
-  
 
   static String getTemperatureStatus(double value) {
     if (value >= 22 && value <= 26) return 'IDEAL';
@@ -10964,8 +10962,7 @@ class Helpers {
     return DateFormat(format).format(dateTime);
   }
 
-  // Tambah method format baru untuk waktu update
-   static String formatLastUpdate(DateTime dateTime) {
+  static String formatLastUpdate(DateTime dateTime) {
     final localTime = dateTime.toLocal();
     final now = DateTime.now().toLocal();
 
@@ -10989,31 +10986,26 @@ class Helpers {
   }
 
   static String formatLastUpdateWithDate(DateTime dateTime) {
-    // Konversi ke waktu lokal
     final localTime = dateTime.toLocal();
     final now = DateTime.now().toLocal();
-    
-    // Jika tanggal sama dengan hari ini
+
     if (localTime.year == now.year &&
         localTime.month == now.month &&
         localTime.day == now.day) {
       return 'Hari ini ${_formatLocalTime(localTime)}';
     }
-    
-    // Jika tanggal kemarin
+
     final yesterday = DateTime(now.year, now.month, now.day - 1);
     if (localTime.year == yesterday.year &&
         localTime.month == yesterday.month &&
         localTime.day == yesterday.day) {
       return 'Kemarin ${_formatLocalTime(localTime)}';
     }
-    
-    // Format dengan tanggal (menggunakan format lokal)
+
     return DateFormat('dd/MM HH:mm').format(localTime);
   }
 
   static String _formatLocalTime(DateTime localTime) {
-    // Format 24 jam
     final hour = localTime.hour.toString().padLeft(2, '0');
     final minute = localTime.minute.toString().padLeft(2, '0');
     return '$hour:$minute';
@@ -11021,29 +11013,25 @@ class Helpers {
 
   static String formatLocalTimeForDisplay(DateTime dateTime) {
     final localTime = dateTime.toLocal();
-    
-    // Cek preferensi waktu 12/24 jam berdasarkan locale
-    final format = DateFormat.Hm(); // Otomatis menggunakan 12/24 jam sesuai locale
+    final format = DateFormat.Hm();
     return format.format(localTime);
   }
 
   static String formatLocalTimeWithAmPm(DateTime dateTime) {
     final localTime = dateTime.toLocal();
-    final format = DateFormat('hh:mm a'); // Contoh: 02:30 PM
+    final format = DateFormat('hh:mm a');
     return format.format(localTime);
   }
 
   static String formatLocalDateTimeFull(DateTime dateTime) {
     final localTime = dateTime.toLocal();
-    return DateFormat('dd MMM yyyy HH:mm').format(localTime); // Contoh: 15 Jan 2024 14:30
+    return DateFormat('dd MMM yyyy HH:mm').format(localTime);
   }
 
-  // Method untuk format real-time (akan diupdate setiap detik)
   static String formatRealTimeUpdate(DateTime dateTime) {
     final now = DateTime.now();
     final difference = now.difference(dateTime);
-    
-    // Format yang berbeda berdasarkan berapa lama yang lalu
+
     if (difference.inSeconds < 10) {
       return 'Live • Baru saja';
     } else if (difference.inSeconds < 60) {
@@ -11055,15 +11043,14 @@ class Helpers {
     }
   }
 
-  // Method untuk format dengan indikator status
   static Map<String, dynamic> formatUpdateWithStatus(DateTime dateTime) {
     final now = DateTime.now();
     final difference = now.difference(dateTime);
-    
+
     String text;
     Color color;
     IconData icon;
-    
+
     if (difference.inSeconds < 30) {
       text = 'Live • ${DateFormat('HH:mm').format(dateTime)}';
       color = Colors.green;
@@ -11085,7 +11072,7 @@ class Helpers {
       color = Colors.grey;
       icon = Icons.circle;
     }
-    
+
     return {
       'text': text,
       'color': color,
@@ -11183,7 +11170,7 @@ class Helpers {
       return '{}';
     }
   }
-  
+
   static String getAQICategory(int aqi) {
     if (aqi <= 50) return 'baik';
     if (aqi <= 100) return 'sedang';
@@ -11192,7 +11179,7 @@ class Helpers {
     if (aqi <= 300) return 'berbahaya';
     return 'error';
   }
-  
+
   // Network Helpers
   static String formatBytes(int bytes) {
     if (bytes < 1024) return '$bytes B';
@@ -11212,54 +11199,45 @@ class Helpers {
     return '#${color.value.toRadixString(16).padLeft(8, '0').substring(2)}';
   }
 
-  /// Format untuk widget compact (room card).
-/// Mengembalikan Map berisi label (hari) dan time (jam).
-/// - Hari ini        : { label: 'HARI INI', time: '14:30' }
-/// - Kemarin         : { label: 'KEMARIN',  time: '14:30' }
-/// - Lebih lama      : { label: '17/01',    time: '14:30' }
-static Map<String, String> formatCompactLastUpdate(DateTime dateTime) {
-  final localTime = dateTime.toLocal();
-  final now = DateTime.now().toLocal();
+  static Map<String, String> formatCompactLastUpdate(DateTime dateTime) {
+    final localTime = dateTime.toLocal();
+    final now = DateTime.now().toLocal();
 
-  final timeStr = _formatLocalTime(localTime);
+    final timeStr = _formatLocalTime(localTime);
 
-  // Hari ini
-  if (localTime.year == now.year &&
-      localTime.month == now.month &&
-      localTime.day == now.day) {
-    return {'label': 'HARI INI', 'time': timeStr};
+    if (localTime.year == now.year &&
+        localTime.month == now.month &&
+        localTime.day == now.day) {
+      return {'label': 'HARI INI', 'time': timeStr};
+    }
+
+    final yesterday = DateTime(now.year, now.month, now.day - 1);
+    if (localTime.year == yesterday.year &&
+        localTime.month == yesterday.month &&
+        localTime.day == yesterday.day) {
+      return {'label': 'KEMARIN', 'time': timeStr};
+    }
+
+    return {
+      'label': DateFormat('dd/MM').format(localTime),
+      'time': timeStr,
+    };
   }
-
-  // Kemarin
-  final yesterday = DateTime(now.year, now.month, now.day - 1);
-  if (localTime.year == yesterday.year &&
-      localTime.month == yesterday.month &&
-      localTime.day == yesterday.day) {
-    return {'label': 'KEMARIN', 'time': timeStr};
-  }
-
-  // Lebih lama: tanggal + jam
-  return {
-    'label': DateFormat('dd/MM').format(localTime),
-    'time': timeStr,
-  };
-}
 
   static List<String> getDetailedRecommendations(Room room) {
     final recommendations = <String>[];
     final data = room.currentData;
 
-    // AQI based recommendations
     final aqi = room.currentAQI;
-     if (aqi > 300) {
+    if (aqi > 300) {
       recommendations.add('KONDISI SANGAT BERBAHAYA - TIDAK ADA AKTIVITAS AKADEMIK TATAP MUKA');
       recommendations.add('Tim manajemen gedung melakukan pemantauan AQI setiap jam');
       recommendations.add('Nyalakan air purifier dengan kecepatan maksimum selama 24 jam non-stop untuk membersihkan ruangan');
-    }else if (aqi > 200) {
+    } else if (aqi > 200) {
       recommendations.add('Kualitas udara dalam kelas sangat berbahaya untuk perkuliahan tatap muka');
       recommendations.add('Segera alihkan seluruh perkuliahan ke metode daring atau asynchronous');
       recommendations.add('Nyalakan air purifier dengan kecepatan maksimum selama 24 jam non-stop untuk membersihkan ruangan');
-    }else if (aqi > 150) {
+    } else if (aqi > 150) {
       recommendations.add('Kualitas udara dalam kelas buruk dan berisiko bagi semua penghuni ruangan');
       recommendations.add('Gunakan masker ketika berada di ruangan ini');
       recommendations.add('Wjib menyalakan air purifier di setiap kelas yang digunakan');
@@ -11274,36 +11252,31 @@ static Map<String, String> formatCompactLastUpdate(DateTime dateTime) {
       recommendations.add('Kualitas udara sangat baik dan optimal untuk proses belajar mengajar');
       recommendations.add('Aman untuk perkuliahan dengan durasi berapapun');
     }
-    
-    // PM2.5 specific
+
     if (data.pm25 > 35.4) {
       recommendations.add('PM2.5 tinggi: Gunakan air purifier');
     }
 
-     // PM10 specific
     if (data.pm10 > 100) {
       recommendations.add('PM10 tinggi: Bersihkan kelas secara basah sebelum perkuliahan');
     }
-    
-    // CO2 specific
+
     if (data.co2 > 1000) {
       recommendations.add('CO₂ tinggi: Buka jendela untuk ventilasi');
     }
-    
-    // Temperature specific
+
     if (data.temperature > 28) {
       recommendations.add('Suhu panas: Nyalakan AC atau kipas');
     } else if (data.temperature < 22) {
       recommendations.add('Suhu dingin: Gunakan pemanas ruangan');
-    } 
-    
-    // Humidity specific
+    }
+
     if (data.humidity > 70) {
       recommendations.add('Kelembaban tinggi: Gunakan dehumidifier');
     } else if (data.humidity < 40) {
       recommendations.add('Kelembaban rendah: Gunakan humidifier');
     }
-    
+
     return recommendations;
   }
 }
@@ -12017,50 +11990,49 @@ import '../../core/services/storage_service.dart';
 
 class BuildingRepository {
   final StorageService _storage = StorageService();
-  
+
   Future<String?> _getToken() async {
     return _storage.getString('auth_token');
   }
-  
+
   Future<Map<String, String>> _getHeaders() async {
     final token = await _getToken();
-    
+
     final headers = {
       'Content-Type': 'application/json',
       'Accept': 'application/json',
     };
-    
+
     if (token != null) {
       headers['Authorization'] = 'Bearer $token';
     }
-    
+
     return headers;
   }
-  
+
   // Get all buildings
   Future<List<Building>> getBuildings() async {
     try {
       print('📡 Fetching buildings from: ${AppConstants.apiBaseUrl}/buildings');
-      
+
       final headers = await _getHeaders();
       print('🔑 Token available: ${headers.containsKey('Authorization')}');
-      
+
       final response = await http.get(
         Uri.parse('${AppConstants.apiBaseUrl}/buildings'),
         headers: headers,
       );
-      
+
       print('📊 Response status: ${response.statusCode}');
-      // print('📄 Response body: ${response.body}');
-      
+
       if (response.statusCode == 200) {
         final jsonResponse = jsonDecode(response.body);
         print('✅ API success: ${jsonResponse['success']}');
-        
+
         if (jsonResponse['success'] == true) {
           final List<dynamic> data = jsonResponse['data'];
           final buildings = data.map((json) => Building.fromJson(json)).toList();
-          
+
           print('🎯 Loaded ${buildings.length} buildings');
           return buildings;
         } else {
@@ -12069,7 +12041,7 @@ class BuildingRepository {
       } else if (response.statusCode == 401) {
         // Try without token (public access)
         print('⚠️ Token invalid, trying public access...');
-        
+
         final publicResponse = await http.get(
           Uri.parse('${AppConstants.apiBaseUrl}/buildings'),
           headers: {
@@ -12077,7 +12049,7 @@ class BuildingRepository {
             'Accept': 'application/json',
           },
         );
-        
+
         if (publicResponse.statusCode == 200) {
           final jsonResponse = jsonDecode(publicResponse.body);
           if (jsonResponse['success'] == true) {
@@ -12085,19 +12057,20 @@ class BuildingRepository {
             return data.map((json) => Building.fromJson(json)).toList();
           }
         }
-        
+
         throw Exception('Unauthorized. Please login.');
       } else if (response.statusCode == 404) {
         throw Exception('Buildings endpoint not found (404). Check backend server.');
       } else {
-        throw Exception('Failed to fetch buildings: ${response.statusCode}');
+        // FIXED: prefix 'Failed to fetch' → 'Buildings request failed'
+        throw Exception('Buildings request failed: ${response.statusCode}');
       }
     } catch (e) {
       print('❌ Building repository error: $e');
       rethrow;
     }
   }
-  
+
   // Get building by ID
   Future<Building> getBuildingById(String id) async {
     try {
@@ -12106,7 +12079,7 @@ class BuildingRepository {
         Uri.parse('${AppConstants.apiBaseUrl}/buildings/$id'),
         headers: headers,
       );
-      
+
       if (response.statusCode == 200) {
         final jsonResponse = jsonDecode(response.body);
         if (jsonResponse['success'] == true) {
@@ -12117,13 +12090,14 @@ class BuildingRepository {
       } else if (response.statusCode == 404) {
         throw Exception('Building not found (404)');
       } else {
-        throw Exception('Failed to fetch building: ${response.statusCode}');
+        // FIXED: prefix 'Failed to fetch' → 'Building request failed'
+        throw Exception('Building request failed: ${response.statusCode}');
       }
     } catch (e) {
       rethrow;
     }
   }
-  
+
   // Create building
   Future<Building> createBuilding({
     required String name,
@@ -12137,19 +12111,19 @@ class BuildingRepository {
         'code': code,
         'description': description,
       });
-      
+
       print('📤 Creating building: $name');
       print('📤 Request body: $body');
-      
+
       final response = await http.post(
         Uri.parse('${AppConstants.apiBaseUrl}/buildings'),
         headers: headers,
         body: body,
       );
-      
+
       print('📊 Create response: ${response.statusCode}');
       print('📄 Response body: ${response.body}');
-      
+
       if (response.statusCode == 201) {
         final jsonResponse = jsonDecode(response.body);
         if (jsonResponse['success'] == true) {
@@ -12165,7 +12139,7 @@ class BuildingRepository {
       rethrow;
     }
   }
-  
+
   // Update building
   Future<Building> updateBuilding({
     required String id,
@@ -12180,13 +12154,13 @@ class BuildingRepository {
         'code': code,
         'description': description,
       });
-      
+
       final response = await http.put(
         Uri.parse('${AppConstants.apiBaseUrl}/buildings/$id'),
         headers: headers,
         body: body,
       );
-      
+
       if (response.statusCode == 200) {
         final jsonResponse = jsonDecode(response.body);
         if (jsonResponse['success'] == true) {
@@ -12202,7 +12176,7 @@ class BuildingRepository {
       rethrow;
     }
   }
-  
+
   // Delete building
   Future<void> deleteBuilding(String id) async {
     try {
@@ -12211,10 +12185,10 @@ class BuildingRepository {
         Uri.parse('${AppConstants.apiBaseUrl}/buildings/$id'),
         headers: headers,
       );
-      
+
       print('🗑️ Delete building response: ${response.statusCode}');
       print('📄 Delete response body: ${response.body}');
-      
+
       if (response.statusCode != 200) {
         final error = jsonDecode(response.body);
         throw Exception(error['message'] ?? 'Failed to delete building');
@@ -12224,7 +12198,6 @@ class BuildingRepository {
     }
   }
 }
-
 ---------------------------------------------------------------------------------------------------------------------------------------
 lib/data/repositories/history_repository.dar:
 
@@ -12694,7 +12667,9 @@ class RoomRepository {
 
         throw Exception('Access denied. Please login as admin or try user mode.');
       } else {
-        throw Exception('Failed to fetch rooms: ${response.statusCode}');
+        // FIXED: ganti prefix 'Failed to fetch' → 'Rooms request failed'
+        // agar tidak memicu Helpers.isNetworkError (false positive).
+        throw Exception('Rooms request failed: ${response.statusCode}');
       }
     } catch (e) {
       print('❌ Room Repository Error: $e');
@@ -12718,7 +12693,8 @@ class RoomRepository {
           throw Exception(jsonResponse['message'] ?? 'Failed to fetch room');
         }
       } else {
-        throw Exception('Failed to fetch room: ${response.statusCode}');
+        // FIXED: prefix 'Failed to fetch' → 'Room request failed'
+        throw Exception('Room request failed: ${response.statusCode}');
       }
     } catch (e) {
       rethrow;
@@ -12847,6 +12823,7 @@ class _BuildingManagementScreenState extends State<BuildingManagementScreen> {
   List<Building> _buildings = [];
   List<Building> _filteredBuildings = [];
   bool _isLoading = false;
+  bool _isRefreshing = false;
   bool _hasError = false;
   String _errorMessage = '';
 
@@ -12933,6 +12910,16 @@ class _BuildingManagementScreenState extends State<BuildingManagementScreen> {
     }
   }
 
+  Future<void> _handleManualRefresh() async {
+  if (_isRefreshing) return;
+  setState(() => _isRefreshing = true);
+  try {
+    await _loadBuildings();
+  } finally {
+    if (mounted) setState(() => _isRefreshing = false);
+  }
+}
+
   void _filterBuildings(String query) {
     if (query.isEmpty) {
       setState(() => _filteredBuildings = _buildings);
@@ -13015,16 +13002,30 @@ class _BuildingManagementScreenState extends State<BuildingManagementScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
+     appBar: AppBar(
         title: const Text('Kelola Gedung'),
         actions: [
           const ServerStatusIndicator(),
           IconButton(
-            icon: const Icon(Icons.refresh),
+            icon: _isRefreshing
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: AppColors.primary,
+                    ),
+                  )
+                : const Icon(
+                    Icons.refresh_rounded,
+                    size: 22,
+                    color: AppColors.textSecondary,
+                  ),
             onPressed: () {
               ServerStatusIndicator.checkNow();
-              _loadBuildings();
+              _handleManualRefresh();
             },
+            splashRadius: 20,
             tooltip: 'Refresh',
           ),
         ],
@@ -13504,6 +13505,7 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
   List<IoTDevice> _devices = [];
   List<IoTDevice> _filteredDevices = [];
   bool _isLoading = false;
+  bool _isRefreshing = false;
   bool _hasError = false;
   String _errorMessage = '';
 
@@ -13576,6 +13578,16 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
       if (mounted) setState(() => _isLoading = false);
     }
   }
+
+  Future<void> _handleManualRefresh() async {
+  if (_isRefreshing) return;
+  setState(() => _isRefreshing = true);
+  try {
+    await _loadData();
+  } finally {
+    if (mounted) setState(() => _isRefreshing = false);
+  }
+}
 
   void _filterDevices(String query) {
     if (query.isEmpty) {
@@ -13660,20 +13672,34 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Kelola Device IoT'),
-        actions: [
-          const ServerStatusIndicator(),
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: () {
-              ServerStatusIndicator.checkNow();
-              _loadData();
-            },
-            tooltip: 'Refresh',
-          ),
-        ],
-      ),
+     appBar: AppBar(
+      title: const Text('Kelola Device IoT'),
+      actions: [
+        const ServerStatusIndicator(),
+        IconButton(
+          icon: _isRefreshing
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: AppColors.primary,
+                  ),
+                )
+              : const Icon(
+                  Icons.refresh_rounded,
+                  size: 22,
+                  color: AppColors.textSecondary,
+                ),
+          onPressed: () {
+            ServerStatusIndicator.checkNow();
+            _handleManualRefresh();
+          },
+          splashRadius: 20,
+          tooltip: 'Refresh',
+        ),
+      ],
+    ),
       body: Column(
         children: [
           Padding(
@@ -14114,6 +14140,7 @@ class _ProfileManagementScreenState extends State<ProfileManagementScreen> {
   static const String _cacheKey = 'cache_profile';
 
   bool _isLoading = true;
+  bool _isRefreshing = false;
   bool _hasError = false;
   String _errorForLog = ''; // hanya untuk debugging, TIDAK ditampilkan
 
@@ -14234,6 +14261,16 @@ class _ProfileManagementScreenState extends State<ProfileManagementScreen> {
     }
   }
 
+  Future<void> _handleManualRefresh() async {
+  if (_isRefreshing) return;
+  setState(() => _isRefreshing = true);
+  try {
+    await _loadData();
+  } finally {
+    if (mounted) setState(() => _isRefreshing = false);
+  }
+}
+
   Future<void> _logout() async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -14271,7 +14308,7 @@ class _ProfileManagementScreenState extends State<ProfileManagementScreen> {
         builder: (context) => EditProfileScreen(
           currentUsername: _username,
           currentEmail: _email,
-          onSaved: _loadData,
+         onSaved: _loadData,
         ),
       ),
     );
@@ -14288,17 +14325,34 @@ class _ProfileManagementScreenState extends State<ProfileManagementScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Profil Admin'),
-        actions: [
-          const ServerStatusIndicator(),
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _loadData,
-            tooltip: 'Refresh',
-          ),
-        ],
-      ),
+     appBar: AppBar(
+      title: const Text('Profil Admin'),
+      actions: [
+        const ServerStatusIndicator(),
+        IconButton(
+          icon: _isRefreshing
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: AppColors.primary,
+                  ),
+                )
+              : const Icon(
+                  Icons.refresh_rounded,
+                  size: 22,
+                  color: AppColors.textSecondary,
+                ),
+          onPressed: () {
+            ServerStatusIndicator.checkNow();
+            _handleManualRefresh();
+          },
+          splashRadius: 20,
+          tooltip: 'Refresh',
+        ),
+      ],
+    ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _hasError
@@ -14724,7 +14778,7 @@ class _ProfileManagementScreenState extends State<ProfileManagementScreen> {
 class EditProfileScreen extends StatefulWidget {
   final String currentUsername;
   final String currentEmail;
-  final VoidCallback onSaved;
+  final Future<void> Function() onSaved;
 
   const EditProfileScreen({
     super.key,
@@ -14747,6 +14801,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   bool _isLoading = false;
   bool _isSendingCode = false;
   bool _codeSent = false;
+  bool _isRefreshing = false;
 
   @override
   void initState() {
@@ -14818,6 +14873,16 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     }
   }
 
+  Future<void> _handleRefresh() async {
+  if (_isRefreshing) return;
+  setState(() => _isRefreshing = true);
+  try {
+    await widget.onSaved();
+  } finally {
+    if (mounted) setState(() => _isRefreshing = false);
+  }
+}
+
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -14885,19 +14950,33 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-  title: const Text('Profil Admin'),
-  actions: [
-    const ServerStatusIndicator(),
-    IconButton(
-      icon: const Icon(Icons.refresh),
-      onPressed: () {
-        ServerStatusIndicator.checkNow();
-        widget.onSaved();
-      },
-      tooltip: 'Refresh',
-    ),
-  ],
-),
+        title: const Text('Profil Admin'),
+        actions: [
+          const ServerStatusIndicator(),
+          IconButton(
+            icon: _isRefreshing
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: AppColors.primary,
+                    ),
+                  )
+                : const Icon(
+                    Icons.refresh_rounded,
+                    size: 22,
+                    color: AppColors.textSecondary,
+                  ),
+            onPressed: () {
+              ServerStatusIndicator.checkNow();
+              _handleRefresh();
+            },
+            splashRadius: 20,
+            tooltip: 'Refresh',
+          ),
+        ],
+      ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Form(
@@ -15281,6 +15360,21 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
 
   Timer? _reloadDebounce;
 
+  List<String> get _availableBuildings {
+  final set = <String>{'Semua Gedung'};
+  for (final b in _buildings) {
+    final name = b.name.trim();
+    if (name.isNotEmpty) set.add(name);
+  }
+  for (final r in _rooms) {
+    final name = r.buildingName.trim();
+    if (name.isNotEmpty) set.add(name);
+  }
+  if (set.length <= 1) return set.toList();
+  final rest = set.toList().sublist(1)..sort();
+  return ['Semua Gedung', ...rest];
+}
+
   @override
   void initState() {
     super.initState();
@@ -15402,29 +15496,55 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
   // LOAD DATA
   // ============================================================
   Future<void> _loadCacheThenFetch() async {
-    Map<String, dynamic>? cached;
-    try {
-      cached = _storage.getJson(_cacheKey);
-    } catch (_) {
-      cached = null;
-    }
-
-    if (cached != null && cached['data'] is List) {
-      try {
-        final list = (cached['data'] as List)
-            .map((e) => Room.fromJson(Map<String, dynamic>.from(e as Map)))
-            .toList();
-        if (mounted) {
-          setState(() {
-            _rooms = list;
-          });
-          _filterRooms();
-        }
-      } catch (_) {}
-    }
-
-    await _loadData();
+  Map<String, dynamic>? cached;
+  try {
+    cached = _storage.getJson(_cacheKey);
+  } catch (_) {
+    cached = null;
   }
+
+  // 1) Hidrasi _rooms dari cache (perilaku lama)
+  if (cached != null && cached['data'] is List) {
+    try {
+      final list = (cached['data'] as List)
+          .map((e) => Room.fromJson(Map<String, dynamic>.from(e as Map)))
+          .toList();
+      if (mounted) {
+        setState(() {
+          _rooms = list;
+        });
+      }
+    } catch (_) {
+      // cache rusak — abaikan
+    }
+  }
+
+  // 2) Hidrasi _buildings dari cache (BARU)
+  //    Supaya dropdown filter gedung langsung terisi saat cold-start,
+  //    tanpa menunggu _loadData() selesai.
+  if (cached != null && cached['buildings'] is List) {
+    try {
+      final bList = (cached['buildings'] as List)
+          .map((e) =>
+              Building.fromJson(Map<String, dynamic>.from(e as Map)))
+          .toList();
+      if (mounted) {
+        setState(() {
+          _buildings = bList;
+        });
+      }
+    } catch (_) {
+      // cache rusak — abaikan
+    }
+  }
+
+  // 3) Terapkan filter setelah data cache masuk
+  //    (juga memvalidasi _selectedBuildingFilter terhadap _availableBuildings)
+  _filterRooms();
+
+  // 4) Fetch data terbaru dari server
+  await _loadData();
+}
 
   Future<void> _loadData() async {
     setState(() {
@@ -15453,6 +15573,7 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
       try {
         await _storage.setJson(_cacheKey, {
           'data': rooms.map((r) => r.toJson()).toList(),
+          'buildings': buildings.map((b) => b.toJson()).toList(),
         });
       } catch (_) {}
     } catch (e) {
@@ -15505,29 +15626,34 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
   }
 
   void _filterRooms() {
-    List<Room> filtered = _rooms;
-
-    if (_selectedBuildingFilter != 'Semua Gedung') {
-      filtered = filtered
-          .where((room) => room.buildingName == _selectedBuildingFilter)
-          .toList();
-    }
-
-    if (_searchController.text.isNotEmpty) {
-      final query = _searchController.text.toLowerCase();
-      filtered = filtered
-          .where((room) =>
-              room.name.toLowerCase().contains(query) ||
-              room.buildingName.toLowerCase().contains(query))
-          .toList();
-    }
-
-    if (mounted) {
-      setState(() => _filteredRooms = filtered);
-    } else {
-      _filteredRooms = filtered;
-    }
+  // Pastikan filter yang tersimpan masih valid; kalau tidak, reset.
+  if (!_availableBuildings.contains(_selectedBuildingFilter)) {
+    _selectedBuildingFilter = 'Semua Gedung';
   }
+
+  List<Room> filtered = _rooms;
+
+  if (_selectedBuildingFilter != 'Semua Gedung') {
+    filtered = filtered
+        .where((room) => room.buildingName == _selectedBuildingFilter)
+        .toList();
+  }
+
+  if (_searchController.text.isNotEmpty) {
+    final query = _searchController.text.toLowerCase();
+    filtered = filtered
+        .where((room) =>
+            room.name.toLowerCase().contains(query) ||
+            room.buildingName.toLowerCase().contains(query))
+        .toList();
+  }
+
+  if (mounted) {
+    setState(() => _filteredRooms = filtered);
+  } else {
+    _filteredRooms = filtered;
+  }
+}
 
   Future<void> _deleteRoom(String roomId) async {
     final confirmed = await showDialog<bool>(
@@ -15616,12 +15742,20 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
           IconButton(
             icon: _isRefreshing
                 ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: AppColors.primary,
+                    ),
                   )
-                : const Icon(Icons.refresh),
+                : const Icon(
+                    Icons.refresh_rounded,
+                    size: 22,
+                    color: AppColors.textSecondary,
+                  ),
             onPressed: _isRefreshing ? null : _handleManualRefresh,
+            splashRadius: 20,
             tooltip: 'Refresh',
           ),
         ],
@@ -15672,10 +15806,7 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
                           _filterRooms();
                         });
                       },
-                      items: [
-                        'Semua Gedung',
-                        ..._buildings.map((b) => b.name).toSet(),
-                      ].map((building) {
+                      items: _availableBuildings.map((building) {
                         return DropdownMenuItem(
                           value: building,
                           child: Text(building),
@@ -17273,6 +17404,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   // Timer? _autoRefreshTimer;
   // int _autoRefreshCountdown = 10;
   bool _isMounted = false;
+  bool _isRefreshing = false;
 
   @override
   void initState() {
@@ -17405,44 +17537,63 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Future<void> _loadInitialData() async {
-    if (!_isMounted) return;
+  if (!_isMounted) return;
 
-    final roomProvider = Provider.of<RoomProvider>(context, listen: false);
+  final roomProvider = Provider.of<RoomProvider>(context, listen: false);
 
-    try {
-      await roomProvider.loadRooms();
-    } catch (e) {
-      if (!_isMounted) return;
-      if (Helpers.isNetworkError(e)) {
+  // 1) Tampilkan cache dulu (instant, tanpa spinner)
+  await roomProvider.loadFromCache();
+  if (!_isMounted) return;
+
+  // 2) Fetch dari server
+  try {
+    await roomProvider.loadRooms();
+  } catch (_) {
+    // sudah ditangani di provider
+  }
+  if (!_isMounted) return;
+
+  // 3) Tangani state pasca-fetch
+  if (roomProvider.hasError) {
+    final isNetwork = Helpers.isNetworkError(roomProvider.errorMessage);
+
+    if (roomProvider.rooms.isEmpty) {
+      // Kasus yang diminta user:
+      // tidak ada cache SAMA SEKALI + server mati → build() akan
+      // menampilkan error state layar penuh. Snackbar sebagai
+      // pemberitahuan tambahan.
+      if (isNetwork) {
         Helpers.showServerError(context);
-      } else if (e.toString().contains('401') ||
-          e.toString().contains('Access denied')) {
-        Helpers.showSnackBar(
-          context,
-          'Tidak bisa mengakses data. Silakan login sebagai admin atau hubungi administrator.',
-          isError: true,
-        );
       } else {
         Helpers.showSnackBar(
           context,
-          'Gagal memuat data: $e',
+          'Gagal memuat data ruangan',
+          isError: true,
+        );
+      }
+    } else {
+      // Ada cache, fetch gagal → tetap tampilkan cache,
+      // cukup beri notifikasi bahwa data mungkin tidak terbaru.
+      if (isNetwork) {
+        Helpers.showSnackBar(
+          context,
+          'Server tidak dapat dihubungi. Menampilkan data terakhir.',
           isError: true,
         );
       }
     }
-
-    // Setelah load, cek apakah provider menyimpan error (loadRooms catch internal)
-    if (_isMounted && roomProvider.hasError && roomProvider.rooms.isEmpty) {
-      final msg = roomProvider.errorMessage.toLowerCase();
-      if (msg.contains('socketexception') ||
-          msg.contains('network') ||
-          msg.contains('connection') ||
-          msg.contains('timeout') ||
-          msg.contains('failed host')) {
-        Helpers.showServerError(context);
-      }
-    }
   }
+}
+
+  Future<void> _handleManualRefresh() async {
+  if (_isRefreshing) return;
+  setState(() => _isRefreshing = true);
+  try {
+    await _refreshData();
+  } finally {
+    if (mounted) setState(() => _isRefreshing = false);
+  }
+}
 
   Future<void> _refreshData() async {
     if (!_isMounted) return;
@@ -17523,11 +17674,25 @@ class _DashboardScreenState extends State<DashboardScreen> {
         actions: [
           const ServerStatusIndicator(),
           IconButton(
-            icon: const Icon(Icons.refresh),
+            icon: _isRefreshing
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: AppColors.primary,
+                    ),
+                  )
+                : const Icon(
+                    Icons.refresh_rounded,
+                    size: 22,
+                    color: AppColors.textSecondary,
+                  ),
             onPressed: () {
               ServerStatusIndicator.checkNow();
-              _refreshData();
+              _handleManualRefresh();
             },
+            splashRadius: 20,
             tooltip: 'Refresh',
           ),
         ],
@@ -17627,56 +17792,118 @@ class _DashboardScreenState extends State<DashboardScreen> {
             )
           // Error State — hanya jika TIDAK ada data sama sekali
           else if (roomProvider.hasError && roomProvider.rooms.isEmpty)
-            SliverFillRemaining(
-              child: Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.error_outline,
-                        size: 64, color: AppColors.error),
-                    const SizedBox(height: 16),
-                    Text(
-                      'Error: ${roomProvider.errorMessage}',
-                      style: const TextStyle(color: AppColors.error),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 16),
-                    ElevatedButton(
-                      onPressed: _refreshData,
-                      child: const Text('Coba Lagi'),
-                    ),
-                  ],
-                ),
+  SliverFillRemaining(
+    child: Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(
+              Icons.cloud_off_rounded,
+              size: 72,
+              color: AppColors.textHint,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Tidak dapat memuat data ruangan',
+              style: Theme.of(context).textTheme.titleLarge,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              Helpers.friendlyErrorMessage(roomProvider.errorMessage),
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 14,
+                color: AppColors.textSecondary,
+                height: 1.5,
               ),
-            )
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton.icon(
+              onPressed: _refreshData,
+              icon: const Icon(Icons.refresh, size: 18),
+              label: const Text('Coba Lagi'),
+            ),
+          ],
+        ),
+      ),
+    ),
+  )
           // Empty State
           else if (roomProvider.rooms.isEmpty)
-            SliverFillRemaining(
-              child: Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.search_off,
-                        size: 64, color: Colors.grey),
-                    const SizedBox(height: 16),
-                    const Text(
-                      'Tidak ada ruangan ditemukan',
-                      style: TextStyle(fontSize: 16, color: Colors.grey),
-                    ),
-                    const SizedBox(height: 8),
-                    if (_searchController.text.isNotEmpty ||
-                        roomProvider.selectedBuilding != 'Semua Gedung')
-                      TextButton(
-                        onPressed: () {
-                          roomProvider.clearFilters();
-                          _searchController.clear();
-                        },
-                        child: const Text('Reset Filter'),
-                      ),
-                  ],
+  SliverFillRemaining(
+    child: Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Builder(
+          builder: (context) {
+            final hasSearch = _searchController.text.trim().isNotEmpty;
+            final hasBuildingFilter =
+                roomProvider.selectedBuilding != 'Semua Gedung';
+            final hasFilter = hasSearch || hasBuildingFilter;
+
+            // Icon menyesuaikan penyebab empty state
+            final IconData icon;
+            if (hasSearch) {
+              icon = Icons.search_off;
+            } else if (hasBuildingFilter) {
+              icon = Icons.filter_alt_off_outlined;
+            } else {
+              icon = Icons.meeting_room_outlined;
+            }
+
+            // Pesan spesifik sesuai penyebab
+            final String message;
+            if (hasSearch && hasBuildingFilter) {
+              message =
+                  'Tidak ada ruangan atau gedung yang cocok dengan\n'
+                  '"${_searchController.text.trim()}"\n'
+                  'di ${roomProvider.selectedBuilding}';
+            } else if (hasSearch) {
+              message =
+                  'Tidak ada ruangan atau gedung yang cocok dengan\n'
+                  '"${_searchController.text.trim()}"';
+            } else if (hasBuildingFilter) {
+              message =
+                  'Tidak ada ruangan di gedung\n'
+                  '"${roomProvider.selectedBuilding}"';
+            } else {
+              message = 'Belum ada data ruangan';
+            }
+
+            return Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(icon, size: 64, color: Colors.grey),
+                const SizedBox(height: 16),
+                Text(
+                  message,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    color: Colors.grey,
+                    height: 1.5,
+                  ),
                 ),
-              ),
-            )
+                const SizedBox(height: 8),
+                if (hasFilter)
+                  TextButton.icon(
+                    onPressed: () {
+                      roomProvider.clearFilters();
+                      _searchController.clear();
+                    },
+                    icon: const Icon(Icons.refresh, size: 18),
+                    label: const Text('Reset Filter & Pencarian'),
+                  ),
+              ],
+            );
+          },
+        ),
+      ),
+    ),
+  )
           // Data State — tetap tampil walau refresh error
           else
             SliverList(
@@ -19415,6 +19642,8 @@ class RoomProvider with ChangeNotifier {
   final SocketService _socketService = SocketService();
   final StorageService _storageService = StorageService();
 
+  static const String _cacheKey = 'cache_dashboard_rooms';
+
   List<Room> _rooms = [];
   List<Room> _filteredRooms = [];
   String _selectedBuilding = 'Semua Gedung';
@@ -19759,47 +19988,83 @@ class RoomProvider with ChangeNotifier {
     await initSocket();
   }
 
-  Future<void> loadRooms() async {
-    _isLoading = true;
-    _hasError = false;
-    notifyListeners();
-
-    try {
-      if (!_socketConnected) {
-        await initSocket();
+  Future<void> loadFromCache() async {
+  try {
+    final cached = _storageService.getJson(_cacheKey);
+    if (cached != null && cached['data'] is List) {
+      final list = (cached['data'] as List)
+          .map((e) => Room.fromJson(Map<String, dynamic>.from(e as Map)))
+          .toList();
+      if (list.isNotEmpty && _rooms.isEmpty) {
+        _rooms = list;
+        _applyFilters();
+        _lastUpdate = DateTime.now();
+        notifyListeners();
       }
-
-      _rooms = await _roomRepository.getRooms();
-      _applyFilters();
-    } catch (e) {
-      _hasError = true;
-      _errorMessage = e.toString();
-      print('❌ Error loading rooms: $e');
-    } finally {
-      _isLoading = false;
-      notifyListeners();
     }
+  } catch (_) {
+    // cache rusak — abaikan, biarkan loadRooms yang isi
   }
+}
+
+  Future<void> loadRooms() async {
+  // FIXED: hanya tampilkan spinner jika belum ada data (cache kosong).
+  // Kalau cache ada, biarkan konten tampil dan fetch berjalan di background.
+  _isLoading = _rooms.isEmpty;
+  _hasError = false;
+  notifyListeners();
+
+  try {
+    if (!_socketConnected) {
+      await initSocket();
+    }
+
+    _rooms = await _roomRepository.getRooms();
+    _applyFilters();
+    _lastUpdate = DateTime.now();
+
+    // Simpan ke cache untuk cold-start berikutnya
+    try {
+      await _storageService.setJson(_cacheKey, {
+        'data': _rooms.map((r) => r.toJson()).toList(),
+      });
+    } catch (_) {}
+  } catch (e) {
+    _hasError = true;
+    _errorMessage = e.toString();
+    print('❌ Error loading rooms: $e');
+  } finally {
+    _isLoading = false;
+    notifyListeners();
+  }
+}
 
   Future<void> refresh() async {
-    if (_isRefreshing) return;
+  if (_isRefreshing) return;
 
-    _isRefreshing = true;
-    _hasError = false;
-    notifyListeners();
+  _isRefreshing = true;
+  _hasError = false;
+  notifyListeners();
 
+  try {
+    _rooms = await _roomRepository.getRooms();
+    _applyFilters();
+    _lastUpdate = DateTime.now();
+
+    // Simpan ke cache
     try {
-      _rooms = await _roomRepository.getRooms();
-      _applyFilters();
-      _lastUpdate = DateTime.now();
-    } catch (e) {
-      _hasError = true;
-      _errorMessage = e.toString();
-    } finally {
-      _isRefreshing = false;
-      notifyListeners();
-    }
+      await _storageService.setJson(_cacheKey, {
+        'data': _rooms.map((r) => r.toJson()).toList(),
+      });
+    } catch (_) {}
+  } catch (e) {
+    _hasError = true;
+    _errorMessage = e.toString();
+  } finally {
+    _isRefreshing = false;
+    notifyListeners();
   }
+}
 
   Future<void> _refreshData() async {
     try {

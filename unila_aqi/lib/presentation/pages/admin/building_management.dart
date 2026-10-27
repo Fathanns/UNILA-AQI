@@ -24,6 +24,7 @@ class _BuildingManagementScreenState extends State<BuildingManagementScreen> {
   List<Building> _buildings = [];
   List<Building> _filteredBuildings = [];
   bool _isLoading = false;
+  bool _isRefreshing = false;
   bool _hasError = false;
   String _errorMessage = '';
 
@@ -110,6 +111,16 @@ class _BuildingManagementScreenState extends State<BuildingManagementScreen> {
     }
   }
 
+  Future<void> _handleManualRefresh() async {
+  if (_isRefreshing) return;
+  setState(() => _isRefreshing = true);
+  try {
+    await _loadBuildings();
+  } finally {
+    if (mounted) setState(() => _isRefreshing = false);
+  }
+}
+
   void _filterBuildings(String query) {
     if (query.isEmpty) {
       setState(() => _filteredBuildings = _buildings);
@@ -192,16 +203,30 @@ class _BuildingManagementScreenState extends State<BuildingManagementScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
+     appBar: AppBar(
         title: const Text('Kelola Gedung'),
         actions: [
           const ServerStatusIndicator(),
           IconButton(
-            icon: const Icon(Icons.refresh),
+            icon: _isRefreshing
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: AppColors.primary,
+                    ),
+                  )
+                : const Icon(
+                    Icons.refresh_rounded,
+                    size: 22,
+                    color: AppColors.textSecondary,
+                  ),
             onPressed: () {
               ServerStatusIndicator.checkNow();
-              _loadBuildings();
+              _handleManualRefresh();
             },
+            splashRadius: 20,
             tooltip: 'Refresh',
           ),
         ],

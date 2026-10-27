@@ -29,6 +29,7 @@ class _ProfileManagementScreenState extends State<ProfileManagementScreen> {
   static const String _cacheKey = 'cache_profile';
 
   bool _isLoading = true;
+  bool _isRefreshing = false;
   bool _hasError = false;
   String _errorForLog = ''; // hanya untuk debugging, TIDAK ditampilkan
 
@@ -149,6 +150,16 @@ class _ProfileManagementScreenState extends State<ProfileManagementScreen> {
     }
   }
 
+  Future<void> _handleManualRefresh() async {
+  if (_isRefreshing) return;
+  setState(() => _isRefreshing = true);
+  try {
+    await _loadData();
+  } finally {
+    if (mounted) setState(() => _isRefreshing = false);
+  }
+}
+
   Future<void> _logout() async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -186,7 +197,7 @@ class _ProfileManagementScreenState extends State<ProfileManagementScreen> {
         builder: (context) => EditProfileScreen(
           currentUsername: _username,
           currentEmail: _email,
-          onSaved: _loadData,
+         onSaved: _loadData,
         ),
       ),
     );
@@ -203,17 +214,34 @@ class _ProfileManagementScreenState extends State<ProfileManagementScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Profil Admin'),
-        actions: [
-          const ServerStatusIndicator(),
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _loadData,
-            tooltip: 'Refresh',
-          ),
-        ],
-      ),
+     appBar: AppBar(
+      title: const Text('Profil Admin'),
+      actions: [
+        const ServerStatusIndicator(),
+        IconButton(
+          icon: _isRefreshing
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: AppColors.primary,
+                  ),
+                )
+              : const Icon(
+                  Icons.refresh_rounded,
+                  size: 22,
+                  color: AppColors.textSecondary,
+                ),
+          onPressed: () {
+            ServerStatusIndicator.checkNow();
+            _handleManualRefresh();
+          },
+          splashRadius: 20,
+          tooltip: 'Refresh',
+        ),
+      ],
+    ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _hasError
@@ -639,7 +667,7 @@ class _ProfileManagementScreenState extends State<ProfileManagementScreen> {
 class EditProfileScreen extends StatefulWidget {
   final String currentUsername;
   final String currentEmail;
-  final VoidCallback onSaved;
+  final Future<void> Function() onSaved;
 
   const EditProfileScreen({
     super.key,
@@ -662,6 +690,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   bool _isLoading = false;
   bool _isSendingCode = false;
   bool _codeSent = false;
+  bool _isRefreshing = false;
 
   @override
   void initState() {
@@ -733,6 +762,16 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     }
   }
 
+  Future<void> _handleRefresh() async {
+  if (_isRefreshing) return;
+  setState(() => _isRefreshing = true);
+  try {
+    await widget.onSaved();
+  } finally {
+    if (mounted) setState(() => _isRefreshing = false);
+  }
+}
+
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -800,19 +839,33 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-  title: const Text('Profil Admin'),
-  actions: [
-    const ServerStatusIndicator(),
-    IconButton(
-      icon: const Icon(Icons.refresh),
-      onPressed: () {
-        ServerStatusIndicator.checkNow();
-        widget.onSaved();
-      },
-      tooltip: 'Refresh',
-    ),
-  ],
-),
+        title: const Text('Profil Admin'),
+        actions: [
+          const ServerStatusIndicator(),
+          IconButton(
+            icon: _isRefreshing
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: AppColors.primary,
+                    ),
+                  )
+                : const Icon(
+                    Icons.refresh_rounded,
+                    size: 22,
+                    color: AppColors.textSecondary,
+                  ),
+            onPressed: () {
+              ServerStatusIndicator.checkNow();
+              _handleRefresh();
+            },
+            splashRadius: 20,
+            tooltip: 'Refresh',
+          ),
+        ],
+      ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Form(
