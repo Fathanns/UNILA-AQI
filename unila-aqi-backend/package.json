@@ -10,7 +10,8 @@
     "check-db": "node src/checkDatabase.js",
     "seed": "node src/seedOnly.js",
     "test-api": "node src/testApi.js",
-    "test-socket": "node src/testSocket.js"
+    "test-socket": "node src/testSocket.js",
+    "test": "node --test"
   },
   "keywords": [],
   "author": "",

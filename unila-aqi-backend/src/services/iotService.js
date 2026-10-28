@@ -3,7 +3,7 @@ const cron = require('node-cron');
 const Room = require('../models/Room');
 const IoTDevice = require('../models/IoTDevice');
 const SensorData = require('../models/SensorData');
-const { getAQICategory } = require('../utils/aqiCalculator');
+const { getAQICategory, calculateAQI } = require('../utils/aqiCalculator');
 
 class IoTService {
   constructor() {
@@ -148,89 +148,113 @@ class IoTService {
   }
 
   async updateRoomFromIoT(room, iotData, deviceName) {
-    try {
-      const currentData = room.currentData;
-      const hasRoomDataChanged = this._hasDataChanged(
-        {
-          aqi: room.currentAQI,
-          pm25: currentData.pm25,
-          pm10: currentData.pm10,
-          co2: currentData.co2,
-          temperature: currentData.temperature,
-          humidity: currentData.humidity
-        },
-        iotData
-      );
-
-      if (!hasRoomDataChanged) {
-        console.log(`ℹ️ Room ${room.name} data unchanged, skipping update`);
-        return;
-      }
-
-      const aqiInfo = getAQICategory(iotData.aqi);
-
-      room.currentAQI = iotData.aqi;
-      room.currentData = {
-        pm25: iotData.pm25,
-        pm10: iotData.pm10,
-        co2: iotData.co2,
-        temperature: iotData.temperature,
-        humidity: iotData.humidity,
-        updatedAt: new Date()
-      };
-      room.updatedAt = new Date();
-
-      await room.save();
-
-      const historicalData = new SensorData({
-        roomId: room._id,
-        roomName: room.name,
-        buildingName: room.buildingName,
-        ...iotData,
-        category: aqiInfo.category,
-        timestamp: new Date()
-      });
-
-      await historicalData.save();
-
-      this.broadcastRoomUpdate(room, iotData, 'iot', deviceName);
-
-      console.log(`✅ Updated & broadcasted IoT room ${room.name}: AQI ${iotData.aqi}`);
-    } catch (error) {
-      console.error(`❌ Error updating IoT room ${room.name}:`, error.message);
-    }
-  }
-
-  async updateRoomFromIoTForce(room, iotData, deviceName) {
   try {
-    const aqiInfo = getAQICategory(iotData.aqi);
+    // ✅ Hitung ulang AQI pakai ISPU: MAX(ISPU_PM25, ISPU_PM10)
+    const aqiResult = calculateAQI(iotData.pm25, iotData.pm10);
 
-    room.currentAQI = iotData.aqi;
-    room.currentData = {
+    const normalizedData = {
       pm25: iotData.pm25,
       pm10: iotData.pm10,
       co2: iotData.co2,
       temperature: iotData.temperature,
       humidity: iotData.humidity,
-      updatedAt: new Date()
+      aqi: aqiResult.aqi,
+      category: aqiResult.category,
+      dominant: aqiResult.dominant,
+    };
+
+    const currentData = room.currentData;
+    const hasRoomDataChanged = this._hasDataChanged(
+      {
+        aqi: room.currentAQI,
+        pm25: currentData.pm25,
+        pm10: currentData.pm10,
+        co2: currentData.co2,
+        temperature: currentData.temperature,
+        humidity: currentData.humidity,
+      },
+      normalizedData
+    );
+
+    if (!hasRoomDataChanged) {
+      console.log(`ℹ️ Room ${room.name} data unchanged, skipping update`);
+      return;
+    }
+
+    room.currentAQI = normalizedData.aqi;
+    room.currentData = {
+      pm25: normalizedData.pm25,
+      pm10: normalizedData.pm10,
+      co2: normalizedData.co2,
+      temperature: normalizedData.temperature,
+      humidity: normalizedData.humidity,
+      updatedAt: new Date(),
     };
     room.updatedAt = new Date();
-
     await room.save();
 
     const historicalData = new SensorData({
       roomId: room._id,
       roomName: room.name,
       buildingName: room.buildingName,
-      ...iotData,
-      category: aqiInfo.category,
-      timestamp: new Date()
+      aqi: normalizedData.aqi,
+      pm25: normalizedData.pm25,
+      pm10: normalizedData.pm10,
+      co2: normalizedData.co2,
+      temperature: normalizedData.temperature,
+      humidity: normalizedData.humidity,
+      category: aqiResult.category,
+      timestamp: new Date(),
+    });
+    await historicalData.save();
+
+    this.broadcastRoomUpdate(room, normalizedData, 'iot', deviceName);
+
+    console.log(
+      `✅ IoT room ${room.name}: AQI ${normalizedData.aqi} (${aqiResult.dominant.toUpperCase()}), PM2.5=${normalizedData.pm25}, PM10=${normalizedData.pm10}`
+    );
+  } catch (error) {
+    console.error(`❌ Error updating IoT room ${room.name}:`, error.message);
+  }
+}
+
+  async updateRoomFromIoTForce(room, iotData, deviceName) {
+  try {
+    // ✅ Recalculate AQI via ISPU
+    const aqiResult = calculateAQI(iotData.pm25, iotData.pm10);
+
+    room.currentAQI = aqiResult.aqi;
+    room.currentData = {
+      pm25: iotData.pm25,
+      pm10: iotData.pm10,
+      co2: iotData.co2,
+      temperature: iotData.temperature,
+      humidity: iotData.humidity,
+      updatedAt: new Date(),
+    };
+    room.updatedAt = new Date();
+    await room.save();
+
+    const historicalData = new SensorData({
+      roomId: room._id,
+      roomName: room.name,
+      buildingName: room.buildingName,
+      aqi: aqiResult.aqi,
+      pm25: iotData.pm25,
+      pm10: iotData.pm10,
+      co2: iotData.co2,
+      temperature: iotData.temperature,
+      humidity: iotData.humidity,
+      category: aqiResult.category,
+      timestamp: new Date(),
     });
     await historicalData.save();
 
     this.broadcastRoomUpdate(room, iotData, 'iot', deviceName);
 
-    console.log(`✅ FORCE-updated IoT room ${room.name}: AQI ${iotData.aqi}`);
+    console.log(
+      `✅ FORCE-updated IoT room ${room.name}: AQI ${aqiResult.aqi} (${aqiResult.dominant.toUpperCase()})`
+    );
   } catch (error) {
     console.error(`❌ Error force-updating room ${room.name}:`, error.message);
   }

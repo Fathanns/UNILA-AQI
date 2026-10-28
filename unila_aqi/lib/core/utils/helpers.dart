@@ -76,93 +76,86 @@ class Helpers {
   static Color getAQIColor(int aqi) {
     if (aqi <= 50) return AppColors.aqiGood; // hijau
     if (aqi <= 100) return AppColors.aqiModerate; // orange untuk sedang
-    if (aqi <= 150) return AppColors.aqiUnhealthySensitive; // merah
-    if (aqi <= 200) return AppColors.aqiUnhealthy; // purple
-    if (aqi <= 300) return AppColors.aqiVeryUnhealthy; // hitam
+    if (aqi <= 200) return AppColors.aqiUnhealthySensitive; // merah
+    if (aqi <= 300) return AppColors.aqiUnhealthy; // purple
     return AppColors.aqiHazardous; // hitam
   }
 
   static String getAQILabel(int aqi) {
     if (aqi <= 50) return 'BAIK';
     if (aqi <= 100) return 'SEDANG';
-    if (aqi <= 150) return 'TIDAK SEHAT';
-    if (aqi <= 200) return 'SANGAT TIDAK SEHAT';
-    if (aqi <= 300) return 'BERBAHAYA';
-    return 'SANGAT BERBAHAYA';
+    if (aqi <= 200) return 'TIDAK SEHAT';
+    if (aqi <= 300) return 'SANGAT TIDAK SEHAT';
+    return 'BERBAHAYA';
   }
 
   static String getAQIHealthMessage(int aqi) {
     if (aqi <= 50) return AppConstants.healthRecommendations['good']!;
     if (aqi <= 100) return AppConstants.healthRecommendations['moderate']!;
-    if (aqi <= 150) return AppConstants.healthRecommendations['unhealthy']!;
-    if (aqi <= 200) return AppConstants.healthRecommendations['very_unhealthy']!;
-    if (aqi <= 300) return AppConstants.healthRecommendations['hazardous']!;
+    if (aqi <= 200) return AppConstants.healthRecommendations['unhealthy']!;
+    if (aqi <= 300) return AppConstants.healthRecommendations['very_unhealthy']!;
     return AppConstants.healthRecommendations['dangerous']!;
   }
 
   // Parameter Status Helpers
   static String getPM25Status(double value) {
-    if (value <= 12) return 'BAIK';
-    if (value <= 35.4) return 'SEDANG';
-    if (value <= 55.4) return 'TIDAK SEHAT';
-    if (value <= 150.4) return 'SANGAT TIDAK SEHAT';
-    if (value <= 250.4) return 'BERBAHAYA';
+    if (value <= 55) return 'BAIK';
+    if (value <= 150) return 'SEDANG';
+    if (value <= 250) return 'TIDAK SEHAT';
+    if (value <= 350) return 'SANGAT TIDAK SEHAT';
     return 'BERBAHAYA';
   }
 
   static Color getPM25Color(double value) {
-    if (value <= 12) return AppColors.aqiGood; // hijau
-    if (value <= 35.4) return AppColors.aqiModerate; // orange untuk sedang
-    if (value <= 55.4) return AppColors.aqiUnhealthySensitive; // merah
-    if (value <= 150.4) return AppColors.aqiUnhealthy; // purple
-    if (value <= 250.4) return AppColors.aqiVeryUnhealthy; // hitam
+    if (value <= 55) return AppColors.aqiGood; // hijau
+    if (value <= 150) return AppColors.aqiModerate; // orange untuk sedang
+    if (value <= 250) return AppColors.aqiUnhealthySensitive; // merah
+    if (value <= 350) return AppColors.aqiUnhealthy; // purple
     return AppColors.aqiHazardous; // hitam
   }
 
   static String getPM10Status(double value) {
-    if (value <= 50) return 'BAIK';
-    if (value <= 100) return 'SEDANG';
-    if (value <= 150) return 'TIDAK SEHAT';
-    if (value <= 250) return 'SANGAT TIDAK SEHAT';
-    if (value <= 350) return 'BERBAHAYA';
+    if (value <= 55) return 'BAIK';
+    if (value <= 150) return 'SEDANG';
+    if (value <= 250) return 'TIDAK SEHAT';
+    if (value <= 350) return 'SANGAT TIDAK SEHAT';
     return 'BERBAHAYA';
   }
 
   static Color getPM10Color(double value) {
-    if (value <= 50) return AppColors.aqiGood; // hijau
-    if (value <= 100) return AppColors.aqiModerate; // orange untuk sedang
-    if (value <= 150) return AppColors.aqiUnhealthySensitive; // merah
-    if (value <= 250) return AppColors.aqiUnhealthy; // purple
-    if (value <= 350) return AppColors.aqiVeryUnhealthy; // hitam
+    if (value <= 55) return AppColors.aqiGood; // hijau
+    if (value <= 150) return AppColors.aqiModerate; // orange untuk sedang
+    if (value <= 250) return AppColors.aqiUnhealthySensitive; // merah
+    if (value <= 350) return AppColors.aqiUnhealthy; // purple
     return AppColors.aqiHazardous; // hitam
   }
 
   static String getTemperatureStatus(double value) {
-    if (value >= 22 && value <= 26) return 'IDEAL';
-    if (value >= 20 && value <= 28) return 'NORMAL';
-    if (value >= 18 && value <= 30) return 'SEDANG';
-    return 'TIDAK IDEAL';
+    if ( value <= 20) return 'DINGIN';
+    if (value >= 20 && value <= 24) return 'IDEAL';
+    if (value >= 24 && value <= 30) return 'HANGAT';
+    return 'PANAS';
   }
 
   static Color getTemperatureColor(double value) {
-    if (value >= 22 && value <= 26) return AppColors.success; // hijau
-    if (value >= 20 && value <= 28) return Colors.orange; // orange
-    if (value >= 18 && value <= 30) return AppColors.aqiUnhealthySensitive; // merah
-    return AppColors.aqiUnhealthy; // purple
+    if ( value <= 20) return Colors.blue; // hijau
+    if (value >= 20 && value <= 24) return AppColors.success; // orange
+    if (value >= 24 && value <= 30) return AppColors.warning; // merah
+    return AppColors.error; // purple
   }
 
   static String getHumidityStatus(double value) {
+    if (value <= 40) return 'KERING';
     if (value >= 40 && value <= 60) return 'IDEAL';
-    if (value >= 30 && value <= 70) return 'NORMAL';
-    if (value >= 20 && value <= 80) return 'SEDANG';
-    return 'TIDAK IDEAL';
+    if (value >= 60 && value <= 70) return 'LEMBAB';
+    return 'TIDAK NYAMAN';
   }
 
   static Color getHumidityColor(double value) {
-    if (value >= 40 && value <= 60) return AppColors.success; // hijau
-    if (value >= 30 && value <= 70) return Colors.orange; // orange
-    if (value >= 20 && value <= 80) return AppColors.aqiUnhealthySensitive; // merah
-    return AppColors.aqiUnhealthy; // purple
+    if (value <= 40) return AppColors.warning; // hijau
+    if (value >= 40 && value <= 60) return AppColors.success; // orange
+    if (value >= 60 && value <= 70) return Colors.blue; // merah
+    return AppColors.error; // purple
   }
 
   static String getCO2Status(double value) {
@@ -174,10 +167,9 @@ class Helpers {
   }
 
   static Color getCO2Color(double value) {
-    if (value <= 600) return AppColors.aqiGood; // hijau
+    if (value <= 800) return AppColors.aqiGood; // hijau
     if (value <= 1000) return Colors.orange; // orange untuk sedang
-    if (value <= 1500) return AppColors.aqiUnhealthySensitive; // merah
-    if (value <= 2000) return AppColors.aqiUnhealthy; // purple
+    if (value <= 1500) return AppColors.aqiUnhealthySensitive;
     return AppColors.aqiVeryUnhealthy; // hitam
   }
 
@@ -396,13 +388,12 @@ class Helpers {
   }
 
   static String getAQICategory(int aqi) {
-    if (aqi <= 50) return 'baik';
-    if (aqi <= 100) return 'sedang';
-    if (aqi <= 150) return 'tidak_sehat';
-    if (aqi <= 200) return 'sangat_tidak_sehat';
-    if (aqi <= 300) return 'berbahaya';
-    return 'error';
-  }
+  if (aqi <= 50)  return 'baik';
+  if (aqi <= 100) return 'sedang';
+  if (aqi <= 200) return 'tidak_sehat';
+  if (aqi <= 300) return 'sangat_tidak_sehat';
+  return 'berbahaya';
+}
 
   // Network Helpers
   static String formatBytes(int bytes) {

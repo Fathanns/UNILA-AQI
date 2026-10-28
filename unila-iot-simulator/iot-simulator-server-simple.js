@@ -1,6 +1,105 @@
 const http = require('http');
 const url = require('url');
 
+// ============================================================
+// ISPU Calculator (sama persis dengan backend)
+// ============================================================
+const PM25_BREAKPOINTS = [
+  { ispuLow: 0,   ispuHigh: 50,  concLow: 0,   concHigh: 55  },
+  { ispuLow: 51,  ispuHigh: 100, concLow: 56,  concHigh: 150 },
+  { ispuLow: 101, ispuHigh: 200, concLow: 151, concHigh: 250 },
+  { ispuLow: 201, ispuHigh: 300, concLow: 251, concHigh: 350 },
+  { ispuLow: 301, ispuHigh: 500, concLow: 351, concHigh: 500 },
+];
+const PM10_BREAKPOINTS = [
+  { ispuLow: 0,   ispuHigh: 50,  concLow: 0,   concHigh: 50  },
+  { ispuLow: 51,  ispuHigh: 100, concLow: 51,  concHigh: 150 },
+  { ispuLow: 101, ispuHigh: 200, concLow: 151, concHigh: 350 },
+  { ispuLow: 201, ispuHigh: 300, concLow: 351, concHigh: 420 },
+  { ispuLow: 301, ispuHigh: 500, concLow: 421, concHigh: 500 },
+];
+
+function calculateISPU(conc, bps) {
+  if (conc == null || isNaN(conc) || conc < 0) return 0;
+  for (const bp of bps) {
+    if (conc <= bp.concHigh) {
+      const range = bp.concHigh - bp.concLow;
+      if (range === 0) return bp.ispuHigh;
+      const ispu = ((bp.ispuHigh - bp.ispuLow) / range) * (conc - bp.concLow) + bp.ispuLow;
+      return Math.round(Math.max(0, Math.min(500, ispu)));
+    }
+  }
+  return 500;
+}
+
+const calculateISPUFromPM25 = (pm25) => calculateISPU(pm25, PM25_BREAKPOINTS);
+const calculateISPUFromPM10 = (pm10) => calculateISPU(pm10, PM10_BREAKPOINTS);
+
+// ============================================================
+// Time-based ranges (sama persis dengan backend)
+// ============================================================
+const TIME_RANGES = {
+  '06-08': {
+    pm25:        { min: 8,  max: 20, mean: 14  },
+    pm10:        { min: 15, max: 40, mean: 25  },
+    co2:         { min: 420, max: 650,  mean: 520  },
+    temperature: { min: 22, max: 26, mean: 24  },
+    humidity:    { min: 65, max: 85, mean: 75  },
+  },
+  '08-12': {
+    pm25:        { min: 15, max: 40, mean: 27  },
+    pm10:        { min: 25, max: 80, mean: 50  },
+    co2:         { min: 600, max: 1400, mean: 1000 },
+    temperature: { min: 24, max: 29, mean: 26  },
+    humidity:    { min: 55, max: 75, mean: 65  },
+  },
+  '12-16': {
+    pm25:        { min: 18, max: 45, mean: 30  },
+    pm10:        { min: 30, max: 90, mean: 55  },
+    co2:         { min: 700, max: 1600, mean: 1100 },
+    temperature: { min: 26, max: 32, mean: 29  },
+    humidity:    { min: 50, max: 70, mean: 60  },
+  },
+  '16-18': {
+    pm25:        { min: 12, max: 32, mean: 22  },
+    pm10:        { min: 20, max: 65, mean: 40  },
+    co2:         { min: 550, max: 1100, mean: 800  },
+    temperature: { min: 25, max: 30, mean: 27  },
+    humidity:    { min: 55, max: 75, mean: 65  },
+  },
+  '18-20': {
+    pm25:        { min: 10, max: 25, mean: 17  },
+    pm10:        { min: 18, max: 50, mean: 32  },
+    co2:         { min: 500, max: 1000, mean: 700  },
+    temperature: { min: 24, max: 28, mean: 26  },
+    humidity:    { min: 60, max: 80, mean: 70  },
+  },
+  '20-06': {
+    pm25:        { min: 5,  max: 15, mean: 9   },
+    pm10:        { min: 10, max: 30, mean: 18  },
+    co2:         { min: 420, max: 550, mean: 450 },
+    temperature: { min: 22, max: 26, mean: 24  },
+    humidity:    { min: 70, max: 90, mean: 80  },
+  },
+};
+
+function getTimeSlot(hour) {
+  if (hour >= 6  && hour < 8)  return '06-08';
+  if (hour >= 8  && hour < 12) return '08-12';
+  if (hour >= 12 && hour < 16) return '12-16';
+  if (hour >= 16 && hour < 18) return '16-18';
+  if (hour >= 18 && hour < 20) return '18-20';
+  return '20-06';
+}
+
+function randomInRange(min, max, mean) {
+  const mode = Math.max(min, Math.min(max, mean ?? (min + max) / 2));
+  const u = Math.random();
+  const f = (mode - min) / (max - min);
+  if (u < f) return min + Math.sqrt(u * (max - min) * (mode - min));
+  return max - Math.sqrt((1 - u) * (max - min) * (max - mode));
+}
+
 // In-memory storage dengan update per 30 detik
 const registeredDevices = new Map();
 const deviceStates = new Map(); // State untuk setiap device
@@ -10,170 +109,73 @@ const secondDataCache = new Map(); // Cache data per 30 detik
 function generate30SecondBasedData(deviceId) {
   const now = new Date();
   const currentSecond = Math.floor(now.getTime() / 1000);
-  const current30SecondBlock = Math.floor(currentSecond / 30); // Block 30 detik
+  const current30SecondBlock = Math.floor(currentSecond / 30);
   const hour = now.getHours();
   const minute = now.getMinutes();
   const second = now.getSeconds();
-  const dayOfWeek = now.getDay(); // 0 = Minggu, 6 = Sabtu
-  
-  // Jika device belum punya state, inisialisasi
+
+  // Inisialisasi state device
   if (!deviceStates.has(deviceId)) {
-    const hash = deviceId.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-    
-    // State awal berdasarkan hash device
+    const hash = deviceId.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
     deviceStates.set(deviceId, {
-      basePM25: 20 + (hash % 25), // 20-45 μg/m³
-      basePM10: 40 + (hash % 40), // 40-80 μg/m³
-      baseCO2: 550 + (hash % 450), // 550-1000 ppm
-      baseTemp: 23 + (hash % 7), // 23-30°C
-      baseHumidity: 50 + (hash % 20), // 50-70%
-      roomType: hash % 4, // 0: Kelas, 1: Lab, 2: Perpustakaan, 3: Aula
-      trendPM25: (hash % 3) - 1, // -1: turun, 0: stabil, 1: naik
-      trendCO2: (hash % 3) - 1,
+      roomType: hash % 4,
+      prevValues: null,
       last30SecondBlock: current30SecondBlock - 1,
-      updateCounter: 0
+      updateCounter: 0,
     });
-    
-    console.log(`📊 Initialized device ${deviceId}:`, {
-      basePM25: deviceStates.get(deviceId).basePM25,
-      roomType: ['Kelas', 'Laboratorium', 'Perpustakaan', 'Aula'][deviceStates.get(deviceId).roomType]
+    console.log(`📊 Init device ${deviceId}:`, {
+      roomType: ['Kelas', 'Laboratorium', 'Perpustakaan', 'Aula'][deviceStates.get(deviceId).roomType],
     });
   }
-  
+
   const state = deviceStates.get(deviceId);
-  
-  // Cek jika masih di 30 detik block yang sama (cache)
+
+  // Cache 30 detik
   if (secondDataCache.has(deviceId)) {
     const cached = secondDataCache.get(deviceId);
     if (cached.block30 === current30SecondBlock) {
       return cached.data;
     }
   }
-  
-  // Hitung faktor berdasarkan pola waktu
-  let timeFactor = 1.0;
-  
-  // Pattern berdasarkan jam
-  if (hour >= 7 && hour <= 9) { // Pagi (jam sibuk)
-    timeFactor = 1.3;
-  } else if (hour >= 10 && hour <= 12) { // Siang
-    timeFactor = 1.1;
-  } else if (hour >= 13 && hour <= 15) { // Sore
-    timeFactor = 1.2;
-  } else if (hour >= 16 && hour <= 18) { // Pulang kerja
-    timeFactor = 1.4;
-  } else if (hour >= 19 && hour <= 21) { // Malam
-    timeFactor = 0.9;
-  } else { // Tengah malam
-    timeFactor = 0.7;
-  }
-  
-  // Pattern berdasarkan hari
-  if (dayOfWeek === 0 || dayOfWeek === 6) { // Weekend
-    timeFactor *= 0.6; // Lebih rendah di weekend
-  }
-  
-  // Pattern berdasarkan tipe ruangan
-  let roomFactor = 1.0;
-  switch(state.roomType) {
-    case 0: // Kelas - tinggi di jam kuliah
-      roomFactor = (hour >= 8 && hour <= 16) ? 1.4 : 0.8;
-      break;
-    case 1: // Laboratorium - stabil
-      roomFactor = 1.0;
-      break;
-    case 2: // Perpustakaan - rendah
-      roomFactor = 0.7;
-      break;
-    case 3: // Aula - tinggi saat event
-      roomFactor = (hour >= 10 && hour <= 20) ? 1.6 : 0.9;
-      break;
-  }
-  
-  // Update trends setiap beberapa update (setiap ~2.5 menit)
-  if (current30SecondBlock > state.last30SecondBlock) {
-    state.updateCounter++;
-    state.last30SecondBlock = current30SecondBlock;
-    
-    // Setiap 5 update (150 detik / 2.5 menit), sedikit adjust trend
-    if (state.updateCounter % 5 === 0) {
-      // Small random adjustment to trend
-      state.trendPM25 += (Math.random() - 0.5) * 0.2;
-      state.trendCO2 += (Math.random() - 0.5) * 0.1;
-      
-      // Clamp trends
-      state.trendPM25 = Math.max(-1, Math.min(1, state.trendPM25));
-      state.trendCO2 = Math.max(-1, Math.min(1, state.trendCO2));
-    }
-    
-    // Simulate events occasionally (every ~10 menit)
-    if (state.updateCounter % 20 === 0 && Math.random() < 0.3) {
-      console.log(`⚠️ Simulating event for ${deviceId} at update ${state.updateCounter}`);
-      // Temporary spike
-      timeFactor *= 1.8;
-    }
-  }
-  
-  // Calculate current values with trends
-  const updateOffset = state.updateCounter;
-  
-  // PM2.5 dengan trend dan variasi
-  const pm25Trend = state.trendPM25 * (updateOffset * 0.005);
-  const pm30SecondVariation = Math.sin(updateOffset * 0.2) * 2; // Variasi sinusoidal
-  const pm25Noise = (Math.random() - 0.5) * 0.5; // Small noise
-  
-  const pm25 = state.basePM25 * timeFactor * roomFactor * 
-               (1 + pm25Trend + pm30SecondVariation * 0.1 + pm25Noise);
-  
-  // PM10 biasanya 1.8-2.2x PM2.5
-  const pm10 = pm25 * (1.9 + Math.sin(updateOffset * 0.1) * 0.3);
-  
-  // CO2 dengan trend sendiri
-  const co2Trend = state.trendCO2 * (updateOffset * 0.0025);
-  const co230SecondVariation = Math.cos(updateOffset * 0.16) * 50;
-  const co2 = state.baseCO2 * timeFactor * roomFactor * 
-              (1 + co2Trend) + co230SecondVariation;
-  
-  // Temperature - gradual changes throughout day
-  const tempBase = state.baseTemp;
-  const tempDailyVariation = Math.sin(hour * 0.2618 + minute * 0.00436) * 3; // ±3°C daily cycle
-  const temp30SecondVariation = Math.sin(updateOffset * 0.04) * 0.5; // Small variation per 30s
-  
-  const temperature = tempBase + tempDailyVariation + temp30SecondVariation;
-  
-  // Humidity - inverse of temperature
-  const humidityBase = state.baseHumidity;
-  const humidityDailyVariation = Math.cos(hour * 0.2618 + minute * 0.00436) * 10; // ±10%
-  const humidity30SecondVariation = Math.cos(updateOffset * 0.06) * 2;
-  
-  const humidity = Math.max(30, Math.min(85, 
-    humidityBase + humidityDailyVariation + humidity30SecondVariation));
-  
-  // Calculate AQI
-  let aqi;
-  if (pm25 <= 12.0) {
-    aqi = Math.round((pm25 / 12.0) * 50);
-  } else if (pm25 <= 35.4) {
-    aqi = Math.round(51 + ((pm25 - 12.1) / (35.4 - 12.1)) * 49);
-  } else if (pm25 <= 55.4) {
-    aqi = Math.round(101 + ((pm25 - 35.5) / (55.4 - 35.5)) * 49);
-  } else if (pm25 <= 150.4) {
-    aqi = Math.round(151 + ((pm25 - 55.5) / (150.4 - 55.5)) * 49);
-  } else {
-    aqi = Math.round(201 + ((pm25 - 150.5) / (250.4 - 150.5)) * 99);
-  }
-  
-  aqi = Math.min(500, aqi);
-  
-  // AQI category
+
+  const slot = getTimeSlot(hour);
+  const r = TIME_RANGES[slot];
+
+  // Sampling dari rentang slot
+  const rawPm25 = randomInRange(r.pm25.min, r.pm25.max, r.pm25.mean);
+  const rawPm10 = randomInRange(r.pm10.min, r.pm10.max, r.pm10.mean);
+  const rawCo2  = randomInRange(r.co2.min,  r.co2.max,  r.co2.mean);
+  const rawTemp = randomInRange(r.temperature.min, r.temperature.max, r.temperature.mean);
+  const rawRh   = randomInRange(r.humidity.min,    r.humidity.max,    r.humidity.mean);
+
+  // EMA smoothing supaya tidak jitter tiap 30 detik
+  const alpha = 0.3;
+  const prev = state.prevValues || {
+    pm25: rawPm25, pm10: rawPm10, co2: rawCo2, temperature: rawTemp, humidity: rawRh,
+  };
+  const pm25 = prev.pm25 * (1 - alpha) + rawPm25 * alpha;
+  const pm10 = prev.pm10 * (1 - alpha) + rawPm10 * alpha;
+  const co2  = prev.co2  * (1 - alpha) + rawCo2  * alpha;
+  const temperature = prev.temperature * (1 - alpha) + rawTemp * alpha;
+  const humidity    = prev.humidity    * (1 - alpha) + rawRh   * alpha;
+
+  state.prevValues = { pm25, pm10, co2, temperature, humidity };
+  state.updateCounter++;
+  state.last30SecondBlock = current30SecondBlock;
+
+  // ✅ Hitung AQI via ISPU (max dari PM2.5 & PM10)
+  const ispuPM25 = calculateISPUFromPM25(pm25);
+  const ispuPM10 = calculateISPUFromPM10(pm10);
+  const aqi = Math.max(ispuPM25, ispuPM10);
+  const dominant = ispuPM25 >= ispuPM10 ? 'pm25' : 'pm10';
+
   let category;
   if (aqi <= 50) category = 'baik';
   else if (aqi <= 100) category = 'sedang';
-  else if (aqi <= 150) category = 'tidak_sehat';
-  else if (aqi <= 200) category = 'sangat_tidak_sehat';
+  else if (aqi <= 200) category = 'tidak_sehat';
+  else if (aqi <= 300) category = 'sangat_tidak_sehat';
   else category = 'berbahaya';
-  
-  // Create data object
+
   const sensorData = {
     deviceId,
     timestamp: now.toISOString(),
@@ -181,6 +183,9 @@ function generate30SecondBasedData(deviceId) {
     secondsInBlock: second % 30,
     updateCounter: state.updateCounter,
     aqi,
+    ispuPM25,
+    ispuPM10,
+    dominant,
     pm25: parseFloat(pm25.toFixed(1)),
     pm10: parseFloat(pm10.toFixed(1)),
     co2: Math.round(co2),
@@ -188,36 +193,20 @@ function generate30SecondBasedData(deviceId) {
     humidity: Math.round(humidity),
     category,
     roomType: ['Kelas', 'Laboratorium', 'Perpustakaan', 'Aula'][state.roomType],
-    trends: {
-      pm25: parseFloat(state.trendPM25.toFixed(2)),
-      co2: parseFloat(state.trendCO2.toFixed(2))
-    },
-    factors: {
-      time: parseFloat(timeFactor.toFixed(2)),
-      room: parseFloat(roomFactor.toFixed(2)),
-      hour: hour,
-      minute: minute,
-      second: second
-    }
+    timeSlot: slot,
+    factors: { hour, minute, second },
   };
-  
-  // Cache untuk 30 detik block ini
+
   secondDataCache.set(deviceId, {
     block30: current30SecondBlock,
     data: sensorData,
-    timestamp: now
+    timestamp: now,
   });
-  
-  // Log perubahan jika block baru
-  if (secondDataCache.size > 0) {
-    const prevCache = Array.from(secondDataCache.values())
-      .find(cache => cache.deviceId === deviceId);
-    
-    if (prevCache && prevCache.block30 !== current30SecondBlock) {
-      console.log(`🔄 ${deviceId}: Block ${current30SecondBlock} (${now.getHours()}:${minute.toString().padStart(2, '0')}:${second.toString().padStart(2, '0')}) - AQI: ${aqi}, PM2.5: ${sensorData.pm25}`);
-    }
-  }
-  
+
+  console.log(
+    `🔄 ${deviceId} [${slot}] AQI=${aqi} (${dominant.toUpperCase()}), PM2.5=${sensorData.pm25}, PM10=${sensorData.pm10}`
+  );
+
   return sensorData;
 }
 
