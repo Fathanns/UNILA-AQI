@@ -12,6 +12,11 @@ class RoomProvider with ChangeNotifier {
 
   static const String _cacheKey = 'cache_dashboard_rooms';
 
+  // FIXED: Auto-refresh UI tiap 1 menit.
+  // Backend tetap update DB tiap 10 detik — frontend hanya fetch ulang
+  // dari API setiap 60 detik, bukan live socket.
+  static const Duration _autoRefreshInterval = Duration(minutes: 1);
+
   List<Room> _rooms = [];
   List<Room> _filteredRooms = [];
   String _selectedBuilding = 'Semua Gedung';
@@ -27,7 +32,8 @@ class RoomProvider with ChangeNotifier {
   DateTime _lastUpdate = DateTime.now();
 
   StreamSubscription? _socketSubscription;
-  StreamSubscription? _dataSubscription;
+  // FIXED: timer baru untuk auto-refresh 60 detik.
+  Timer? _autoRefreshTimer;
 
   List<Room> get rooms => _filteredRooms;
   List<Room> get allRooms => _rooms;
@@ -61,9 +67,12 @@ class RoomProvider with ChangeNotifier {
         notifyListeners();
       });
 
-      _dataSubscription = _socketService.dataStream.listen(_handleSocketData);
+      // FIXED: Tidak subscribe ke dataStream lagi.
+      // Data update lewat _autoRefreshTimer (60 detik) atau manual refresh.
+      // Socket hanya untuk event struktural (room added/deleted/renamed).
 
       _setupSocketListeners();
+      _startAutoRefreshTimer();
 
       _socketConnected = _socketService.isConnected;
       await _storageService.setSocketConnected(_socketConnected);
@@ -73,6 +82,16 @@ class RoomProvider with ChangeNotifier {
       print('❌ Error initializing socket: $e');
       _socketConnected = false;
     }
+  }
+
+  /// FIXED: auto-refresh baru — 1 menit sekali, fetch ulang dari API.
+  void _startAutoRefreshTimer() {
+    _autoRefreshTimer?.cancel();
+    _autoRefreshTimer = Timer.periodic(_autoRefreshInterval, (_) async {
+      if (_isRefreshing) return;
+      print('🔄 RoomProvider auto-refresh (1 minute): fetching fresh data...');
+      await _refreshData();
+    });
   }
 
   // FIXED: guard tipe data agar payload null/rusak tidak memicu TypeError.
@@ -151,8 +170,9 @@ class RoomProvider with ChangeNotifier {
   }
 
   void _setupSocketListeners() {
-    _socketService.on('room-update', _handleRoomUpdate);
-    _socketService.on('dashboard-update', _handleDashboardUpdate);
+    // FIXED: hanya event STRUKTURAL yang di-listen.
+    // 'room-update' & 'dashboard-update' (data AQI tiap 10s) TIDAK di-listen
+    // lagi — data update via _autoRefreshTimer (60s) atau manual refresh.
     _socketService.on('dashboard-room-updated', _handleDashboardRoomUpdated);
     _socketService.on('room-name-changed', (data) {
       handleRoomNameChanged(data);
@@ -167,171 +187,6 @@ class RoomProvider with ChangeNotifier {
     final availableBuildings = buildings;
     if (!availableBuildings.contains(_selectedBuilding)) {
       _selectedBuilding = 'Semua Gedung';
-    }
-  }
-
-  void _handleSocketData(Map<String, dynamic> data) {
-    final type = data['type'];
-    final payload = data['data'];
-
-    switch (type) {
-      case 'room-update':
-        _handleRoomUpdate(payload);
-        break;
-      case 'dashboard-update':
-        _handleDashboardUpdate(payload);
-        break;
-      case 'room-deleted':
-        _handleRoomDeleted(payload);
-        break;
-      case 'dashboard-room-updated':
-        _handleDashboardRoomUpdated(payload);
-        break;
-    }
-  }
-
-  // FIXED: guard tipe data + akses field via map lokal agar konsisten.
-  void _handleRoomUpdate(dynamic data) {
-    if (data is! Map) return;
-    try {
-      final map = Map<String, dynamic>.from(data);
-      final roomId = map['roomId'];
-      final roomData = map['data'];
-      final source = map['source'] ?? 'unknown';
-      final action = map['action'];
-
-      print('🔄 Processing ${source.toString().toUpperCase()} update for room: $roomId (action: $action)');
-
-      if (roomData is! Map) return;
-      final roomMap = Map<String, dynamic>.from(roomData);
-
-      if (action == 'updated' && map['oldData'] != null && map['oldData'] is Map) {
-        final oldMap = Map<String, dynamic>.from(map['oldData']);
-        final newName = roomMap['name'];
-        final oldName = oldMap['name'];
-
-        if (newName != oldName) {
-          handleRoomNameChanged({
-            'roomId': roomId,
-            'newName': newName,
-            'oldName': oldName,
-            'buildingName': roomMap['buildingName']
-          });
-          return;
-        }
-      }
-
-      final roomIndex = _rooms.indexWhere((room) => room.id == roomId);
-
-      if (roomIndex != -1) {
-        final currentRoomData = roomMap['currentData'];
-        if (currentRoomData is! Map) return;
-
-        final cdMap = Map<String, dynamic>.from(currentRoomData);
-
-        final updatedRoom = Room(
-          id: _rooms[roomIndex].id,
-          name: roomMap['name'] ?? _rooms[roomIndex].name,
-          buildingId: _rooms[roomIndex].buildingId,
-          buildingName: roomMap['buildingName'] ?? _rooms[roomIndex].buildingName,
-          dataSource: _rooms[roomIndex].dataSource,
-          iotDeviceId: _rooms[roomIndex].iotDeviceId,
-          currentAQI: (roomMap['currentAQI'] as num?)?.toInt() ??
-              _rooms[roomIndex].currentAQI,
-          currentData: RoomData(
-            pm25: (cdMap['pm25'] as num?)?.toDouble() ?? 0,
-            pm10: (cdMap['pm10'] as num?)?.toDouble() ?? 0,
-            co2: (cdMap['co2'] as num?)?.toDouble() ?? 0,
-            temperature: (cdMap['temperature'] as num?)?.toDouble() ?? 0,
-            humidity: (cdMap['humidity'] as num?)?.toDouble() ?? 0,
-            updatedAt: cdMap['updatedAt'] != null
-                ? DateTime.parse(cdMap['updatedAt'].toString())
-                : DateTime.now(),
-          ),
-          createdAt: _rooms[roomIndex].createdAt,
-          updatedAt: roomMap['updatedAt'] != null
-              ? DateTime.parse(roomMap['updatedAt'].toString())
-              : DateTime.now(),
-        );
-
-        _rooms[roomIndex] = updatedRoom;
-        _lastUpdate = DateTime.now();
-        _applyFilters();
-        notifyListeners();
-
-        print('✅ Room ${_rooms[roomIndex].name} updated via ${source.toString().toUpperCase()}: AQI ${updatedRoom.currentAQI}');
-      }
-    } catch (e) {
-      print('❌ Error handling room update: $e');
-    }
-  }
-
-  // FIXED: guard tipe data + delegasi yang aman ke handler lain.
-  void _handleDashboardUpdate(dynamic data) {
-    if (data is! Map) return;
-    try {
-      final map = Map<String, dynamic>.from(data);
-      final type = map['type'];
-
-      switch (type) {
-        case 'room-data-updated':
-          _refreshData();
-          break;
-        case 'building-name-changed':
-          handleBuildingNameChanged(map);
-          break;
-        case 'room-name-changed':
-          handleRoomNameChanged(map);
-          break;
-        default:
-          print('ℹ️ Unknown dashboard update type: $type');
-      }
-    } catch (e) {
-      print('❌ Error handling dashboard update: $e');
-    }
-  }
-
-  // FIXED: signature diubah dari Map<String,dynamic> ke dynamic + guard,
-  // agar tidak mismatch tipe saat dipanggil dari callback socket.
-  void handleRoomNameChanged(dynamic data) {
-    if (data is! Map) return;
-    try {
-      final map = Map<String, dynamic>.from(data);
-      final roomId = map['roomId'];
-      final newName = map['newName'];
-      final oldName = map['oldName'];
-      final buildingName = map['buildingName'];
-
-      print('🔄 Processing room name change: $oldName -> $newName ($roomId)');
-
-      final roomIndex = _rooms.indexWhere((room) => room.id == roomId);
-
-      if (roomIndex != -1) {
-        final updatedRoom = Room(
-          id: _rooms[roomIndex].id,
-          name: newName ?? _rooms[roomIndex].name,
-          buildingId: _rooms[roomIndex].buildingId,
-          buildingName: buildingName ?? _rooms[roomIndex].buildingName,
-          dataSource: _rooms[roomIndex].dataSource,
-          iotDeviceId: _rooms[roomIndex].iotDeviceId,
-          currentAQI: _rooms[roomIndex].currentAQI,
-          currentData: _rooms[roomIndex].currentData,
-          createdAt: _rooms[roomIndex].createdAt,
-          updatedAt: DateTime.now(),
-        );
-
-        _rooms[roomIndex] = updatedRoom;
-        _applyFilters();
-        _lastUpdate = DateTime.now();
-        notifyListeners();
-
-        print('✅ Room name updated: $oldName -> $newName');
-      } else {
-        print('⚠️ Room not found in local list: $roomId');
-        _refreshData();
-      }
-    } catch (e) {
-      print('❌ Error handling room name change: $e');
     }
   }
 
@@ -357,83 +212,85 @@ class RoomProvider with ChangeNotifier {
   }
 
   Future<void> loadFromCache() async {
-  try {
-    final cached = _storageService.getJson(_cacheKey);
-    if (cached != null && cached['data'] is List) {
-      final list = (cached['data'] as List)
-          .map((e) => Room.fromJson(Map<String, dynamic>.from(e as Map)))
-          .toList();
-      if (list.isNotEmpty && _rooms.isEmpty) {
-        _rooms = list;
-        _applyFilters();
-        _lastUpdate = DateTime.now();
-        notifyListeners();
+    try {
+      final cached = _storageService.getJson(_cacheKey);
+      if (cached != null && cached['data'] is List) {
+        final list = (cached['data'] as List)
+            .map((e) => Room.fromJson(Map<String, dynamic>.from(e as Map)))
+            .toList();
+        if (list.isNotEmpty && _rooms.isEmpty) {
+          _rooms = list;
+          _applyFilters();
+          _lastUpdate = DateTime.now();
+          notifyListeners();
+        }
       }
+    } catch (_) {
+      // cache rusak — abaikan, biarkan loadRooms yang isi
     }
-  } catch (_) {
-    // cache rusak — abaikan, biarkan loadRooms yang isi
   }
-}
 
   Future<void> loadRooms() async {
-  // FIXED: hanya tampilkan spinner jika belum ada data (cache kosong).
-  // Kalau cache ada, biarkan konten tampil dan fetch berjalan di background.
-  _isLoading = _rooms.isEmpty;
-  _hasError = false;
-  notifyListeners();
+    // Hanya tampilkan spinner jika belum ada data (cache kosong).
+    _isLoading = _rooms.isEmpty;
+    _hasError = false;
+    notifyListeners();
 
-  try {
-    if (!_socketConnected) {
-      await initSocket();
+    try {
+      if (!_socketConnected) {
+        await initSocket();
+      }
+
+      _rooms = await _roomRepository.getRooms();
+      _applyFilters();
+      _lastUpdate = DateTime.now();
+
+      // Simpan ke cache untuk cold-start berikutnya
+      try {
+        await _storageService.setJson(_cacheKey, {
+          'data': _rooms.map((r) => r.toJson()).toList(),
+        });
+      } catch (_) {}
+    } catch (e) {
+      _hasError = true;
+      _errorMessage = e.toString();
+      print('❌ Error loading rooms: $e');
+    } finally {
+      _isLoading = false;
+      notifyListeners();
     }
-
-    _rooms = await _roomRepository.getRooms();
-    _applyFilters();
-    _lastUpdate = DateTime.now();
-
-    // Simpan ke cache untuk cold-start berikutnya
-    try {
-      await _storageService.setJson(_cacheKey, {
-        'data': _rooms.map((r) => r.toJson()).toList(),
-      });
-    } catch (_) {}
-  } catch (e) {
-    _hasError = true;
-    _errorMessage = e.toString();
-    print('❌ Error loading rooms: $e');
-  } finally {
-    _isLoading = false;
-    notifyListeners();
   }
-}
 
+  /// Manual refresh — dipakai tombol refresh di Dashboard.
+  /// Menampilkan spinner (`_isRefreshing = true`).
   Future<void> refresh() async {
-  if (_isRefreshing) return;
+    if (_isRefreshing) return;
 
-  _isRefreshing = true;
-  _hasError = false;
-  notifyListeners();
-
-  try {
-    _rooms = await _roomRepository.getRooms();
-    _applyFilters();
-    _lastUpdate = DateTime.now();
-
-    // Simpan ke cache
-    try {
-      await _storageService.setJson(_cacheKey, {
-        'data': _rooms.map((r) => r.toJson()).toList(),
-      });
-    } catch (_) {}
-  } catch (e) {
-    _hasError = true;
-    _errorMessage = e.toString();
-  } finally {
-    _isRefreshing = false;
+    _isRefreshing = true;
+    _hasError = false;
     notifyListeners();
-  }
-}
 
+    try {
+      _rooms = await _roomRepository.getRooms();
+      _applyFilters();
+      _lastUpdate = DateTime.now();
+
+      try {
+        await _storageService.setJson(_cacheKey, {
+          'data': _rooms.map((r) => r.toJson()).toList(),
+        });
+      } catch (_) {}
+    } catch (e) {
+      _hasError = true;
+      _errorMessage = e.toString();
+    } finally {
+      _isRefreshing = false;
+      notifyListeners();
+    }
+  }
+
+  /// FIXED: silent background refresh — dipanggil oleh _autoRefreshTimer.
+  /// Tidak menampilkan spinner, hanya notify kalau ada perubahan.
   Future<void> _refreshData() async {
     try {
       final newRooms = await _roomRepository.getRooms();
@@ -456,6 +313,17 @@ class RoomProvider with ChangeNotifier {
         _applyFilters();
         _lastUpdate = DateTime.now();
         notifyListeners();
+
+        // Cache diperbarui supaya cold-start berikutnya tampil data terbaru
+        try {
+          await _storageService.setJson(_cacheKey, {
+            'data': _rooms.map((r) => r.toJson()).toList(),
+          });
+        } catch (_) {}
+
+        print('✅ RoomProvider auto-refresh updated ${_rooms.length} rooms');
+      } else {
+        print('ℹ️ RoomProvider auto-refresh: no changes');
       }
     } catch (e) {
       print('❌ Error during background refresh: $e');
@@ -588,15 +456,58 @@ class RoomProvider with ChangeNotifier {
     }
   }
 
+  // FIXED: signature diubah ke dynamic + guard tipe.
+  void handleRoomNameChanged(dynamic data) {
+    if (data is! Map) return;
+    try {
+      final map = Map<String, dynamic>.from(data);
+      final roomId = map['roomId'];
+      final newName = map['newName'];
+      final oldName = map['oldName'];
+      final buildingName = map['buildingName'];
+
+      print('🔄 Processing room name change: $oldName -> $newName ($roomId)');
+
+      final roomIndex = _rooms.indexWhere((room) => room.id == roomId);
+
+      if (roomIndex != -1) {
+        final updatedRoom = Room(
+          id: _rooms[roomIndex].id,
+          name: newName ?? _rooms[roomIndex].name,
+          buildingId: _rooms[roomIndex].buildingId,
+          buildingName: buildingName ?? _rooms[roomIndex].buildingName,
+          dataSource: _rooms[roomIndex].dataSource,
+          iotDeviceId: _rooms[roomIndex].iotDeviceId,
+          currentAQI: _rooms[roomIndex].currentAQI,
+          currentData: _rooms[roomIndex].currentData,
+          createdAt: _rooms[roomIndex].createdAt,
+          updatedAt: DateTime.now(),
+        );
+
+        _rooms[roomIndex] = updatedRoom;
+        _applyFilters();
+        _lastUpdate = DateTime.now();
+        notifyListeners();
+
+        print('✅ Room name updated: $oldName -> $newName');
+      } else {
+        print('⚠️ Room not found in local list: $roomId');
+        _refreshData();
+      }
+    } catch (e) {
+      print('❌ Error handling room name change: $e');
+    }
+  }
+
   @override
   void dispose() {
+    _autoRefreshTimer?.cancel();
     _socketSubscription?.cancel();
-    _dataSubscription?.cancel();
     _socketService.disconnect();
-    _socketService.off('room-update');
-    _socketService.off('dashboard-update');
     _socketService.off('dashboard-room-updated');
     _socketService.off('room-deleted');
+    _socketService.off('room-name-changed');
+    _socketService.off('room-building-changed');
     super.dispose();
   }
 }

@@ -9,7 +9,8 @@ class SimulationService {
     this.isRunning = false;
     this.task = null;
     this.io = null;
-    this.updateInterval = 60000;
+    // FIXED: update setiap 10 detik (sebelumnya 60 detik)
+    this.updateInterval = 10000;
   }
 
   start(io) {
@@ -21,6 +22,7 @@ class SimulationService {
     this.io = io;
     console.log(`🚀 Starting Simulation Service (update every ${this.updateInterval/1000}s)...`);
 
+    // FIXED: cron setiap 10 detik → '*/10 * * * * *'
     this.task = cron.schedule(`*/${this.updateInterval/1000} * * * * *`, async () => {
       await this.updateAllRooms();
     });
@@ -28,6 +30,7 @@ class SimulationService {
     this.isRunning = true;
     console.log('✅ Simulation Service started');
 
+    // Update pertama kali langsung
     this.updateAllRooms();
   }
 
@@ -65,10 +68,12 @@ class SimulationService {
       const roomType = this.getRoomType(room.name);
       const sensorData = generateSensorData(roomType);
 
+      // FIXED: threshold = 0 → selalu update setiap 10 detik
+      // (sebelumnya pakai threshold besar sehingga banyak update ter-skip)
       const hasChanged = this._hasDataChanged(room, sensorData);
 
       if (!hasChanged) {
-        console.log(`ℹ️ Room ${room.name} data unchanged, skipping update`);
+        console.log(`ℹ️ Room ${room.name} data unchanged (exact match), skipping update`);
         return;
       }
 
@@ -107,16 +112,22 @@ class SimulationService {
     }
   }
 
+  /**
+   * FIXED: threshold = 0 untuk semua parameter.
+   * Artinya setiap ada perubahan sedikitpun → update & broadcast.
+   * Data baru di-generate tiap 10s via random sampling, jadi
+   * practically selalu berbeda → always update.
+   */
   _hasDataChanged(room, newData) {
     const currentData = room.currentData;
 
     const thresholds = {
-      aqi: 1,
-      pm25: 1.0,
-      pm10: 1.0,
-      co2: 1,
-      temperature: 0.5,
-      humidity: 1.0
+      aqi: 0,
+      pm25: 0,
+      pm10: 0,
+      co2: 0,
+      temperature: 0,
+      humidity: 0
     };
 
     return (

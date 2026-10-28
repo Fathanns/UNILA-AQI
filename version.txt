@@ -2577,7 +2577,7 @@ router.get('/rooms', async (req, res) => {
 module.exports = router;
 
 ---------------------------------------------------------------------------------------------------------------------------------------
-src/services/iotService.js
+src/services/
 
 const axios = require('axios');
 const cron = require('node-cron');
@@ -2592,6 +2592,7 @@ class IoTService {
     this.task = null;
     this.io = null;
     this.deviceLastData = new Map();
+    // FIXED: polling interval 10 detik (sudah benar dari awal)
     this.pollingInterval = 10000;
   }
 
@@ -2611,6 +2612,7 @@ class IoTService {
     this.isRunning = true;
     console.log('✅ IoT Service started');
 
+    // Poll pertama kali langsung
     this.pollAllIoTDevices();
   }
 
@@ -2642,7 +2644,7 @@ class IoTService {
 
       const results = await Promise.allSettled(pollPromises);
 
-      const successfulPolls = results.filter(r => r.status === 'fulfilled' && r.value).length;
+      const successfulPolls = results.filter(r => r.status === 'fulfilled' && r.value && r.value.success).length;
       console.log(`✅ IoT polling completed: ${successfulPolls}/${devices.length} successful`);
       console.log(`✅ Updated at ${new Date().toLocaleTimeString()}`);
     } catch (error) {
@@ -2662,6 +2664,7 @@ class IoTService {
           throw new Error('Invalid IoT data structure');
         }
 
+        // FIXED: threshold = 0, jadi practically selalu update
         const lastData = this.deviceLastData.get(device._id.toString());
         const hasChanged = this._hasDataChanged(lastData, iotData);
 
@@ -2671,6 +2674,8 @@ class IoTService {
         device.lastUpdate = new Date();
         await device.save();
 
+        // FIXED: dengan threshold 0, hasChanged hampir selalu true
+        // → setiap poll 10s akan update room & broadcast
         if (hasChanged || !lastData) {
           console.log(`🔄 Data changed for device ${device.name}, broadcasting...`);
 
@@ -2687,6 +2692,8 @@ class IoTService {
 
         return { success: true, changed: hasChanged };
       }
+
+      return { success: false, error: 'Device did not return success' };
     } catch (error) {
       device.status = 'offline';
       await device.save();
@@ -2706,16 +2713,21 @@ class IoTService {
            typeof data.humidity === 'number';
   }
 
+  /**
+   * FIXED: threshold = 0 untuk semua parameter.
+   * Dengan IoT simulator update tiap 10s, dan threshold 0,
+   * practically setiap poll akan mendeteksi perubahan → always update.
+   */
   _hasDataChanged(oldData, newData) {
     if (!oldData || !newData) return true;
 
     const thresholds = {
-      aqi: 1,
-      pm25: 1.0,
-      pm10: 1.0,
-      co2: 1,
-      temperature: 0.5,
-      humidity: 1.0
+      aqi: 0,
+      pm25: 0,
+      pm10: 0,
+      co2: 0,
+      temperature: 0,
+      humidity: 0
     };
 
     return (
@@ -2729,192 +2741,192 @@ class IoTService {
   }
 
   async updateRoomFromIoT(room, iotData, deviceName) {
-  try {
-    // ✅ Hitung ulang AQI pakai ISPU: MAX(ISPU_PM25, ISPU_PM10)
-    const aqiResult = calculateAQI(iotData.pm25, iotData.pm10);
+    try {
+      // ✅ Hitung ulang AQI pakai ISPU: MAX(ISPU_PM25, ISPU_PM10)
+      const aqiResult = calculateAQI(iotData.pm25, iotData.pm10);
 
-    const normalizedData = {
-      pm25: iotData.pm25,
-      pm10: iotData.pm10,
-      co2: iotData.co2,
-      temperature: iotData.temperature,
-      humidity: iotData.humidity,
-      aqi: aqiResult.aqi,
-      category: aqiResult.category,
-      dominant: aqiResult.dominant,
-    };
+      const normalizedData = {
+        pm25: iotData.pm25,
+        pm10: iotData.pm10,
+        co2: iotData.co2,
+        temperature: iotData.temperature,
+        humidity: iotData.humidity,
+        aqi: aqiResult.aqi,
+        category: aqiResult.category,
+        dominant: aqiResult.dominant,
+      };
 
-    const currentData = room.currentData;
-    const hasRoomDataChanged = this._hasDataChanged(
-      {
-        aqi: room.currentAQI,
-        pm25: currentData.pm25,
-        pm10: currentData.pm10,
-        co2: currentData.co2,
-        temperature: currentData.temperature,
-        humidity: currentData.humidity,
-      },
-      normalizedData
-    );
+      const currentData = room.currentData;
+      // FIXED: threshold 0 → any change triggers update
+      const hasRoomDataChanged = this._hasDataChanged(
+        {
+          aqi: room.currentAQI,
+          pm25: currentData.pm25,
+          pm10: currentData.pm10,
+          co2: currentData.co2,
+          temperature: currentData.temperature,
+          humidity: currentData.humidity,
+        },
+        normalizedData
+      );
 
-    if (!hasRoomDataChanged) {
-      console.log(`ℹ️ Room ${room.name} data unchanged, skipping update`);
-      return;
+      if (!hasRoomDataChanged) {
+        console.log(`ℹ️ Room ${room.name} data unchanged (exact match), skipping update`);
+        return;
+      }
+
+      room.currentAQI = normalizedData.aqi;
+      room.currentData = {
+        pm25: normalizedData.pm25,
+        pm10: normalizedData.pm10,
+        co2: normalizedData.co2,
+        temperature: normalizedData.temperature,
+        humidity: normalizedData.humidity,
+        updatedAt: new Date(),
+      };
+      room.updatedAt = new Date();
+      await room.save();
+
+      const historicalData = new SensorData({
+        roomId: room._id,
+        roomName: room.name,
+        buildingName: room.buildingName,
+        aqi: normalizedData.aqi,
+        pm25: normalizedData.pm25,
+        pm10: normalizedData.pm10,
+        co2: normalizedData.co2,
+        temperature: normalizedData.temperature,
+        humidity: normalizedData.humidity,
+        category: aqiResult.category,
+        timestamp: new Date(),
+      });
+      await historicalData.save();
+
+      this.broadcastRoomUpdate(room, normalizedData, 'iot', deviceName);
+
+      console.log(
+        `✅ IoT room ${room.name}: AQI ${normalizedData.aqi} (${aqiResult.dominant.toUpperCase()}), PM2.5=${normalizedData.pm25}, PM10=${normalizedData.pm10}`
+      );
+    } catch (error) {
+      console.error(`❌ Error updating IoT room ${room.name}:`, error.message);
     }
-
-    room.currentAQI = normalizedData.aqi;
-    room.currentData = {
-      pm25: normalizedData.pm25,
-      pm10: normalizedData.pm10,
-      co2: normalizedData.co2,
-      temperature: normalizedData.temperature,
-      humidity: normalizedData.humidity,
-      updatedAt: new Date(),
-    };
-    room.updatedAt = new Date();
-    await room.save();
-
-    const historicalData = new SensorData({
-      roomId: room._id,
-      roomName: room.name,
-      buildingName: room.buildingName,
-      aqi: normalizedData.aqi,
-      pm25: normalizedData.pm25,
-      pm10: normalizedData.pm10,
-      co2: normalizedData.co2,
-      temperature: normalizedData.temperature,
-      humidity: normalizedData.humidity,
-      category: aqiResult.category,
-      timestamp: new Date(),
-    });
-    await historicalData.save();
-
-    this.broadcastRoomUpdate(room, normalizedData, 'iot', deviceName);
-
-    console.log(
-      `✅ IoT room ${room.name}: AQI ${normalizedData.aqi} (${aqiResult.dominant.toUpperCase()}), PM2.5=${normalizedData.pm25}, PM10=${normalizedData.pm10}`
-    );
-  } catch (error) {
-    console.error(`❌ Error updating IoT room ${room.name}:`, error.message);
   }
-}
 
   async updateRoomFromIoTForce(room, iotData, deviceName) {
-  try {
-    // ✅ Recalculate AQI via ISPU
-    const aqiResult = calculateAQI(iotData.pm25, iotData.pm10);
+    try {
+      // ✅ Recalculate AQI via ISPU
+      const aqiResult = calculateAQI(iotData.pm25, iotData.pm10);
 
-    room.currentAQI = aqiResult.aqi;
-    room.currentData = {
-      pm25: iotData.pm25,
-      pm10: iotData.pm10,
-      co2: iotData.co2,
-      temperature: iotData.temperature,
-      humidity: iotData.humidity,
-      updatedAt: new Date(),
-    };
-    room.updatedAt = new Date();
-    await room.save();
+      room.currentAQI = aqiResult.aqi;
+      room.currentData = {
+        pm25: iotData.pm25,
+        pm10: iotData.pm10,
+        co2: iotData.co2,
+        temperature: iotData.temperature,
+        humidity: iotData.humidity,
+        updatedAt: new Date(),
+      };
+      room.updatedAt = new Date();
+      await room.save();
 
-    const historicalData = new SensorData({
-      roomId: room._id,
-      roomName: room.name,
-      buildingName: room.buildingName,
-      aqi: aqiResult.aqi,
-      pm25: iotData.pm25,
-      pm10: iotData.pm10,
-      co2: iotData.co2,
-      temperature: iotData.temperature,
-      humidity: iotData.humidity,
-      category: aqiResult.category,
-      timestamp: new Date(),
-    });
-    await historicalData.save();
+      const historicalData = new SensorData({
+        roomId: room._id,
+        roomName: room.name,
+        buildingName: room.buildingName,
+        aqi: aqiResult.aqi,
+        pm25: iotData.pm25,
+        pm10: iotData.pm10,
+        co2: iotData.co2,
+        temperature: iotData.temperature,
+        humidity: iotData.humidity,
+        category: aqiResult.category,
+        timestamp: new Date(),
+      });
+      await historicalData.save();
 
-    this.broadcastRoomUpdate(room, iotData, 'iot', deviceName);
+      this.broadcastRoomUpdate(room, iotData, 'iot', deviceName);
 
-    console.log(
-      `✅ FORCE-updated IoT room ${room.name}: AQI ${aqiResult.aqi} (${aqiResult.dominant.toUpperCase()})`
-    );
-  } catch (error) {
-    console.error(`❌ Error force-updating room ${room.name}:`, error.message);
+      console.log(
+        `✅ FORCE-updated IoT room ${room.name}: AQI ${aqiResult.aqi} (${aqiResult.dominant.toUpperCase()})`
+      );
+    } catch (error) {
+      console.error(`❌ Error force-updating room ${room.name}:`, error.message);
+    }
   }
-}
 
-async forceUpdateRoom(roomId) {
-  try {
-    const room = await Room.findById(roomId);
-    if (!room) return { success: false, message: 'Room not found' };
+  async forceUpdateRoom(roomId) {
+    try {
+      const room = await Room.findById(roomId);
+      if (!room) return { success: false, message: 'Room not found' };
 
-    if (room.dataSource !== 'iot' || !room.iotDeviceId) {
-      return { success: false, message: 'Room is not configured for IoT' };
-    }
+      if (room.dataSource !== 'iot' || !room.iotDeviceId) {
+        return { success: false, message: 'Room is not configured for IoT' };
+      }
 
-    const device = await IoTDevice.findById(room.iotDeviceId);
-    if (!device) return { success: false, message: 'IoT device not found' };
+      const device = await IoTDevice.findById(room.iotDeviceId);
+      if (!device) return { success: false, message: 'IoT device not found' };
 
-    const response = await axios.get(device.apiEndpoint, { timeout: 5000 });
+      const response = await axios.get(device.apiEndpoint, { timeout: 5000 });
 
-    if (response.data?.success !== true) {
-      return { success: false, message: 'Device did not return success' };
-    }
+      if (response.data?.success !== true) {
+        return { success: false, message: 'Device did not return success' };
+      }
 
-    const iotData = response.data.data;
-    if (!this.isValidIoTData(iotData)) {
-      return { success: false, message: 'Invalid IoT data structure' };
-    }
+      const iotData = response.data.data;
+      if (!this.isValidIoTData(iotData)) {
+        return { success: false, message: 'Invalid IoT data structure' };
+      }
 
-    // Update device metadata
-    device.status = 'online';
-    device.lastUpdate = new Date();
-    await device.save();
+      // Update device metadata
+      device.status = 'online';
+      device.lastUpdate = new Date();
+      await device.save();
 
-    // Sinkronkan cache supaya polling reguler berikutnya tidak
-    // broadcast data yang sama sekali lagi.
-    this.deviceLastData.set(device._id.toString(), iotData);
+      // Sinkronkan cache
+      this.deviceLastData.set(device._id.toString(), iotData);
 
-    // FORCE update room (abaikan threshold)
-    await this.updateRoomFromIoTForce(room, iotData, device.name);
-
-    return { success: true, data: iotData, deviceName: device.name };
-  } catch (error) {
-    console.error(`❌ forceUpdateRoom(${roomId}) error:`, error.message);
-    return { success: false, error: error.message };
-  }
-}
-
-async pollDeviceForce(device) {
-  try {
-    const response = await axios.get(device.apiEndpoint, { timeout: 5000 });
-
-    if (response.data?.success !== true) {
-      return { success: false, message: 'Device did not return success' };
-    }
-
-    const iotData = response.data.data;
-    if (!this.isValidIoTData(iotData)) {
-      return { success: false, message: 'Invalid IoT data' };
-    }
-
-    // Update cache agar polling berikutnya tahu baseline terbaru
-    this.deviceLastData.set(device._id.toString(), iotData);
-
-    device.status = 'online';
-    device.lastUpdate = new Date();
-    await device.save();
-
-    const rooms = await Room.find({ iotDeviceId: device._id.toString() });
-    for (const room of rooms) {
+      // FORCE update room
       await this.updateRoomFromIoTForce(room, iotData, device.name);
-    }
 
-    return { success: true, changed: true };
-  } catch (error) {
-    device.status = 'offline';
-    await device.save().catch(() => {});
-    return { success: false, error: error.message };
+      return { success: true, data: iotData, deviceName: device.name };
+    } catch (error) {
+      console.error(`❌ forceUpdateRoom(${roomId}) error:`, error.message);
+      return { success: false, error: error.message };
+    }
   }
-}
+
+  async pollDeviceForce(device) {
+    try {
+      const response = await axios.get(device.apiEndpoint, { timeout: 5000 });
+
+      if (response.data?.success !== true) {
+        return { success: false, message: 'Device did not return success' };
+      }
+
+      const iotData = response.data.data;
+      if (!this.isValidIoTData(iotData)) {
+        return { success: false, message: 'Invalid IoT data' };
+      }
+
+      // Update cache
+      this.deviceLastData.set(device._id.toString(), iotData);
+
+      device.status = 'online';
+      device.lastUpdate = new Date();
+      await device.save();
+
+      const rooms = await Room.find({ iotDeviceId: device._id.toString() });
+      for (const room of rooms) {
+        await this.updateRoomFromIoTForce(room, iotData, device.name);
+      }
+
+      return { success: true, changed: true };
+    } catch (error) {
+      device.status = 'offline';
+      await device.save().catch(() => {});
+      return { success: false, error: error.message };
+    }
+  }
 
   broadcastRoomUpdate(room, data, source, deviceName = null) {
     if (this.io) {
@@ -2945,33 +2957,33 @@ async pollDeviceForce(device) {
   }
 
   async forcePollAll() {
-  console.log('🔄 FORCE polling all IoT devices...');
-  try {
-    const devices = await IoTDevice.find({});
-    if (devices.length === 0) {
-      return { success: true, message: 'No IoT devices to poll', count: 0 };
+    console.log('🔄 FORCE polling all IoT devices...');
+    try {
+      const devices = await IoTDevice.find({});
+      if (devices.length === 0) {
+        return { success: true, message: 'No IoT devices to poll', count: 0 };
+      }
+
+      const results = await Promise.allSettled(
+        devices.map(d => this.pollDeviceForce(d).catch(e => null))
+      );
+
+      const successCount = results.filter(
+        r => r.status === 'fulfilled' && r.value?.success
+      ).length;
+
+      console.log(`✅ FORCE poll completed: ${successCount}/${devices.length}`);
+      return {
+        success: true,
+        message: 'Force poll completed',
+        polled: devices.length,
+        successful: successCount
+      };
+    } catch (error) {
+      console.error('❌ forcePollAll error:', error.message);
+      return { success: false, error: error.message };
     }
-
-    const results = await Promise.allSettled(
-      devices.map(d => this.pollDeviceForce(d).catch(e => null))
-    );
-
-    const successCount = results.filter(
-      r => r.status === 'fulfilled' && r.value?.success
-    ).length;
-
-    console.log(`✅ FORCE poll completed: ${successCount}/${devices.length}`);
-    return {
-      success: true,
-      message: 'Force poll completed',
-      polled: devices.length,
-      successful: successCount
-    };
-  } catch (error) {
-    console.error('❌ forcePollAll error:', error.message);
-    return { success: false, error: error.message };
   }
-}
 
   getStatus() {
     return {
@@ -3002,7 +3014,8 @@ class SimulationService {
     this.isRunning = false;
     this.task = null;
     this.io = null;
-    this.updateInterval = 60000;
+    // FIXED: update setiap 10 detik (sebelumnya 60 detik)
+    this.updateInterval = 10000;
   }
 
   start(io) {
@@ -3014,6 +3027,7 @@ class SimulationService {
     this.io = io;
     console.log(`🚀 Starting Simulation Service (update every ${this.updateInterval/1000}s)...`);
 
+    // FIXED: cron setiap 10 detik → '*/10 * * * * *'
     this.task = cron.schedule(`*/${this.updateInterval/1000} * * * * *`, async () => {
       await this.updateAllRooms();
     });
@@ -3021,6 +3035,7 @@ class SimulationService {
     this.isRunning = true;
     console.log('✅ Simulation Service started');
 
+    // Update pertama kali langsung
     this.updateAllRooms();
   }
 
@@ -3058,10 +3073,12 @@ class SimulationService {
       const roomType = this.getRoomType(room.name);
       const sensorData = generateSensorData(roomType);
 
+      // FIXED: threshold = 0 → selalu update setiap 10 detik
+      // (sebelumnya pakai threshold besar sehingga banyak update ter-skip)
       const hasChanged = this._hasDataChanged(room, sensorData);
 
       if (!hasChanged) {
-        console.log(`ℹ️ Room ${room.name} data unchanged, skipping update`);
+        console.log(`ℹ️ Room ${room.name} data unchanged (exact match), skipping update`);
         return;
       }
 
@@ -3100,16 +3117,22 @@ class SimulationService {
     }
   }
 
+  /**
+   * FIXED: threshold = 0 untuk semua parameter.
+   * Artinya setiap ada perubahan sedikitpun → update & broadcast.
+   * Data baru di-generate tiap 10s via random sampling, jadi
+   * practically selalu berbeda → always update.
+   */
   _hasDataChanged(room, newData) {
     const currentData = room.currentData;
 
     const thresholds = {
-      aqi: 1,
-      pm25: 1.0,
-      pm10: 1.0,
-      co2: 1,
-      temperature: 0.5,
-      humidity: 1.0
+      aqi: 0,
+      pm25: 0,
+      pm10: 0,
+      co2: 0,
+      temperature: 0,
+      humidity: 0
     };
 
     return (
@@ -4265,8 +4288,8 @@ mongoose.connect(process.env.MONGODB_URI)
     iotService.start(io);
 
     console.log('✅ All services started');
-    console.log('   - Simulation Service: ACTIVE (1 minute intervals)');
-    console.log('   - IoT Service: ACTIVE (30 second intervals)');
+    console.log('   - Simulation Service: ACTIVE (10 second intervals)');
+    console.log('   - IoT Service: ACTIVE (10 second intervals)');
   })
   .catch((err) => {
     console.error('❌ MongoDB connection error:', err.message);
@@ -15878,6 +15901,9 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
 
   static const String _cacheKey = 'cache_rooms';
 
+  // FIXED: auto-refresh 1 menit (sebelumnya live socket tiap 10 detik)
+  static const Duration _autoRefreshInterval = Duration(minutes: 1);
+
   List<Room> _rooms = [];
   List<Room> _filteredRooms = [];
   List<Building> _buildings = [];
@@ -15888,31 +15914,45 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
   String _errorMessage = '';
 
   Timer? _reloadDebounce;
+  Timer? _autoRefreshTimer;
 
   List<String> get _availableBuildings {
-  final set = <String>{'Semua Gedung'};
-  for (final b in _buildings) {
-    final name = b.name.trim();
-    if (name.isNotEmpty) set.add(name);
+    final set = <String>{'Semua Gedung'};
+    for (final b in _buildings) {
+      final name = b.name.trim();
+      if (name.isNotEmpty) set.add(name);
+    }
+    for (final r in _rooms) {
+      final name = r.buildingName.trim();
+      if (name.isNotEmpty) set.add(name);
+    }
+    if (set.length <= 1) return set.toList();
+    final rest = set.toList().sublist(1)..sort();
+    return ['Semua Gedung', ...rest];
   }
-  for (final r in _rooms) {
-    final name = r.buildingName.trim();
-    if (name.isNotEmpty) set.add(name);
-  }
-  if (set.length <= 1) return set.toList();
-  final rest = set.toList().sublist(1)..sort();
-  return ['Semua Gedung', ...rest];
-}
 
   @override
   void initState() {
     super.initState();
     _loadCacheThenFetch();
     _setupSocketListeners();
+    _startAutoRefreshTimer();
   }
 
   // ============================================================
-  // SOCKET LISTENERS — auto-update saat data berubah
+  // AUTO-REFRESH 1 MENIT
+  // ============================================================
+  void _startAutoRefreshTimer() {
+    _autoRefreshTimer?.cancel();
+    _autoRefreshTimer = Timer.periodic(_autoRefreshInterval, (_) async {
+      if (_isRefreshing || !mounted) return;
+      print('🔄 Room management auto-refresh (1 minute): fetching fresh data...');
+      await _loadData();
+    });
+  }
+
+  // ============================================================
+  // SOCKET LISTENERS — hanya event STRUKTURAL
   // ============================================================
   Map<String, dynamic>? _asMap(dynamic data) {
     if (data == null) return null;
@@ -15928,51 +15968,18 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
   }
 
   void _setupSocketListeners() {
-    // Pastikan socket terkoneksi. Kalau belum (mis. user buka halaman ini
-    // pertama kali tanpa lewat Dashboard), coba connect.
+    // Pastikan socket terkoneksi.
     if (!_socketService.isConnected && !_socketService.isConnecting) {
       _socketService.connect();
     }
 
-    _socketService.on('dashboard-update', _handleDashboardUpdate);
+    // FIXED: 'dashboard-update' (data AQI tiap 10s) TIDAK di-listen lagi.
+    // Data di-refresh via _autoRefreshTimer (60 detik) atau tombol manual.
+    // Hanya event struktural yang di-handle secara instan:
     _socketService.on('dashboard-room-updated', _handleDashboardRoomUpdated);
     _socketService.on('room-deleted', _handleRoomDeleted);
     _socketService.on('room-name-changed', _handleRoomNameChanged);
     _socketService.on('room-building-changed', _handleRoomBuildingChanged);
-  }
-
-  void _handleDashboardUpdate(dynamic data) {
-    if (!mounted) return;
-    final map = _asMap(data);
-    if (map == null) return;
-    if (map['type'] != 'room-data-updated') return;
-
-    // 1) Update AQI di memori secara instan supaya UI terasa real-time.
-    final roomId = map['roomId']?.toString();
-    final aqi = (map['aqi'] as num?)?.toInt();
-    if (roomId != null && aqi != null) {
-      final idx = _rooms.indexWhere((r) => r.id == roomId);
-      if (idx != -1 && _rooms[idx].currentAQI != aqi) {
-        final old = _rooms[idx];
-        _rooms[idx] = Room(
-          id: old.id,
-          name: old.name,
-          buildingId: old.buildingId,
-          buildingName: old.buildingName,
-          dataSource: old.dataSource,
-          iotDeviceId: old.iotDeviceId,
-          currentAQI: aqi,
-          currentData: old.currentData,
-          createdAt: old.createdAt,
-          updatedAt: DateTime.now(),
-        );
-        _filterRooms(); // setState → rebuild UI dgn AQI terbaru
-      }
-    }
-
-    // 2) Reload lengkap (debounced) supaya currentData terbaru
-    //    (PM2.5, PM10, CO2, suhu, kelembaban) juga ikut ter-update.
-    _scheduleReload();
   }
 
   void _handleDashboardRoomUpdated(dynamic data) {
@@ -16012,11 +16019,11 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
   @override
   void dispose() {
     _reloadDebounce?.cancel();
-    _socketService.off('dashboard-update', _handleDashboardUpdate);
-    _socketService.off('dashboard-room-updated', _handleDashboardRoomUpdated);
-    _socketService.off('room-deleted', _handleRoomDeleted);
-    _socketService.off('room-name-changed', _handleRoomNameChanged);
-    _socketService.off('room-building-changed', _handleRoomBuildingChanged);
+    _autoRefreshTimer?.cancel();
+    _socketService.off('dashboard-room-updated');
+    _socketService.off('room-deleted');
+    _socketService.off('room-name-changed');
+    _socketService.off('room-building-changed');
     _searchController.dispose();
     super.dispose();
   }
@@ -16025,55 +16032,44 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
   // LOAD DATA
   // ============================================================
   Future<void> _loadCacheThenFetch() async {
-  Map<String, dynamic>? cached;
-  try {
-    cached = _storage.getJson(_cacheKey);
-  } catch (_) {
-    cached = null;
-  }
-
-  // 1) Hidrasi _rooms dari cache (perilaku lama)
-  if (cached != null && cached['data'] is List) {
+    Map<String, dynamic>? cached;
     try {
-      final list = (cached['data'] as List)
-          .map((e) => Room.fromJson(Map<String, dynamic>.from(e as Map)))
-          .toList();
-      if (mounted) {
-        setState(() {
-          _rooms = list;
-        });
-      }
+      cached = _storage.getJson(_cacheKey);
     } catch (_) {
-      // cache rusak — abaikan
+      cached = null;
     }
-  }
 
-  // 2) Hidrasi _buildings dari cache (BARU)
-  //    Supaya dropdown filter gedung langsung terisi saat cold-start,
-  //    tanpa menunggu _loadData() selesai.
-  if (cached != null && cached['buildings'] is List) {
-    try {
-      final bList = (cached['buildings'] as List)
-          .map((e) =>
-              Building.fromJson(Map<String, dynamic>.from(e as Map)))
-          .toList();
-      if (mounted) {
-        setState(() {
-          _buildings = bList;
-        });
-      }
-    } catch (_) {
-      // cache rusak — abaikan
+    if (cached != null && cached['data'] is List) {
+      try {
+        final list = (cached['data'] as List)
+            .map((e) => Room.fromJson(Map<String, dynamic>.from(e as Map)))
+            .toList();
+        if (mounted) {
+          setState(() {
+            _rooms = list;
+          });
+        }
+      } catch (_) {}
     }
+
+    if (cached != null && cached['buildings'] is List) {
+      try {
+        final bList = (cached['buildings'] as List)
+            .map((e) =>
+                Building.fromJson(Map<String, dynamic>.from(e as Map)))
+            .toList();
+        if (mounted) {
+          setState(() {
+            _buildings = bList;
+          });
+        }
+      } catch (_) {}
+    }
+
+    _filterRooms();
+
+    await _loadData();
   }
-
-  // 3) Terapkan filter setelah data cache masuk
-  //    (juga memvalidasi _selectedBuildingFilter terhadap _availableBuildings)
-  _filterRooms();
-
-  // 4) Fetch data terbaru dari server
-  await _loadData();
-}
 
   Future<void> _loadData() async {
     setState(() {
@@ -16132,8 +16128,6 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
   /// Refresh button handler:
   /// 1) Picu health-check indikator server.
   /// 2) Minta backend poll device/simulasi SEKARANG (force-refresh).
-  ///    Ini yang membuat nilai AQI langsung berubah tanpa menunggu
-  ///    siklus cron 60 detik / 10 detik.
   /// 3) Reload data dari server.
   Future<void> _handleManualRefresh() async {
     if (_isRefreshing) return;
@@ -16145,7 +16139,7 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
       try {
         await _apiService.forceRefresh();
       } catch (_) {
-        // best-effort: kalau token expired / server sibuk, abaikan
+        // best-effort
       }
 
       await _loadData();
@@ -16155,34 +16149,33 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
   }
 
   void _filterRooms() {
-  // Pastikan filter yang tersimpan masih valid; kalau tidak, reset.
-  if (!_availableBuildings.contains(_selectedBuildingFilter)) {
-    _selectedBuildingFilter = 'Semua Gedung';
-  }
+    if (!_availableBuildings.contains(_selectedBuildingFilter)) {
+      _selectedBuildingFilter = 'Semua Gedung';
+    }
 
-  List<Room> filtered = _rooms;
+    List<Room> filtered = _rooms;
 
-  if (_selectedBuildingFilter != 'Semua Gedung') {
-    filtered = filtered
-        .where((room) => room.buildingName == _selectedBuildingFilter)
-        .toList();
-  }
+    if (_selectedBuildingFilter != 'Semua Gedung') {
+      filtered = filtered
+          .where((room) => room.buildingName == _selectedBuildingFilter)
+          .toList();
+    }
 
-  if (_searchController.text.isNotEmpty) {
-    final query = _searchController.text.toLowerCase();
-    filtered = filtered
-        .where((room) =>
-            room.name.toLowerCase().contains(query) ||
-            room.buildingName.toLowerCase().contains(query))
-        .toList();
-  }
+    if (_searchController.text.isNotEmpty) {
+      final query = _searchController.text.toLowerCase();
+      filtered = filtered
+          .where((room) =>
+              room.name.toLowerCase().contains(query) ||
+              room.buildingName.toLowerCase().contains(query))
+          .toList();
+    }
 
-  if (mounted) {
-    setState(() => _filteredRooms = filtered);
-  } else {
-    _filteredRooms = filtered;
+    if (mounted) {
+      setState(() => _filteredRooms = filtered);
+    } else {
+      _filteredRooms = filtered;
+    }
   }
-}
 
   Future<void> _deleteRoom(String roomId) async {
     final confirmed = await showDialog<bool>(
@@ -16576,7 +16569,7 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
 }
 
 // ============================================================
-// ADD / EDIT ROOM SCREEN
+// ADD / EDIT ROOM SCREEN (tidak berubah)
 // ============================================================
 class AddEditRoomScreen extends StatefulWidget {
   final Room? room;
@@ -16665,7 +16658,6 @@ class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
 
     try {
       if (widget.isEditing) {
-        // Deteksi apakah device / data source berubah
         final dataSourceChanged =
             _selectedDataSource != (widget.room?.dataSource ?? 'simulation');
         final deviceChanged =
@@ -16682,8 +16674,6 @@ class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
 
         if (!mounted) return;
 
-        // Reload DULU sebelum pop supaya data fresh dari server
-        // — backend sudah force-fetch partikel device baru pada PUT.
         widget.onRoomSaved();
 
         final String message;
@@ -16814,7 +16804,7 @@ class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
                       },
                     ),
                     title: const Text('Simulasi'),
-                    subtitle: const Text('Data acak setiap 1 menit'),
+                    subtitle: const Text('Data acak setiap 10 detik'),
                     dense: true,
                   ),
                   ListTile(
@@ -19012,6 +19002,7 @@ class _AQIInfoScreenState extends State<AQIInfoScreen> {
 ---------------------------------------------------------------------------------------------------------------------------------------
 lib/presentation/pages/room/room_detail_screen.dart: 
 
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:unila_aqi/core/constants/colors.dart';
 import 'package:unila_aqi/core/services/socket_service.dart';
@@ -19037,9 +19028,13 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
   final SocketService _socketService = SocketService();
   final RoomRepository _roomRepository = RoomRepository();
 
+  // FIXED: auto-refresh 1 menit (sebelumnya live socket tiap 10 detik)
+  static const Duration _autoRefreshInterval = Duration(minutes: 1);
+
   bool _isRefreshing = false;
   bool _isMounted = false;
   late Room _currentRoomData;
+  Timer? _autoRefreshTimer;
 
   @override
   void initState() {
@@ -19053,6 +19048,7 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
       _setupBuildingUpdateListener();
       _setupRoomNameUpdateListener();
       _ensureSocketConnected();
+      _startAutoRefreshTimer();
     });
   }
 
@@ -19068,6 +19064,16 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
       }
     }
     return null;
+  }
+
+  // FIXED: auto-refresh 60 detik — fetch ulang dari API.
+  void _startAutoRefreshTimer() {
+    _autoRefreshTimer?.cancel();
+    _autoRefreshTimer = Timer.periodic(_autoRefreshInterval, (_) async {
+      if (_isRefreshing || !_isMounted) return;
+      print('🔄 Room detail auto-refresh (1 minute): fetching fresh data...');
+      await _refreshData();
+    });
   }
 
   void _ensureSocketConnected() {
@@ -19090,7 +19096,7 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
     }
   }
 
-  // FIXED: guard data + nested access (data['room'] bisa null).
+  // FIXED: guard data + nested access.
   void _setupRoomNameUpdateListener() {
     _socketService.on('room-name-updated', (data) {
       if (!_isMounted) return;
@@ -19196,17 +19202,10 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
     _socketService.joinRoom(widget.room.id);
   }
 
-  // FIXED: guard data sebelum dispatch.
+  // FIXED: hanya listen 'notification' dari socket.
+  // 'room-update' (data tiap 10 detik) TIDAK di-listen lagi —
+  // data di-refresh via _autoRefreshTimer (60 detik) atau tombol refresh.
   void _setupRealtimeListener() {
-    _socketService.on('room-update', (data) {
-      if (!_isMounted) return;
-      final map = _asMap(data);
-      if (map == null) return;
-      if (map['roomId'] != widget.room.id) return;
-
-      _handleRoomUpdate(map);
-    });
-
     _socketService.on('notification', (data) {
       if (!_isMounted) return;
       final map = _asMap(data);
@@ -19217,60 +19216,6 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
         map['type']?.toString() ?? 'info',
       );
     });
-  }
-
-  // FIXED: defensive null checks pada nested field currentData.
-  void _handleRoomUpdate(dynamic data) {
-    try {
-      final map = _asMap(data);
-      if (map == null) return;
-
-      final roomData = map['data'];
-      if (roomData is! Map) return;
-      final roomMap = Map<String, dynamic>.from(roomData);
-
-      final currentData = roomMap['currentData'];
-      if (currentData is! Map) return;
-      final cdMap = Map<String, dynamic>.from(currentData);
-
-      final oldName = _currentRoomData.name;
-      final newName = roomMap['name']?.toString() ?? _currentRoomData.name;
-      final nameChanged = oldName != newName;
-
-      setState(() {
-        _currentRoomData = Room(
-          id: _currentRoomData.id,
-          name: newName,
-          buildingId: _currentRoomData.buildingId,
-          buildingName: _currentRoomData.buildingName,
-          dataSource: _currentRoomData.dataSource,
-          iotDeviceId: _currentRoomData.iotDeviceId,
-          currentAQI: (roomMap['currentAQI'] as num?)?.toInt() ??
-              _currentRoomData.currentAQI,
-          currentData: RoomData(
-            pm25: (cdMap['pm25'] as num?)?.toDouble() ?? 0,
-            pm10: (cdMap['pm10'] as num?)?.toDouble() ?? 0,
-            co2: (cdMap['co2'] as num?)?.toDouble() ?? 0,
-            temperature: (cdMap['temperature'] as num?)?.toDouble() ?? 0,
-            humidity: (cdMap['humidity'] as num?)?.toDouble() ?? 0,
-            updatedAt: cdMap['updatedAt'] != null
-                ? DateTime.parse(cdMap['updatedAt'].toString())
-                : DateTime.now(),
-          ),
-          createdAt: _currentRoomData.createdAt,
-          updatedAt: roomMap['updatedAt'] != null
-              ? DateTime.parse(roomMap['updatedAt'].toString())
-              : DateTime.now(),
-        );
-      });
-
-      if (nameChanged) {
-        _showNotification(
-            'Nama ruangan diperbarui: $oldName -> $newName', 'info');
-      }
-    } catch (e) {
-      print('❌ Error handling room update: $e');
-    }
   }
 
   void _showNotification(String message, String type) {
@@ -19323,7 +19268,7 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
     );
   }
 
-  /// Fetch data terbaru dari server.
+  /// Fetch data terbaru dari server — dipakai manual refresh & auto-refresh.
   Future<void> _refreshData() async {
     if (!_isMounted) return;
 
@@ -19356,7 +19301,7 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
   }
 
   // ------------------------------------------------------------
-  // UI BUILDING METHODS
+  // UI BUILDING METHODS (tidak berubah)
   // ------------------------------------------------------------
 
   Widget _buildAQICard() {
@@ -19968,10 +19913,10 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
   @override
   void dispose() {
     _isMounted = false;
+    _autoRefreshTimer?.cancel();
 
     _socketService.leaveRoom(widget.room.id);
 
-    _socketService.off('room-update');
     _socketService.off('notification');
     _socketService.off('room-building-updated');
     _socketService.off('room-name-updated');
@@ -20183,6 +20128,11 @@ class RoomProvider with ChangeNotifier {
 
   static const String _cacheKey = 'cache_dashboard_rooms';
 
+  // FIXED: Auto-refresh UI tiap 1 menit.
+  // Backend tetap update DB tiap 10 detik — frontend hanya fetch ulang
+  // dari API setiap 60 detik, bukan live socket.
+  static const Duration _autoRefreshInterval = Duration(minutes: 1);
+
   List<Room> _rooms = [];
   List<Room> _filteredRooms = [];
   String _selectedBuilding = 'Semua Gedung';
@@ -20198,7 +20148,8 @@ class RoomProvider with ChangeNotifier {
   DateTime _lastUpdate = DateTime.now();
 
   StreamSubscription? _socketSubscription;
-  StreamSubscription? _dataSubscription;
+  // FIXED: timer baru untuk auto-refresh 60 detik.
+  Timer? _autoRefreshTimer;
 
   List<Room> get rooms => _filteredRooms;
   List<Room> get allRooms => _rooms;
@@ -20232,9 +20183,12 @@ class RoomProvider with ChangeNotifier {
         notifyListeners();
       });
 
-      _dataSubscription = _socketService.dataStream.listen(_handleSocketData);
+      // FIXED: Tidak subscribe ke dataStream lagi.
+      // Data update lewat _autoRefreshTimer (60 detik) atau manual refresh.
+      // Socket hanya untuk event struktural (room added/deleted/renamed).
 
       _setupSocketListeners();
+      _startAutoRefreshTimer();
 
       _socketConnected = _socketService.isConnected;
       await _storageService.setSocketConnected(_socketConnected);
@@ -20244,6 +20198,16 @@ class RoomProvider with ChangeNotifier {
       print('❌ Error initializing socket: $e');
       _socketConnected = false;
     }
+  }
+
+  /// FIXED: auto-refresh baru — 1 menit sekali, fetch ulang dari API.
+  void _startAutoRefreshTimer() {
+    _autoRefreshTimer?.cancel();
+    _autoRefreshTimer = Timer.periodic(_autoRefreshInterval, (_) async {
+      if (_isRefreshing) return;
+      print('🔄 RoomProvider auto-refresh (1 minute): fetching fresh data...');
+      await _refreshData();
+    });
   }
 
   // FIXED: guard tipe data agar payload null/rusak tidak memicu TypeError.
@@ -20322,8 +20286,9 @@ class RoomProvider with ChangeNotifier {
   }
 
   void _setupSocketListeners() {
-    _socketService.on('room-update', _handleRoomUpdate);
-    _socketService.on('dashboard-update', _handleDashboardUpdate);
+    // FIXED: hanya event STRUKTURAL yang di-listen.
+    // 'room-update' & 'dashboard-update' (data AQI tiap 10s) TIDAK di-listen
+    // lagi — data update via _autoRefreshTimer (60s) atau manual refresh.
     _socketService.on('dashboard-room-updated', _handleDashboardRoomUpdated);
     _socketService.on('room-name-changed', (data) {
       handleRoomNameChanged(data);
@@ -20338,171 +20303,6 @@ class RoomProvider with ChangeNotifier {
     final availableBuildings = buildings;
     if (!availableBuildings.contains(_selectedBuilding)) {
       _selectedBuilding = 'Semua Gedung';
-    }
-  }
-
-  void _handleSocketData(Map<String, dynamic> data) {
-    final type = data['type'];
-    final payload = data['data'];
-
-    switch (type) {
-      case 'room-update':
-        _handleRoomUpdate(payload);
-        break;
-      case 'dashboard-update':
-        _handleDashboardUpdate(payload);
-        break;
-      case 'room-deleted':
-        _handleRoomDeleted(payload);
-        break;
-      case 'dashboard-room-updated':
-        _handleDashboardRoomUpdated(payload);
-        break;
-    }
-  }
-
-  // FIXED: guard tipe data + akses field via map lokal agar konsisten.
-  void _handleRoomUpdate(dynamic data) {
-    if (data is! Map) return;
-    try {
-      final map = Map<String, dynamic>.from(data);
-      final roomId = map['roomId'];
-      final roomData = map['data'];
-      final source = map['source'] ?? 'unknown';
-      final action = map['action'];
-
-      print('🔄 Processing ${source.toString().toUpperCase()} update for room: $roomId (action: $action)');
-
-      if (roomData is! Map) return;
-      final roomMap = Map<String, dynamic>.from(roomData);
-
-      if (action == 'updated' && map['oldData'] != null && map['oldData'] is Map) {
-        final oldMap = Map<String, dynamic>.from(map['oldData']);
-        final newName = roomMap['name'];
-        final oldName = oldMap['name'];
-
-        if (newName != oldName) {
-          handleRoomNameChanged({
-            'roomId': roomId,
-            'newName': newName,
-            'oldName': oldName,
-            'buildingName': roomMap['buildingName']
-          });
-          return;
-        }
-      }
-
-      final roomIndex = _rooms.indexWhere((room) => room.id == roomId);
-
-      if (roomIndex != -1) {
-        final currentRoomData = roomMap['currentData'];
-        if (currentRoomData is! Map) return;
-
-        final cdMap = Map<String, dynamic>.from(currentRoomData);
-
-        final updatedRoom = Room(
-          id: _rooms[roomIndex].id,
-          name: roomMap['name'] ?? _rooms[roomIndex].name,
-          buildingId: _rooms[roomIndex].buildingId,
-          buildingName: roomMap['buildingName'] ?? _rooms[roomIndex].buildingName,
-          dataSource: _rooms[roomIndex].dataSource,
-          iotDeviceId: _rooms[roomIndex].iotDeviceId,
-          currentAQI: (roomMap['currentAQI'] as num?)?.toInt() ??
-              _rooms[roomIndex].currentAQI,
-          currentData: RoomData(
-            pm25: (cdMap['pm25'] as num?)?.toDouble() ?? 0,
-            pm10: (cdMap['pm10'] as num?)?.toDouble() ?? 0,
-            co2: (cdMap['co2'] as num?)?.toDouble() ?? 0,
-            temperature: (cdMap['temperature'] as num?)?.toDouble() ?? 0,
-            humidity: (cdMap['humidity'] as num?)?.toDouble() ?? 0,
-            updatedAt: cdMap['updatedAt'] != null
-                ? DateTime.parse(cdMap['updatedAt'].toString())
-                : DateTime.now(),
-          ),
-          createdAt: _rooms[roomIndex].createdAt,
-          updatedAt: roomMap['updatedAt'] != null
-              ? DateTime.parse(roomMap['updatedAt'].toString())
-              : DateTime.now(),
-        );
-
-        _rooms[roomIndex] = updatedRoom;
-        _lastUpdate = DateTime.now();
-        _applyFilters();
-        notifyListeners();
-
-        print('✅ Room ${_rooms[roomIndex].name} updated via ${source.toString().toUpperCase()}: AQI ${updatedRoom.currentAQI}');
-      }
-    } catch (e) {
-      print('❌ Error handling room update: $e');
-    }
-  }
-
-  // FIXED: guard tipe data + delegasi yang aman ke handler lain.
-  void _handleDashboardUpdate(dynamic data) {
-    if (data is! Map) return;
-    try {
-      final map = Map<String, dynamic>.from(data);
-      final type = map['type'];
-
-      switch (type) {
-        case 'room-data-updated':
-          _refreshData();
-          break;
-        case 'building-name-changed':
-          handleBuildingNameChanged(map);
-          break;
-        case 'room-name-changed':
-          handleRoomNameChanged(map);
-          break;
-        default:
-          print('ℹ️ Unknown dashboard update type: $type');
-      }
-    } catch (e) {
-      print('❌ Error handling dashboard update: $e');
-    }
-  }
-
-  // FIXED: signature diubah dari Map<String,dynamic> ke dynamic + guard,
-  // agar tidak mismatch tipe saat dipanggil dari callback socket.
-  void handleRoomNameChanged(dynamic data) {
-    if (data is! Map) return;
-    try {
-      final map = Map<String, dynamic>.from(data);
-      final roomId = map['roomId'];
-      final newName = map['newName'];
-      final oldName = map['oldName'];
-      final buildingName = map['buildingName'];
-
-      print('🔄 Processing room name change: $oldName -> $newName ($roomId)');
-
-      final roomIndex = _rooms.indexWhere((room) => room.id == roomId);
-
-      if (roomIndex != -1) {
-        final updatedRoom = Room(
-          id: _rooms[roomIndex].id,
-          name: newName ?? _rooms[roomIndex].name,
-          buildingId: _rooms[roomIndex].buildingId,
-          buildingName: buildingName ?? _rooms[roomIndex].buildingName,
-          dataSource: _rooms[roomIndex].dataSource,
-          iotDeviceId: _rooms[roomIndex].iotDeviceId,
-          currentAQI: _rooms[roomIndex].currentAQI,
-          currentData: _rooms[roomIndex].currentData,
-          createdAt: _rooms[roomIndex].createdAt,
-          updatedAt: DateTime.now(),
-        );
-
-        _rooms[roomIndex] = updatedRoom;
-        _applyFilters();
-        _lastUpdate = DateTime.now();
-        notifyListeners();
-
-        print('✅ Room name updated: $oldName -> $newName');
-      } else {
-        print('⚠️ Room not found in local list: $roomId');
-        _refreshData();
-      }
-    } catch (e) {
-      print('❌ Error handling room name change: $e');
     }
   }
 
@@ -20528,83 +20328,85 @@ class RoomProvider with ChangeNotifier {
   }
 
   Future<void> loadFromCache() async {
-  try {
-    final cached = _storageService.getJson(_cacheKey);
-    if (cached != null && cached['data'] is List) {
-      final list = (cached['data'] as List)
-          .map((e) => Room.fromJson(Map<String, dynamic>.from(e as Map)))
-          .toList();
-      if (list.isNotEmpty && _rooms.isEmpty) {
-        _rooms = list;
-        _applyFilters();
-        _lastUpdate = DateTime.now();
-        notifyListeners();
+    try {
+      final cached = _storageService.getJson(_cacheKey);
+      if (cached != null && cached['data'] is List) {
+        final list = (cached['data'] as List)
+            .map((e) => Room.fromJson(Map<String, dynamic>.from(e as Map)))
+            .toList();
+        if (list.isNotEmpty && _rooms.isEmpty) {
+          _rooms = list;
+          _applyFilters();
+          _lastUpdate = DateTime.now();
+          notifyListeners();
+        }
       }
+    } catch (_) {
+      // cache rusak — abaikan, biarkan loadRooms yang isi
     }
-  } catch (_) {
-    // cache rusak — abaikan, biarkan loadRooms yang isi
   }
-}
 
   Future<void> loadRooms() async {
-  // FIXED: hanya tampilkan spinner jika belum ada data (cache kosong).
-  // Kalau cache ada, biarkan konten tampil dan fetch berjalan di background.
-  _isLoading = _rooms.isEmpty;
-  _hasError = false;
-  notifyListeners();
+    // Hanya tampilkan spinner jika belum ada data (cache kosong).
+    _isLoading = _rooms.isEmpty;
+    _hasError = false;
+    notifyListeners();
 
-  try {
-    if (!_socketConnected) {
-      await initSocket();
+    try {
+      if (!_socketConnected) {
+        await initSocket();
+      }
+
+      _rooms = await _roomRepository.getRooms();
+      _applyFilters();
+      _lastUpdate = DateTime.now();
+
+      // Simpan ke cache untuk cold-start berikutnya
+      try {
+        await _storageService.setJson(_cacheKey, {
+          'data': _rooms.map((r) => r.toJson()).toList(),
+        });
+      } catch (_) {}
+    } catch (e) {
+      _hasError = true;
+      _errorMessage = e.toString();
+      print('❌ Error loading rooms: $e');
+    } finally {
+      _isLoading = false;
+      notifyListeners();
     }
-
-    _rooms = await _roomRepository.getRooms();
-    _applyFilters();
-    _lastUpdate = DateTime.now();
-
-    // Simpan ke cache untuk cold-start berikutnya
-    try {
-      await _storageService.setJson(_cacheKey, {
-        'data': _rooms.map((r) => r.toJson()).toList(),
-      });
-    } catch (_) {}
-  } catch (e) {
-    _hasError = true;
-    _errorMessage = e.toString();
-    print('❌ Error loading rooms: $e');
-  } finally {
-    _isLoading = false;
-    notifyListeners();
   }
-}
 
+  /// Manual refresh — dipakai tombol refresh di Dashboard.
+  /// Menampilkan spinner (`_isRefreshing = true`).
   Future<void> refresh() async {
-  if (_isRefreshing) return;
+    if (_isRefreshing) return;
 
-  _isRefreshing = true;
-  _hasError = false;
-  notifyListeners();
-
-  try {
-    _rooms = await _roomRepository.getRooms();
-    _applyFilters();
-    _lastUpdate = DateTime.now();
-
-    // Simpan ke cache
-    try {
-      await _storageService.setJson(_cacheKey, {
-        'data': _rooms.map((r) => r.toJson()).toList(),
-      });
-    } catch (_) {}
-  } catch (e) {
-    _hasError = true;
-    _errorMessage = e.toString();
-  } finally {
-    _isRefreshing = false;
+    _isRefreshing = true;
+    _hasError = false;
     notifyListeners();
-  }
-}
 
+    try {
+      _rooms = await _roomRepository.getRooms();
+      _applyFilters();
+      _lastUpdate = DateTime.now();
+
+      try {
+        await _storageService.setJson(_cacheKey, {
+          'data': _rooms.map((r) => r.toJson()).toList(),
+        });
+      } catch (_) {}
+    } catch (e) {
+      _hasError = true;
+      _errorMessage = e.toString();
+    } finally {
+      _isRefreshing = false;
+      notifyListeners();
+    }
+  }
+
+  /// FIXED: silent background refresh — dipanggil oleh _autoRefreshTimer.
+  /// Tidak menampilkan spinner, hanya notify kalau ada perubahan.
   Future<void> _refreshData() async {
     try {
       final newRooms = await _roomRepository.getRooms();
@@ -20627,6 +20429,17 @@ class RoomProvider with ChangeNotifier {
         _applyFilters();
         _lastUpdate = DateTime.now();
         notifyListeners();
+
+        // Cache diperbarui supaya cold-start berikutnya tampil data terbaru
+        try {
+          await _storageService.setJson(_cacheKey, {
+            'data': _rooms.map((r) => r.toJson()).toList(),
+          });
+        } catch (_) {}
+
+        print('✅ RoomProvider auto-refresh updated ${_rooms.length} rooms');
+      } else {
+        print('ℹ️ RoomProvider auto-refresh: no changes');
       }
     } catch (e) {
       print('❌ Error during background refresh: $e');
@@ -20759,15 +20572,58 @@ class RoomProvider with ChangeNotifier {
     }
   }
 
+  // FIXED: signature diubah ke dynamic + guard tipe.
+  void handleRoomNameChanged(dynamic data) {
+    if (data is! Map) return;
+    try {
+      final map = Map<String, dynamic>.from(data);
+      final roomId = map['roomId'];
+      final newName = map['newName'];
+      final oldName = map['oldName'];
+      final buildingName = map['buildingName'];
+
+      print('🔄 Processing room name change: $oldName -> $newName ($roomId)');
+
+      final roomIndex = _rooms.indexWhere((room) => room.id == roomId);
+
+      if (roomIndex != -1) {
+        final updatedRoom = Room(
+          id: _rooms[roomIndex].id,
+          name: newName ?? _rooms[roomIndex].name,
+          buildingId: _rooms[roomIndex].buildingId,
+          buildingName: buildingName ?? _rooms[roomIndex].buildingName,
+          dataSource: _rooms[roomIndex].dataSource,
+          iotDeviceId: _rooms[roomIndex].iotDeviceId,
+          currentAQI: _rooms[roomIndex].currentAQI,
+          currentData: _rooms[roomIndex].currentData,
+          createdAt: _rooms[roomIndex].createdAt,
+          updatedAt: DateTime.now(),
+        );
+
+        _rooms[roomIndex] = updatedRoom;
+        _applyFilters();
+        _lastUpdate = DateTime.now();
+        notifyListeners();
+
+        print('✅ Room name updated: $oldName -> $newName');
+      } else {
+        print('⚠️ Room not found in local list: $roomId');
+        _refreshData();
+      }
+    } catch (e) {
+      print('❌ Error handling room name change: $e');
+    }
+  }
+
   @override
   void dispose() {
+    _autoRefreshTimer?.cancel();
     _socketSubscription?.cancel();
-    _dataSubscription?.cancel();
     _socketService.disconnect();
-    _socketService.off('room-update');
-    _socketService.off('dashboard-update');
     _socketService.off('dashboard-room-updated');
     _socketService.off('room-deleted');
+    _socketService.off('room-name-changed');
+    _socketService.off('room-building-changed');
     super.dispose();
   }
 }
@@ -22477,16 +22333,16 @@ function randomInRange(min, max, mean) {
   return max - Math.sqrt((1 - u) * (max - min) * (max - mode));
 }
 
-// In-memory storage dengan update per 30 detik
+// In-memory storage dengan update per 10 detik
 const registeredDevices = new Map();
 const deviceStates = new Map(); // State untuk setiap device
-const secondDataCache = new Map(); // Cache data per 30 detik
+const secondDataCache = new Map(); // Cache data per 10 detik
 
-// Helper: Generate data berdasarkan timestamp 30 detik
-function generate30SecondBasedData(deviceId) {
+// Helper: Generate data berdasarkan timestamp 10 detik
+function generate10SecondBasedData(deviceId) {
   const now = new Date();
   const currentSecond = Math.floor(now.getTime() / 1000);
-  const current30SecondBlock = Math.floor(currentSecond / 30);
+  const current10SecondBlock = Math.floor(currentSecond / 10);
   const hour = now.getHours();
   const minute = now.getMinutes();
   const second = now.getSeconds();
@@ -22497,7 +22353,7 @@ function generate30SecondBasedData(deviceId) {
     deviceStates.set(deviceId, {
       roomType: hash % 4,
       prevValues: null,
-      last30SecondBlock: current30SecondBlock - 1,
+      last10SecondBlock: current10SecondBlock - 1,
       updateCounter: 0,
     });
     console.log(`📊 Init device ${deviceId}:`, {
@@ -22507,10 +22363,10 @@ function generate30SecondBasedData(deviceId) {
 
   const state = deviceStates.get(deviceId);
 
-  // Cache 30 detik
+  // Cache 10 detik
   if (secondDataCache.has(deviceId)) {
     const cached = secondDataCache.get(deviceId);
-    if (cached.block30 === current30SecondBlock) {
+    if (cached.block10 === current10SecondBlock) {
       return cached.data;
     }
   }
@@ -22525,8 +22381,8 @@ function generate30SecondBasedData(deviceId) {
   const rawTemp = randomInRange(r.temperature.min, r.temperature.max, r.temperature.mean);
   const rawRh   = randomInRange(r.humidity.min,    r.humidity.max,    r.humidity.mean);
 
-  // EMA smoothing supaya tidak jitter tiap 30 detik
-  const alpha = 0.3;
+  // EMA smoothing (alpha dinaikkan sedikit supaya data lebih dinamis di 10 detik)
+  const alpha = 0.4;
   const prev = state.prevValues || {
     pm25: rawPm25, pm10: rawPm10, co2: rawCo2, temperature: rawTemp, humidity: rawRh,
   };
@@ -22538,7 +22394,7 @@ function generate30SecondBasedData(deviceId) {
 
   state.prevValues = { pm25, pm10, co2, temperature, humidity };
   state.updateCounter++;
-  state.last30SecondBlock = current30SecondBlock;
+  state.last10SecondBlock = current10SecondBlock;
 
   // ✅ Hitung AQI via ISPU (max dari PM2.5 & PM10)
   const ispuPM25 = calculateISPUFromPM25(pm25);
@@ -22556,8 +22412,8 @@ function generate30SecondBasedData(deviceId) {
   const sensorData = {
     deviceId,
     timestamp: now.toISOString(),
-    block30: current30SecondBlock,
-    secondsInBlock: second % 30,
+    block10: current10SecondBlock,
+    secondsInBlock: second % 10,
     updateCounter: state.updateCounter,
     aqi,
     ispuPM25,
@@ -22575,7 +22431,7 @@ function generate30SecondBasedData(deviceId) {
   };
 
   secondDataCache.set(deviceId, {
-    block30: current30SecondBlock,
+    block10: current10SecondBlock,
     data: sensorData,
     timestamp: now,
   });
@@ -22587,17 +22443,17 @@ function generate30SecondBasedData(deviceId) {
   return sensorData;
 }
 
-// Clean old cache entries setiap 60 detik
+// Clean old cache entries setiap 30 detik
 setInterval(() => {
   const now = Date.now();
-  const currentBlock = Math.floor(now / (30 * 1000));
+  const currentBlock = Math.floor(now / (10 * 1000));
   
   for (const [deviceId, cache] of secondDataCache.entries()) {
-    if (cache.block30 < currentBlock - 2) { // Hapus cache > 60 detik
+    if (cache.block10 < currentBlock - 3) { // Hapus cache > 30 detik
       secondDataCache.delete(deviceId);
     }
   }
-}, 60000); // Check setiap 60 detik
+}, 30000); // Check setiap 30 detik
 
 // Helper functions
 function setCorsHeaders(res) {
@@ -22654,25 +22510,25 @@ const server = http.createServer((req, res) => {
     }
     
     try {
-      // 1. Health check dengan info 30 detik
+      // 1. Health check dengan info 10 detik
       if (pathname === '/health' && method === 'GET') {
         const now = new Date();
         const currentSecond = Math.floor(Date.now() / 1000);
-        const current30SecondBlock = Math.floor(currentSecond / 30);
-        const nextChangeInSeconds = 30 - (now.getSeconds() % 30);
+        const current10SecondBlock = Math.floor(currentSecond / 10);
+        const nextChangeInSeconds = 10 - (now.getSeconds() % 10);
         
         sendJson(res, 200, {
           status: 'ok',
-          service: 'UNILA AQI IoT Simulator - 30 SECOND UPDATES',
-          version: '3.0.0',
+          service: 'UNILA AQI IoT Simulator - 10 SECOND UPDATES',
+          version: '4.0.0',
           currentTime: now.toISOString(),
-          current30SecondBlock: current30SecondBlock,
-          secondsInCurrentBlock: now.getSeconds() % 30,
+          current10SecondBlock: current10SecondBlock,
+          secondsInCurrentBlock: now.getSeconds() % 10,
           nextUpdateIn: nextChangeInSeconds,
           devices: registeredDevices.size,
           cacheSize: secondDataCache.size,
           features: [
-            '30-second updates',
+            '10-second updates',
             'Predictable patterns',
             'Trend simulation',
             'Room type variations',
@@ -22707,7 +22563,7 @@ const server = http.createServer((req, res) => {
           registeredAt: new Date(),
           lastSeen: new Date(),
           status: 'active',
-          updatePattern: '30-second-based'
+          updatePattern: '10-second-based'
         });
         
         console.log(`✅ Device registered: ${deviceId} (${['Kelas', 'Lab', 'Perpustakaan', 'Aula'][roomTypeNum]})`);
@@ -22716,12 +22572,12 @@ const server = http.createServer((req, res) => {
           success: true,
           message: 'Device registered successfully',
           device: registeredDevices.get(deviceId),
-          note: 'Data will update every 30 seconds based on time patterns'
+          note: 'Data will update every 10 seconds based on time patterns'
         });
         return;
       }
       
-      // 3. MAIN ENDPOINT: Get sensor data dengan update per 30 detik
+      // 3. MAIN ENDPOINT: Get sensor data dengan update per 10 detik
       if (pathname.startsWith('/data/') && method === 'GET') {
         const deviceId = pathname.split('/')[2];
         
@@ -22745,7 +22601,7 @@ const server = http.createServer((req, res) => {
             registeredAt: new Date(),
             lastSeen: new Date(),
             status: 'active',
-            updatePattern: '30-second-based-auto'
+            updatePattern: '10-second-based-auto'
           });
           
           console.log(`✅ Auto-registered: ${deviceId} (${['Kelas', 'Lab', 'Perpustakaan', 'Aula'][roomType]})`);
@@ -22756,26 +22612,26 @@ const server = http.createServer((req, res) => {
           registeredDevices.set(deviceId, device);
         }
         
-        // Generate data berdasarkan 30 detik
-        const sensorData = generate30SecondBasedData(deviceId);
+        // Generate data berdasarkan 10 detik
+        const sensorData = generate10SecondBasedData(deviceId);
         
         // Hitung waktu sampai update berikutnya
         const now = new Date();
-        const secondsRemaining = 30 - (now.getSeconds() % 30);
+        const secondsRemaining = 10 - (now.getSeconds() % 10);
         
         // Response
         const response = {
           success: true,
-          message: 'Sensor data (updates every 30 seconds)',
+          message: 'Sensor data (updates every 10 seconds)',
           device: registeredDevices.get(deviceId),
           data: sensorData,
           metadata: {
-            source: 'UNILA AQI IoT Simulator - 30 SECOND UPDATES',
-            updateFrequency: 'Every 30 seconds',
-            currentBlock: sensorData.block30,
+            source: 'UNILA AQI IoT Simulator - 10 SECOND UPDATES',
+            updateFrequency: 'Every 10 seconds',
+            currentBlock: sensorData.block10,
             secondsInCurrentBlock: sensorData.secondsInBlock,
             nextUpdateInSeconds: secondsRemaining,
-            cacheInfo: 'Data changes at 30-second boundaries',
+            cacheInfo: 'Data changes at 10-second boundaries',
             units: {
               pm25: 'μg/m³',
               pm10: 'μg/m³',
@@ -22813,8 +22669,8 @@ const server = http.createServer((req, res) => {
         const lastSeen = new Date(deviceInfo.lastSeen);
         const secondsSinceLastSeen = (now - lastSeen) / 1000;
         const currentSecond = Math.floor(now.getTime() / 1000);
-        const current30SecondBlock = Math.floor(currentSecond / 30);
-        const secondsRemaining = 30 - (now.getSeconds() % 30);
+        const current10SecondBlock = Math.floor(currentSecond / 10);
+        const secondsRemaining = 10 - (now.getSeconds() % 10);
         
         const state = deviceStates.get(deviceId);
         const cache = secondDataCache.get(deviceId);
@@ -22826,11 +22682,11 @@ const server = http.createServer((req, res) => {
             online: secondsSinceLastSeen < 120,
             lastSeen: deviceInfo.lastSeen,
             secondsSinceLastSeen: Math.round(secondsSinceLastSeen),
-            current30SecondBlock: current30SecondBlock,
-            secondsInCurrentBlock: now.getSeconds() % 30,
+            current10SecondBlock: current10SecondBlock,
+            secondsInCurrentBlock: now.getSeconds() % 10,
             nextUpdateInSeconds: secondsRemaining,
             hasCachedData: !!cache,
-            cachedBlock: cache ? cache.block30 : null,
+            cachedBlock: cache ? cache.block10 : null,
             stateInfo: state ? {
               roomType: ['Kelas', 'Laboratorium', 'Perpustakaan', 'Aula'][state.roomType],
               updateCounter: state.updateCounter,
@@ -22858,7 +22714,7 @@ const server = http.createServer((req, res) => {
         // Jika ada state, reset block untuk paksa update
         if (deviceStates.has(deviceId)) {
           const state = deviceStates.get(deviceId);
-          state.last30SecondBlock = -1; // Force new block
+          state.last10SecondBlock = -1; // Force new block
         }
         
         console.log(`🔄 Force update triggered for ${deviceId}`);
@@ -22867,7 +22723,7 @@ const server = http.createServer((req, res) => {
           success: true,
           message: 'Force update triggered',
           deviceId,
-          note: 'Next request will generate new 30-second-based data'
+          note: 'Next request will generate new 10-second-based data'
         });
         return;
       }
@@ -22895,7 +22751,7 @@ const server = http.createServer((req, res) => {
             roomType: 0,
             trendPM25: 0,
             trendCO2: 0,
-            last30SecondBlock: -1,
+            last10SecondBlock: -1,
             updateCounter: 0
           });
         }
@@ -22940,10 +22796,10 @@ const server = http.createServer((req, res) => {
         return;
       }
       
-      // 7. Get history (last N 30-second blocks)
+      // 7. Get history (last N 10-second blocks)
       if (pathname.startsWith('/history/') && method === 'GET') {
         const deviceId = pathname.split('/')[2];
-        const blocks = parseInt(parsedUrl.query.blocks) || 20; // Default 20 blocks = 10 menit
+        const blocks = parseInt(parsedUrl.query.blocks) || 60; // Default 60 blocks = 10 menit
         
         if (!deviceId) {
           return sendJson(res, 400, {
@@ -22955,7 +22811,7 @@ const server = http.createServer((req, res) => {
         // Simulasi data historis
         const now = new Date();
         const currentSecond = Math.floor(now.getTime() / 1000);
-        const currentBlock = Math.floor(currentSecond / 30);
+        const currentBlock = Math.floor(currentSecond / 10);
         const history = [];
         
         // Jika device punya state, generate historical data
@@ -22964,7 +22820,7 @@ const server = http.createServer((req, res) => {
           
           for (let i = blocks; i >= 0; i--) {
             const historyBlock = currentBlock - i;
-            const historyTime = new Date(now.getTime() - (i * 30 * 1000));
+            const historyTime = new Date(now.getTime() - (i * 10 * 1000));
             
             // Gunakan algoritma yang sama tapi dengan offset
             const updateOffset = state.updateCounter - i;
@@ -23004,7 +22860,7 @@ const server = http.createServer((req, res) => {
         sendJson(res, 200, {
           success: true,
           deviceId,
-          period: `${blocks * 30} seconds (${blocks} blocks)`,
+          period: `${blocks * 10} seconds (${blocks} blocks)`,
           currentBlock: currentBlock,
           count: history.length,
           data: history
@@ -23012,13 +22868,13 @@ const server = http.createServer((req, res) => {
         return;
       }
       
-      // 8. List all devices dengan info 30 detik
+      // 8. List all devices dengan info 10 detik
       if (pathname === '/devices' && method === 'GET') {
         const devices = Array.from(registeredDevices.values());
         const now = new Date();
         const currentSecond = Math.floor(now.getTime() / 1000);
-        const currentBlock = Math.floor(currentSecond / 30);
-        const secondsRemaining = 30 - (now.getSeconds() % 30);
+        const currentBlock = Math.floor(currentSecond / 10);
+        const secondsRemaining = 10 - (now.getSeconds() % 10);
         
         const devicesWithInfo = devices.map(device => {
           const lastSeen = new Date(device.lastSeen);
@@ -23034,7 +22890,7 @@ const server = http.createServer((req, res) => {
             hasState: !!state,
             updateCounter: state ? state.updateCounter : 0,
             cachedData: !!cache,
-            cachedAtBlock: cache ? cache.block30 : null,
+            cachedAtBlock: cache ? cache.block10 : null,
             currentBlock: currentBlock,
             nextUpdateIn: secondsRemaining
           };
@@ -23044,7 +22900,7 @@ const server = http.createServer((req, res) => {
           success: true,
           currentBlock: currentBlock,
           currentTime: now.toISOString(),
-          secondsInCurrentBlock: now.getSeconds() % 30,
+          secondsInCurrentBlock: now.getSeconds() % 10,
           nextUpdateInSeconds: secondsRemaining,
           totalDevices: devices.length,
           onlineDevices: devicesWithInfo.filter(d => d.status === 'online').length,
@@ -23076,43 +22932,1539 @@ const PORT = process.env.IOT_PORT || 3002;
 const HOST = process.env.IOT_HOST || 'localhost';
 
 server.listen(PORT, HOST, () => {
-  console.log('🚀 UNILA AQI IoT Simulator - 30 SECOND UPDATES');
+  console.log('🚀 UNILA AQI IoT Simulator - 10 SECOND UPDATES');
   console.log(`📍 URL: http://${HOST}:${PORT}`);
   console.log(`📡 Health Check: http://${HOST}:${PORT}/health`);
   
   console.log('\n⏰ FEATURE HIGHLIGHTS:');
-  console.log('   ✅ Data BERUBAH SETIAP 30 DETIK');
+  console.log('   ✅ Data BERUBAH SETIAP 10 DETIK');
   console.log('   ✅ Pola berdasarkan waktu (jam, hari)');
   console.log('   ✅ Trend gradual (naik/turun perlahan)');
-  console.log('   ✅ Cache per 30 detik');
+  console.log('   ✅ Cache per 10 detik');
   console.log('   ✅ Room type variations');
-  console.log('   ✅ Simulasi event (lonjakan periodik)');
+  console.log('   ✅ EMA smoothing (alpha=0.4)');
   
   console.log('\n📋 Available Endpoints:');
-  console.log(`  GET  /health                    - Health check dengan info 30 detik`);
+  console.log(`  GET  /health                    - Health check dengan info 10 detik`);
   console.log(`  POST /register                 - Register device dengan room type`);
-  console.log(`  GET  /data/:deviceId           - MAIN - Data updates setiap 30 detik`);
-  console.log(`  GET  /status/:deviceId         - Status dengan countdown 30 detik`);
-  console.log(`  POST /force-update/:deviceId   - Force new 30-second data`);
+  console.log(`  GET  /data/:deviceId           - MAIN - Data updates setiap 10 detik`);
+  console.log(`  GET  /status/:deviceId         - Status dengan countdown 10 detik`);
+  console.log(`  POST /force-update/:deviceId   - Force new 10-second data`);
   console.log(`  POST /set-base/:deviceId       - Set custom base values`);
-  console.log(`  GET  /history/:deviceId        - Historical 30-second data`);
+  console.log(`  GET  /history/:deviceId        - Historical 10-second data`);
   console.log(`  GET  /devices                  - List semua devices`);
   
   console.log('\n💡 Contoh untuk Aplikasi AQI:');
   console.log(`  Endpoint: http://${HOST}:${PORT}/data/kelas-h101`);
-  console.log(`  Data akan berubah setiap 30 detik (pada detik ke-0 dan ke-30)`);
+  console.log(`  Data akan berubah setiap 10 detik (pada detik ke-0, 10, 20, 30, ...)`);
   console.log(`  Pattern: lebih tinggi jam 7-18, lebih rendah malam`);
-  console.log(`  Weekend: 40% lebih rendah dari weekday`);
   
-  // Log countdown setiap 30 detik
+  // Log countdown setiap 10 detik
   setInterval(() => {
     const now = new Date();
     const seconds = now.getSeconds();
-    const block30 = Math.floor(seconds / 30);
-    const secondsRemaining = 30 - (seconds % 30);
     
-    if (seconds % 30 === 0) {
-      console.log(`🔄 30-second update boundary reached at ${now.getHours()}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`);
+    if (seconds % 10 === 0) {
+      console.log(`🔄 10-second update boundary reached at ${now.getHours()}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`);
     }
   }, 1000);
 });
+
+---------------------------------------------------------------------------------------------------------------------------------------
+
+C:\develop\UNILA-AQI\unila-iot-simulator\package-lock.json
+
+{
+  "name": "unila-aqi-iot-simulator",
+  "version": "1.0.0",
+  "lockfileVersion": 3,
+  "requires": true,
+  "packages": {
+    "": {
+      "name": "unila-aqi-iot-simulator",
+      "version": "1.0.0",
+      "license": "MIT",
+      "dependencies": {
+        "cors": "^2.8.5",
+        "dotenv": "^16.3.1",
+        "express": "^4.22.1",
+        "mongoose": "^8.0.0"
+      },
+      "devDependencies": {
+        "nodemon": "^3.0.1"
+      }
+    },
+    "node_modules/@mongodb-js/saslprep": {
+      "version": "1.4.4",
+      "resolved": "https://registry.npmjs.org/@mongodb-js/saslprep/-/saslprep-1.4.4.tgz",
+      "integrity": "sha512-p7X/ytJDIdwUfFL/CLOhKgdfJe1Fa8uw9seJYvdOmnP9JBWGWHW69HkOixXS6Wy9yvGf1MbhcS6lVmrhy4jm2g==",
+      "license": "MIT",
+      "dependencies": {
+        "sparse-bitfield": "^3.0.3"
+      }
+    },
+    "node_modules/@types/webidl-conversions": {
+      "version": "7.0.3",
+      "resolved": "https://registry.npmjs.org/@types/webidl-conversions/-/webidl-conversions-7.0.3.tgz",
+      "integrity": "sha512-CiJJvcRtIgzadHCYXw7dqEnMNRjhGZlYK05Mj9OyktqV8uVT8fD2BFOB7S1uwBE3Kj2Z+4UyPmFw/Ixgw/LAlA==",
+      "license": "MIT"
+    },
+    "node_modules/@types/whatwg-url": {
+      "version": "11.0.5",
+      "resolved": "https://registry.npmjs.org/@types/whatwg-url/-/whatwg-url-11.0.5.tgz",
+      "integrity": "sha512-coYR071JRaHa+xoEvvYqvnIHaVqaYrLPbsufM9BF63HkwI5Lgmy2QR8Q5K/lYDYo5AK82wOvSOS0UsLTpTG7uQ==",
+      "license": "MIT",
+      "dependencies": {
+        "@types/webidl-conversions": "*"
+      }
+    },
+    "node_modules/accepts": {
+      "version": "1.3.8",
+      "resolved": "https://registry.npmjs.org/accepts/-/accepts-1.3.8.tgz",
+      "integrity": "sha512-PYAthTa2m2VKxuvSD3DPC/Gy+U+sOA1LAuT8mkmRuvw+NACSaeXEQ+NHcVF7rONl6qcaxV3Uuemwawk+7+SJLw==",
+      "license": "MIT",
+      "dependencies": {
+        "mime-types": "~2.1.34",
+        "negotiator": "0.6.3"
+      },
+      "engines": {
+        "node": ">= 0.6"
+      }
+    },
+    "node_modules/anymatch": {
+      "version": "3.1.3",
+      "resolved": "https://registry.npmjs.org/anymatch/-/anymatch-3.1.3.tgz",
+      "integrity": "sha512-KMReFUr0B4t+D+OBkjR3KYqvocp2XaSzO55UcB6mgQMd3KbcE+mWTyvVV7D/zsdEbNnV6acZUutkiHQXvTr1Rw==",
+      "dev": true,
+      "license": "ISC",
+      "dependencies": {
+        "normalize-path": "^3.0.0",
+        "picomatch": "^2.0.4"
+      },
+      "engines": {
+        "node": ">= 8"
+      }
+    },
+    "node_modules/array-flatten": {
+      "version": "1.1.1",
+      "resolved": "https://registry.npmjs.org/array-flatten/-/array-flatten-1.1.1.tgz",
+      "integrity": "sha512-PCVAQswWemu6UdxsDFFX/+gVeYqKAod3D3UVm91jHwynguOwAvYPhx8nNlM++NqRcK6CxxpUafjmhIdKiHibqg==",
+      "license": "MIT"
+    },
+    "node_modules/balanced-match": {
+      "version": "1.0.2",
+      "resolved": "https://registry.npmjs.org/balanced-match/-/balanced-match-1.0.2.tgz",
+      "integrity": "sha512-3oSeUO0TMV67hN1AmbXsK4yaqU7tjiHlbxRDZOpH0KW9+CeX4bRAaX0Anxt0tx2MrpRpWwQaPwIlISEJhYU5Pw==",
+      "dev": true,
+      "license": "MIT"
+    },
+    "node_modules/binary-extensions": {
+      "version": "2.3.0",
+      "resolved": "https://registry.npmjs.org/binary-extensions/-/binary-extensions-2.3.0.tgz",
+      "integrity": "sha512-Ceh+7ox5qe7LJuLHoY0feh3pHuUDHAcRUeyL2VYghZwfpkNIy/+8Ocg0a3UuSoYzavmylwuLWQOf3hl0jjMMIw==",
+      "dev": true,
+      "license": "MIT",
+      "engines": {
+        "node": ">=8"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/sindresorhus"
+      }
+    },
+    "node_modules/body-parser": {
+      "version": "1.20.4",
+      "resolved": "https://registry.npmjs.org/body-parser/-/body-parser-1.20.4.tgz",
+      "integrity": "sha512-ZTgYYLMOXY9qKU/57FAo8F+HA2dGX7bqGc71txDRC1rS4frdFI5R7NhluHxH6M0YItAP0sHB4uqAOcYKxO6uGA==",
+      "license": "MIT",
+      "dependencies": {
+        "bytes": "~3.1.2",
+        "content-type": "~1.0.5",
+        "debug": "2.6.9",
+        "depd": "2.0.0",
+        "destroy": "~1.2.0",
+        "http-errors": "~2.0.1",
+        "iconv-lite": "~0.4.24",
+        "on-finished": "~2.4.1",
+        "qs": "~6.14.0",
+        "raw-body": "~2.5.3",
+        "type-is": "~1.6.18",
+        "unpipe": "~1.0.0"
+      },
+      "engines": {
+        "node": ">= 0.8",
+        "npm": "1.2.8000 || >= 1.4.16"
+      }
+    },
+    "node_modules/brace-expansion": {
+      "version": "1.1.12",
+      "resolved": "https://registry.npmjs.org/brace-expansion/-/brace-expansion-1.1.12.tgz",
+      "integrity": "sha512-9T9UjW3r0UW5c1Q7GTwllptXwhvYmEzFhzMfZ9H7FQWt+uZePjZPjBP/W1ZEyZ1twGWom5/56TF4lPcqjnDHcg==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "balanced-match": "^1.0.0",
+        "concat-map": "0.0.1"
+      }
+    },
+    "node_modules/braces": {
+      "version": "3.0.3",
+      "resolved": "https://registry.npmjs.org/braces/-/braces-3.0.3.tgz",
+      "integrity": "sha512-yQbXgO/OSZVD2IsiLlro+7Hf6Q18EJrKSEsdoMzKePKXct3gvD8oLcOQdIzGupr5Fj+EDe8gO/lxc1BzfMpxvA==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "fill-range": "^7.1.1"
+      },
+      "engines": {
+        "node": ">=8"
+      }
+    },
+    "node_modules/bson": {
+      "version": "6.10.4",
+      "resolved": "https://registry.npmjs.org/bson/-/bson-6.10.4.tgz",
+      "integrity": "sha512-WIsKqkSC0ABoBJuT1LEX+2HEvNmNKKgnTAyd0fL8qzK4SH2i9NXg+t08YtdZp/V9IZ33cxe3iV4yM0qg8lMQng==",
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=16.20.1"
+      }
+    },
+    "node_modules/bytes": {
+      "version": "3.1.2",
+      "resolved": "https://registry.npmjs.org/bytes/-/bytes-3.1.2.tgz",
+      "integrity": "sha512-/Nf7TyzTx6S3yRJObOAV7956r8cr2+Oj8AC5dt8wSP3BQAoeX58NoHyCU8P8zGkNXStjTSi6fzO6F0pBdcYbEg==",
+      "license": "MIT",
+      "engines": {
+        "node": ">= 0.8"
+      }
+    },
+    "node_modules/call-bind-apply-helpers": {
+      "version": "1.0.2",
+      "resolved": "https://registry.npmjs.org/call-bind-apply-helpers/-/call-bind-apply-helpers-1.0.2.tgz",
+      "integrity": "sha512-Sp1ablJ0ivDkSzjcaJdxEunN5/XvksFJ2sMBFfq6x0ryhQV/2b/KwFe21cMpmHtPOSij8K99/wSfoEuTObmuMQ==",
+      "license": "MIT",
+      "dependencies": {
+        "es-errors": "^1.3.0",
+        "function-bind": "^1.1.2"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      }
+    },
+    "node_modules/call-bound": {
+      "version": "1.0.4",
+      "resolved": "https://registry.npmjs.org/call-bound/-/call-bound-1.0.4.tgz",
+      "integrity": "sha512-+ys997U96po4Kx/ABpBCqhA9EuxJaQWDQg7295H4hBphv3IZg0boBKuwYpt4YXp6MZ5AmZQnU/tyMTlRpaSejg==",
+      "license": "MIT",
+      "dependencies": {
+        "call-bind-apply-helpers": "^1.0.2",
+        "get-intrinsic": "^1.3.0"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/chokidar": {
+      "version": "3.6.0",
+      "resolved": "https://registry.npmjs.org/chokidar/-/chokidar-3.6.0.tgz",
+      "integrity": "sha512-7VT13fmjotKpGipCW9JEQAusEPE+Ei8nl6/g4FBAmIm0GOOLMua9NDDo/DWp0ZAxCr3cPq5ZpBqmPAQgDda2Pw==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "anymatch": "~3.1.2",
+        "braces": "~3.0.2",
+        "glob-parent": "~5.1.2",
+        "is-binary-path": "~2.1.0",
+        "is-glob": "~4.0.1",
+        "normalize-path": "~3.0.0",
+        "readdirp": "~3.6.0"
+      },
+      "engines": {
+        "node": ">= 8.10.0"
+      },
+      "funding": {
+        "url": "https://paulmillr.com/funding/"
+      },
+      "optionalDependencies": {
+        "fsevents": "~2.3.2"
+      }
+    },
+    "node_modules/concat-map": {
+      "version": "0.0.1",
+      "resolved": "https://registry.npmjs.org/concat-map/-/concat-map-0.0.1.tgz",
+      "integrity": "sha512-/Srv4dswyQNBfohGpz9o6Yb3Gz3SrUDqBH5rTuhGR7ahtlbYKnVxw2bCFMRljaA7EXHaXZ8wsHdodFvbkhKmqg==",
+      "dev": true,
+      "license": "MIT"
+    },
+    "node_modules/content-disposition": {
+      "version": "0.5.4",
+      "resolved": "https://registry.npmjs.org/content-disposition/-/content-disposition-0.5.4.tgz",
+      "integrity": "sha512-FveZTNuGw04cxlAiWbzi6zTAL/lhehaWbTtgluJh4/E95DqMwTmha3KZN1aAWA8cFIhHzMZUvLevkw5Rqk+tSQ==",
+      "license": "MIT",
+      "dependencies": {
+        "safe-buffer": "5.2.1"
+      },
+      "engines": {
+        "node": ">= 0.6"
+      }
+    },
+    "node_modules/content-type": {
+      "version": "1.0.5",
+      "resolved": "https://registry.npmjs.org/content-type/-/content-type-1.0.5.tgz",
+      "integrity": "sha512-nTjqfcBFEipKdXCv4YDQWCfmcLZKm81ldF0pAopTvyrFGVbcR6P/VAAd5G7N+0tTr8QqiU0tFadD6FK4NtJwOA==",
+      "license": "MIT",
+      "engines": {
+        "node": ">= 0.6"
+      }
+    },
+    "node_modules/cookie": {
+      "version": "0.7.2",
+      "resolved": "https://registry.npmjs.org/cookie/-/cookie-0.7.2.tgz",
+      "integrity": "sha512-yki5XnKuf750l50uGTllt6kKILY4nQ1eNIQatoXEByZ5dWgnKqbnqmTrBE5B4N7lrMJKQ2ytWMiTO2o0v6Ew/w==",
+      "license": "MIT",
+      "engines": {
+        "node": ">= 0.6"
+      }
+    },
+    "node_modules/cookie-signature": {
+      "version": "1.0.7",
+      "resolved": "https://registry.npmjs.org/cookie-signature/-/cookie-signature-1.0.7.tgz",
+      "integrity": "sha512-NXdYc3dLr47pBkpUCHtKSwIOQXLVn8dZEuywboCOJY/osA0wFSLlSawr3KN8qXJEyX66FcONTH8EIlVuK0yyFA==",
+      "license": "MIT"
+    },
+    "node_modules/cors": {
+      "version": "2.8.5",
+      "resolved": "https://registry.npmjs.org/cors/-/cors-2.8.5.tgz",
+      "integrity": "sha512-KIHbLJqu73RGr/hnbrO9uBeixNGuvSQjul/jdFvS/KFSIH1hWVd1ng7zOHx+YrEfInLG7q4n6GHQ9cDtxv/P6g==",
+      "license": "MIT",
+      "dependencies": {
+        "object-assign": "^4",
+        "vary": "^1"
+      },
+      "engines": {
+        "node": ">= 0.10"
+      }
+    },
+    "node_modules/debug": {
+      "version": "2.6.9",
+      "resolved": "https://registry.npmjs.org/debug/-/debug-2.6.9.tgz",
+      "integrity": "sha512-bC7ElrdJaJnPbAP+1EotYvqZsb3ecl5wi6Bfi6BJTUcNowp6cvspg0jXznRTKDjm/E7AdgFBVeAPVMNcKGsHMA==",
+      "license": "MIT",
+      "dependencies": {
+        "ms": "2.0.0"
+      }
+    },
+    "node_modules/depd": {
+      "version": "2.0.0",
+      "resolved": "https://registry.npmjs.org/depd/-/depd-2.0.0.tgz",
+      "integrity": "sha512-g7nH6P6dyDioJogAAGprGpCtVImJhpPk/roCzdb3fIh61/s/nPsfR6onyMwkCAR/OlC3yBC0lESvUoQEAssIrw==",
+      "license": "MIT",
+      "engines": {
+        "node": ">= 0.8"
+      }
+    },
+    "node_modules/destroy": {
+      "version": "1.2.0",
+      "resolved": "https://registry.npmjs.org/destroy/-/destroy-1.2.0.tgz",
+      "integrity": "sha512-2sJGJTaXIIaR1w4iJSNoN0hnMY7Gpc/n8D4qSCJw8QqFWXf7cuAgnEHxBpweaVcPevC2l3KpjYCx3NypQQgaJg==",
+      "license": "MIT",
+      "engines": {
+        "node": ">= 0.8",
+        "npm": "1.2.8000 || >= 1.4.16"
+      }
+    },
+    "node_modules/dotenv": {
+      "version": "16.6.1",
+      "resolved": "https://registry.npmjs.org/dotenv/-/dotenv-16.6.1.tgz",
+      "integrity": "sha512-uBq4egWHTcTt33a72vpSG0z3HnPuIl6NqYcTrKEg2azoEyl2hpW0zqlxysq2pK9HlDIHyHyakeYaYnSAwd8bow==",
+      "license": "BSD-2-Clause",
+      "engines": {
+        "node": ">=12"
+      },
+      "funding": {
+        "url": "https://dotenvx.com"
+      }
+    },
+    "node_modules/dunder-proto": {
+      "version": "1.0.1",
+      "resolved": "https://registry.npmjs.org/dunder-proto/-/dunder-proto-1.0.1.tgz",
+      "integrity": "sha512-KIN/nDJBQRcXw0MLVhZE9iQHmG68qAVIBg9CqmUYjmQIhgij9U5MFvrqkUL5FbtyyzZuOeOt0zdeRe4UY7ct+A==",
+      "license": "MIT",
+      "dependencies": {
+        "call-bind-apply-helpers": "^1.0.1",
+        "es-errors": "^1.3.0",
+        "gopd": "^1.2.0"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      }
+    },
+    "node_modules/ee-first": {
+      "version": "1.1.1",
+      "resolved": "https://registry.npmjs.org/ee-first/-/ee-first-1.1.1.tgz",
+      "integrity": "sha512-WMwm9LhRUo+WUaRN+vRuETqG89IgZphVSNkdFgeb6sS/E4OrDIN7t48CAewSHXc6C8lefD8KKfr5vY61brQlow==",
+      "license": "MIT"
+    },
+    "node_modules/encodeurl": {
+      "version": "2.0.0",
+      "resolved": "https://registry.npmjs.org/encodeurl/-/encodeurl-2.0.0.tgz",
+      "integrity": "sha512-Q0n9HRi4m6JuGIV1eFlmvJB7ZEVxu93IrMyiMsGC0lrMJMWzRgx6WGquyfQgZVb31vhGgXnfmPNNXmxnOkRBrg==",
+      "license": "MIT",
+      "engines": {
+        "node": ">= 0.8"
+      }
+    },
+    "node_modules/es-define-property": {
+      "version": "1.0.1",
+      "resolved": "https://registry.npmjs.org/es-define-property/-/es-define-property-1.0.1.tgz",
+      "integrity": "sha512-e3nRfgfUZ4rNGL232gUgX06QNyyez04KdjFrF+LTRoOXmrOgFKDg4BCdsjW8EnT69eqdYGmRpJwiPVYNrCaW3g==",
+      "license": "MIT",
+      "engines": {
+        "node": ">= 0.4"
+      }
+    },
+    "node_modules/es-errors": {
+      "version": "1.3.0",
+      "resolved": "https://registry.npmjs.org/es-errors/-/es-errors-1.3.0.tgz",
+      "integrity": "sha512-Zf5H2Kxt2xjTvbJvP2ZWLEICxA6j+hAmMzIlypy4xcBg1vKVnx89Wy0GbS+kf5cwCVFFzdCFh2XSCFNULS6csw==",
+      "license": "MIT",
+      "engines": {
+        "node": ">= 0.4"
+      }
+    },
+    "node_modules/es-object-atoms": {
+      "version": "1.1.1",
+      "resolved": "https://registry.npmjs.org/es-object-atoms/-/es-object-atoms-1.1.1.tgz",
+      "integrity": "sha512-FGgH2h8zKNim9ljj7dankFPcICIK9Cp5bm+c2gQSYePhpaG5+esrLODihIorn+Pe6FGJzWhXQotPv73jTaldXA==",
+      "license": "MIT",
+      "dependencies": {
+        "es-errors": "^1.3.0"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      }
+    },
+    "node_modules/escape-html": {
+      "version": "1.0.3",
+      "resolved": "https://registry.npmjs.org/escape-html/-/escape-html-1.0.3.tgz",
+      "integrity": "sha512-NiSupZ4OeuGwr68lGIeym/ksIZMJodUGOSCZ/FSnTxcrekbvqrgdUxlJOMpijaKZVjAJrWrGs/6Jy8OMuyj9ow==",
+      "license": "MIT"
+    },
+    "node_modules/etag": {
+      "version": "1.8.1",
+      "resolved": "https://registry.npmjs.org/etag/-/etag-1.8.1.tgz",
+      "integrity": "sha512-aIL5Fx7mawVa300al2BnEE4iNvo1qETxLrPI/o05L7z6go7fCw1J6EQmbK4FmJ2AS7kgVF/KEZWufBfdClMcPg==",
+      "license": "MIT",
+      "engines": {
+        "node": ">= 0.6"
+      }
+    },
+    "node_modules/express": {
+      "version": "4.22.1",
+      "resolved": "https://registry.npmjs.org/express/-/express-4.22.1.tgz",
+      "integrity": "sha512-F2X8g9P1X7uCPZMA3MVf9wcTqlyNp7IhH5qPCI0izhaOIYXaW9L535tGA3qmjRzpH+bZczqq7hVKxTR4NWnu+g==",
+      "license": "MIT",
+      "dependencies": {
+        "accepts": "~1.3.8",
+        "array-flatten": "1.1.1",
+        "body-parser": "~1.20.3",
+        "content-disposition": "~0.5.4",
+        "content-type": "~1.0.4",
+        "cookie": "~0.7.1",
+        "cookie-signature": "~1.0.6",
+        "debug": "2.6.9",
+        "depd": "2.0.0",
+        "encodeurl": "~2.0.0",
+        "escape-html": "~1.0.3",
+        "etag": "~1.8.1",
+        "finalhandler": "~1.3.1",
+        "fresh": "~0.5.2",
+        "http-errors": "~2.0.0",
+        "merge-descriptors": "1.0.3",
+        "methods": "~1.1.2",
+        "on-finished": "~2.4.1",
+        "parseurl": "~1.3.3",
+        "path-to-regexp": "~0.1.12",
+        "proxy-addr": "~2.0.7",
+        "qs": "~6.14.0",
+        "range-parser": "~1.2.1",
+        "safe-buffer": "5.2.1",
+        "send": "~0.19.0",
+        "serve-static": "~1.16.2",
+        "setprototypeof": "1.2.0",
+        "statuses": "~2.0.1",
+        "type-is": "~1.6.18",
+        "utils-merge": "1.0.1",
+        "vary": "~1.1.2"
+      },
+      "engines": {
+        "node": ">= 0.10.0"
+      },
+      "funding": {
+        "type": "opencollective",
+        "url": "https://opencollective.com/express"
+      }
+    },
+    "node_modules/fill-range": {
+      "version": "7.1.1",
+      "resolved": "https://registry.npmjs.org/fill-range/-/fill-range-7.1.1.tgz",
+      "integrity": "sha512-YsGpe3WHLK8ZYi4tWDg2Jy3ebRz2rXowDxnld4bkQB00cc/1Zw9AWnC0i9ztDJitivtQvaI9KaLyKrc+hBW0yg==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "to-regex-range": "^5.0.1"
+      },
+      "engines": {
+        "node": ">=8"
+      }
+    },
+    "node_modules/finalhandler": {
+      "version": "1.3.2",
+      "resolved": "https://registry.npmjs.org/finalhandler/-/finalhandler-1.3.2.tgz",
+      "integrity": "sha512-aA4RyPcd3badbdABGDuTXCMTtOneUCAYH/gxoYRTZlIJdF0YPWuGqiAsIrhNnnqdXGswYk6dGujem4w80UJFhg==",
+      "license": "MIT",
+      "dependencies": {
+        "debug": "2.6.9",
+        "encodeurl": "~2.0.0",
+        "escape-html": "~1.0.3",
+        "on-finished": "~2.4.1",
+        "parseurl": "~1.3.3",
+        "statuses": "~2.0.2",
+        "unpipe": "~1.0.0"
+      },
+      "engines": {
+        "node": ">= 0.8"
+      }
+    },
+    "node_modules/forwarded": {
+      "version": "0.2.0",
+      "resolved": "https://registry.npmjs.org/forwarded/-/forwarded-0.2.0.tgz",
+      "integrity": "sha512-buRG0fpBtRHSTCOASe6hD258tEubFoRLb4ZNA6NxMVHNw2gOcwHo9wyablzMzOA5z9xA9L1KNjk/Nt6MT9aYow==",
+      "license": "MIT",
+      "engines": {
+        "node": ">= 0.6"
+      }
+    },
+    "node_modules/fresh": {
+      "version": "0.5.2",
+      "resolved": "https://registry.npmjs.org/fresh/-/fresh-0.5.2.tgz",
+      "integrity": "sha512-zJ2mQYM18rEFOudeV4GShTGIQ7RbzA7ozbU9I/XBpm7kqgMywgmylMwXHxZJmkVoYkna9d2pVXVXPdYTP9ej8Q==",
+      "license": "MIT",
+      "engines": {
+        "node": ">= 0.6"
+      }
+    },
+    "node_modules/fsevents": {
+      "version": "2.3.3",
+      "resolved": "https://registry.npmjs.org/fsevents/-/fsevents-2.3.3.tgz",
+      "integrity": "sha512-5xoDfX+fL7faATnagmWPpbFtwh/R77WmMMqqHGS65C3vvB0YHrgF+B1YmZ3441tMj5n63k0212XNoJwzlhffQw==",
+      "dev": true,
+      "hasInstallScript": true,
+      "license": "MIT",
+      "optional": true,
+      "os": [
+        "darwin"
+      ],
+      "engines": {
+        "node": "^8.16.0 || ^10.6.0 || >=11.0.0"
+      }
+    },
+    "node_modules/function-bind": {
+      "version": "1.1.2",
+      "resolved": "https://registry.npmjs.org/function-bind/-/function-bind-1.1.2.tgz",
+      "integrity": "sha512-7XHNxH7qX9xG5mIwxkhumTox/MIRNcOgDrxWsMt2pAr23WHp6MrRlN7FBSFpCpr+oVO0F744iUgR82nJMfG2SA==",
+      "license": "MIT",
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/get-intrinsic": {
+      "version": "1.3.0",
+      "resolved": "https://registry.npmjs.org/get-intrinsic/-/get-intrinsic-1.3.0.tgz",
+      "integrity": "sha512-9fSjSaos/fRIVIp+xSJlE6lfwhES7LNtKaCBIamHsjr2na1BiABJPo0mOjjz8GJDURarmCPGqaiVg5mfjb98CQ==",
+      "license": "MIT",
+      "dependencies": {
+        "call-bind-apply-helpers": "^1.0.2",
+        "es-define-property": "^1.0.1",
+        "es-errors": "^1.3.0",
+        "es-object-atoms": "^1.1.1",
+        "function-bind": "^1.1.2",
+        "get-proto": "^1.0.1",
+        "gopd": "^1.2.0",
+        "has-symbols": "^1.1.0",
+        "hasown": "^2.0.2",
+        "math-intrinsics": "^1.1.0"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/get-proto": {
+      "version": "1.0.1",
+      "resolved": "https://registry.npmjs.org/get-proto/-/get-proto-1.0.1.tgz",
+      "integrity": "sha512-sTSfBjoXBp89JvIKIefqw7U2CCebsc74kiY6awiGogKtoSGbgjYE/G/+l9sF3MWFPNc9IcoOC4ODfKHfxFmp0g==",
+      "license": "MIT",
+      "dependencies": {
+        "dunder-proto": "^1.0.1",
+        "es-object-atoms": "^1.0.0"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      }
+    },
+    "node_modules/glob-parent": {
+      "version": "5.1.2",
+      "resolved": "https://registry.npmjs.org/glob-parent/-/glob-parent-5.1.2.tgz",
+      "integrity": "sha512-AOIgSQCepiJYwP3ARnGx+5VnTu2HBYdzbGP45eLw1vr3zB3vZLeyed1sC9hnbcOc9/SrMyM5RPQrkGz4aS9Zow==",
+      "dev": true,
+      "license": "ISC",
+      "dependencies": {
+        "is-glob": "^4.0.1"
+      },
+      "engines": {
+        "node": ">= 6"
+      }
+    },
+    "node_modules/gopd": {
+      "version": "1.2.0",
+      "resolved": "https://registry.npmjs.org/gopd/-/gopd-1.2.0.tgz",
+      "integrity": "sha512-ZUKRh6/kUFoAiTAtTYPZJ3hw9wNxx+BIBOijnlG9PnrJsCcSjs1wyyD6vJpaYtgnzDrKYRSqf3OO6Rfa93xsRg==",
+      "license": "MIT",
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/has-flag": {
+      "version": "3.0.0",
+      "resolved": "https://registry.npmjs.org/has-flag/-/has-flag-3.0.0.tgz",
+      "integrity": "sha512-sKJf1+ceQBr4SMkvQnBDNDtf4TXpVhVGateu0t918bl30FnbE2m4vNLX+VWe/dpjlb+HugGYzW7uQXH98HPEYw==",
+      "dev": true,
+      "license": "MIT",
+      "engines": {
+        "node": ">=4"
+      }
+    },
+    "node_modules/has-symbols": {
+      "version": "1.1.0",
+      "resolved": "https://registry.npmjs.org/has-symbols/-/has-symbols-1.1.0.tgz",
+      "integrity": "sha512-1cDNdwJ2Jaohmb3sg4OmKaMBwuC48sYni5HUw2DvsC8LjGTLK9h+eb1X6RyuOHe4hT0ULCW68iomhjUoKUqlPQ==",
+      "license": "MIT",
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/hasown": {
+      "version": "2.0.2",
+      "resolved": "https://registry.npmjs.org/hasown/-/hasown-2.0.2.tgz",
+      "integrity": "sha512-0hJU9SCPvmMzIBdZFqNPXWa6dqh7WdH0cII9y+CyS8rG3nL48Bclra9HmKhVVUHyPWNH5Y7xDwAB7bfgSjkUMQ==",
+      "license": "MIT",
+      "dependencies": {
+        "function-bind": "^1.1.2"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      }
+    },
+    "node_modules/http-errors": {
+      "version": "2.0.1",
+      "resolved": "https://registry.npmjs.org/http-errors/-/http-errors-2.0.1.tgz",
+      "integrity": "sha512-4FbRdAX+bSdmo4AUFuS0WNiPz8NgFt+r8ThgNWmlrjQjt1Q7ZR9+zTlce2859x4KSXrwIsaeTqDoKQmtP8pLmQ==",
+      "license": "MIT",
+      "dependencies": {
+        "depd": "~2.0.0",
+        "inherits": "~2.0.4",
+        "setprototypeof": "~1.2.0",
+        "statuses": "~2.0.2",
+        "toidentifier": "~1.0.1"
+      },
+      "engines": {
+        "node": ">= 0.8"
+      },
+      "funding": {
+        "type": "opencollective",
+        "url": "https://opencollective.com/express"
+      }
+    },
+    "node_modules/iconv-lite": {
+      "version": "0.4.24",
+      "resolved": "https://registry.npmjs.org/iconv-lite/-/iconv-lite-0.4.24.tgz",
+      "integrity": "sha512-v3MXnZAcvnywkTUEZomIActle7RXXeedOR31wwl7VlyoXO4Qi9arvSenNQWne1TcRwhCL1HwLI21bEqdpj8/rA==",
+      "license": "MIT",
+      "dependencies": {
+        "safer-buffer": ">= 2.1.2 < 3"
+      },
+      "engines": {
+        "node": ">=0.10.0"
+      }
+    },
+    "node_modules/ignore-by-default": {
+      "version": "1.0.1",
+      "resolved": "https://registry.npmjs.org/ignore-by-default/-/ignore-by-default-1.0.1.tgz",
+      "integrity": "sha512-Ius2VYcGNk7T90CppJqcIkS5ooHUZyIQK+ClZfMfMNFEF9VSE73Fq+906u/CWu92x4gzZMWOwfFYckPObzdEbA==",
+      "dev": true,
+      "license": "ISC"
+    },
+    "node_modules/inherits": {
+      "version": "2.0.4",
+      "resolved": "https://registry.npmjs.org/inherits/-/inherits-2.0.4.tgz",
+      "integrity": "sha512-k/vGaX4/Yla3WzyMCvTQOXYeIHvqOKtnqBduzTHpzpQZzAskKMhZ2K+EnBiSM9zGSoIFeMpXKxa4dYeZIQqewQ==",
+      "license": "ISC"
+    },
+    "node_modules/ipaddr.js": {
+      "version": "1.9.1",
+      "resolved": "https://registry.npmjs.org/ipaddr.js/-/ipaddr.js-1.9.1.tgz",
+      "integrity": "sha512-0KI/607xoxSToH7GjN1FfSbLoU0+btTicjsQSWQlh/hZykN8KpmMf7uYwPW3R+akZ6R/w18ZlXSHBYXiYUPO3g==",
+      "license": "MIT",
+      "engines": {
+        "node": ">= 0.10"
+      }
+    },
+    "node_modules/is-binary-path": {
+      "version": "2.1.0",
+      "resolved": "https://registry.npmjs.org/is-binary-path/-/is-binary-path-2.1.0.tgz",
+      "integrity": "sha512-ZMERYes6pDydyuGidse7OsHxtbI7WVeUEozgR/g7rd0xUimYNlvZRE/K2MgZTjWy725IfelLeVcEM97mmtRGXw==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "binary-extensions": "^2.0.0"
+      },
+      "engines": {
+        "node": ">=8"
+      }
+    },
+    "node_modules/is-extglob": {
+      "version": "2.1.1",
+      "resolved": "https://registry.npmjs.org/is-extglob/-/is-extglob-2.1.1.tgz",
+      "integrity": "sha512-SbKbANkN603Vi4jEZv49LeVJMn4yGwsbzZworEoyEiutsN3nJYdbO36zfhGJ6QEDpOZIFkDtnq5JRxmvl3jsoQ==",
+      "dev": true,
+      "license": "MIT",
+      "engines": {
+        "node": ">=0.10.0"
+      }
+    },
+    "node_modules/is-glob": {
+      "version": "4.0.3",
+      "resolved": "https://registry.npmjs.org/is-glob/-/is-glob-4.0.3.tgz",
+      "integrity": "sha512-xelSayHH36ZgE7ZWhli7pW34hNbNl8Ojv5KVmkJD4hBdD3th8Tfk9vYasLM+mXWOZhFkgZfxhLSnrwRr4elSSg==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "is-extglob": "^2.1.1"
+      },
+      "engines": {
+        "node": ">=0.10.0"
+      }
+    },
+    "node_modules/is-number": {
+      "version": "7.0.0",
+      "resolved": "https://registry.npmjs.org/is-number/-/is-number-7.0.0.tgz",
+      "integrity": "sha512-41Cifkg6e8TylSpdtTpeLVMqvSBEVzTttHvERD741+pnZ8ANv0004MRL43QKPDlK9cGvNp6NZWZUBlbGXYxxng==",
+      "dev": true,
+      "license": "MIT",
+      "engines": {
+        "node": ">=0.12.0"
+      }
+    },
+    "node_modules/kareem": {
+      "version": "2.6.3",
+      "resolved": "https://registry.npmjs.org/kareem/-/kareem-2.6.3.tgz",
+      "integrity": "sha512-C3iHfuGUXK2u8/ipq9LfjFfXFxAZMQJJq7vLS45r3D9Y2xQ/m4S8zaR4zMLFWh9AsNPXmcFfUDhTEO8UIC/V6Q==",
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=12.0.0"
+      }
+    },
+    "node_modules/math-intrinsics": {
+      "version": "1.1.0",
+      "resolved": "https://registry.npmjs.org/math-intrinsics/-/math-intrinsics-1.1.0.tgz",
+      "integrity": "sha512-/IXtbwEk5HTPyEwyKX6hGkYXxM9nbj64B+ilVJnC/R6B0pH5G4V3b0pVbL7DBj4tkhBAppbQUlf6F6Xl9LHu1g==",
+      "license": "MIT",
+      "engines": {
+        "node": ">= 0.4"
+      }
+    },
+    "node_modules/media-typer": {
+      "version": "0.3.0",
+      "resolved": "https://registry.npmjs.org/media-typer/-/media-typer-0.3.0.tgz",
+      "integrity": "sha512-dq+qelQ9akHpcOl/gUVRTxVIOkAJ1wR3QAvb4RsVjS8oVoFjDGTc679wJYmUmknUF5HwMLOgb5O+a3KxfWapPQ==",
+      "license": "MIT",
+      "engines": {
+        "node": ">= 0.6"
+      }
+    },
+    "node_modules/memory-pager": {
+      "version": "1.5.0",
+      "resolved": "https://registry.npmjs.org/memory-pager/-/memory-pager-1.5.0.tgz",
+      "integrity": "sha512-ZS4Bp4r/Zoeq6+NLJpP+0Zzm0pR8whtGPf1XExKLJBAczGMnSi3It14OiNCStjQjM6NU1okjQGSxgEZN8eBYKg==",
+      "license": "MIT"
+    },
+    "node_modules/merge-descriptors": {
+      "version": "1.0.3",
+      "resolved": "https://registry.npmjs.org/merge-descriptors/-/merge-descriptors-1.0.3.tgz",
+      "integrity": "sha512-gaNvAS7TZ897/rVaZ0nMtAyxNyi/pdbjbAwUpFQpN70GqnVfOiXpeUUMKRBmzXaSQ8DdTX4/0ms62r2K+hE6mQ==",
+      "license": "MIT",
+      "funding": {
+        "url": "https://github.com/sponsors/sindresorhus"
+      }
+    },
+    "node_modules/methods": {
+      "version": "1.1.2",
+      "resolved": "https://registry.npmjs.org/methods/-/methods-1.1.2.tgz",
+      "integrity": "sha512-iclAHeNqNm68zFtnZ0e+1L2yUIdvzNoauKU4WBA3VvH/vPFieF7qfRlwUZU+DA9P9bPXIS90ulxoUoCH23sV2w==",
+      "license": "MIT",
+      "engines": {
+        "node": ">= 0.6"
+      }
+    },
+    "node_modules/mime": {
+      "version": "1.6.0",
+      "resolved": "https://registry.npmjs.org/mime/-/mime-1.6.0.tgz",
+      "integrity": "sha512-x0Vn8spI+wuJ1O6S7gnbaQg8Pxh4NNHb7KSINmEWKiPE4RKOplvijn+NkmYmmRgP68mc70j2EbeTFRsrswaQeg==",
+      "license": "MIT",
+      "bin": {
+        "mime": "cli.js"
+      },
+      "engines": {
+        "node": ">=4"
+      }
+    },
+    "node_modules/mime-db": {
+      "version": "1.52.0",
+      "resolved": "https://registry.npmjs.org/mime-db/-/mime-db-1.52.0.tgz",
+      "integrity": "sha512-sPU4uV7dYlvtWJxwwxHD0PuihVNiE7TyAbQ5SWxDCB9mUYvOgroQOwYQQOKPJ8CIbE+1ETVlOoK1UC2nU3gYvg==",
+      "license": "MIT",
+      "engines": {
+        "node": ">= 0.6"
+      }
+    },
+    "node_modules/mime-types": {
+      "version": "2.1.35",
+      "resolved": "https://registry.npmjs.org/mime-types/-/mime-types-2.1.35.tgz",
+      "integrity": "sha512-ZDY+bPm5zTTF+YpCrAU9nK0UgICYPT0QtT1NZWFv4s++TNkcgVaT0g6+4R2uI4MjQjzysHB1zxuWL50hzaeXiw==",
+      "license": "MIT",
+      "dependencies": {
+        "mime-db": "1.52.0"
+      },
+      "engines": {
+        "node": ">= 0.6"
+      }
+    },
+    "node_modules/minimatch": {
+      "version": "3.1.2",
+      "resolved": "https://registry.npmjs.org/minimatch/-/minimatch-3.1.2.tgz",
+      "integrity": "sha512-J7p63hRiAjw1NDEww1W7i37+ByIrOWO5XQQAzZ3VOcL0PNybwpfmV/N05zFAzwQ9USyEcX6t3UO+K5aqBQOIHw==",
+      "dev": true,
+      "license": "ISC",
+      "dependencies": {
+        "brace-expansion": "^1.1.7"
+      },
+      "engines": {
+        "node": "*"
+      }
+    },
+    "node_modules/mongodb": {
+      "version": "6.20.0",
+      "resolved": "https://registry.npmjs.org/mongodb/-/mongodb-6.20.0.tgz",
+      "integrity": "sha512-Tl6MEIU3K4Rq3TSHd+sZQqRBoGlFsOgNrH5ltAcFBV62Re3Fd+FcaVf8uSEQFOJ51SDowDVttBTONMfoYWrWlQ==",
+      "license": "Apache-2.0",
+      "dependencies": {
+        "@mongodb-js/saslprep": "^1.3.0",
+        "bson": "^6.10.4",
+        "mongodb-connection-string-url": "^3.0.2"
+      },
+      "engines": {
+        "node": ">=16.20.1"
+      },
+      "peerDependencies": {
+        "@aws-sdk/credential-providers": "^3.188.0",
+        "@mongodb-js/zstd": "^1.1.0 || ^2.0.0",
+        "gcp-metadata": "^5.2.0",
+        "kerberos": "^2.0.1",
+        "mongodb-client-encryption": ">=6.0.0 <7",
+        "snappy": "^7.3.2",
+        "socks": "^2.7.1"
+      },
+      "peerDependenciesMeta": {
+        "@aws-sdk/credential-providers": {
+          "optional": true
+        },
+        "@mongodb-js/zstd": {
+          "optional": true
+        },
+        "gcp-metadata": {
+          "optional": true
+        },
+        "kerberos": {
+          "optional": true
+        },
+        "mongodb-client-encryption": {
+          "optional": true
+        },
+        "snappy": {
+          "optional": true
+        },
+        "socks": {
+          "optional": true
+        }
+      }
+    },
+    "node_modules/mongodb-connection-string-url": {
+      "version": "3.0.2",
+      "resolved": "https://registry.npmjs.org/mongodb-connection-string-url/-/mongodb-connection-string-url-3.0.2.tgz",
+      "integrity": "sha512-rMO7CGo/9BFwyZABcKAWL8UJwH/Kc2x0g72uhDWzG48URRax5TCIcJ7Rc3RZqffZzO/Gwff/jyKwCU9TN8gehA==",
+      "license": "Apache-2.0",
+      "dependencies": {
+        "@types/whatwg-url": "^11.0.2",
+        "whatwg-url": "^14.1.0 || ^13.0.0"
+      }
+    },
+    "node_modules/mongoose": {
+      "version": "8.21.0",
+      "resolved": "https://registry.npmjs.org/mongoose/-/mongoose-8.21.0.tgz",
+      "integrity": "sha512-dW2U01gN8EVQT5KAO5AkzjbqWc8A/CsEq15jOzq/M9ISpy8jw3iq7W9ZP135h9zykFOMt3AMxq4+anvt2YNJgw==",
+      "license": "MIT",
+      "dependencies": {
+        "bson": "^6.10.4",
+        "kareem": "2.6.3",
+        "mongodb": "~6.20.0",
+        "mpath": "0.9.0",
+        "mquery": "5.0.0",
+        "ms": "2.1.3",
+        "sift": "17.1.3"
+      },
+      "engines": {
+        "node": ">=16.20.1"
+      },
+      "funding": {
+        "type": "opencollective",
+        "url": "https://opencollective.com/mongoose"
+      }
+    },
+    "node_modules/mongoose/node_modules/ms": {
+      "version": "2.1.3",
+      "resolved": "https://registry.npmjs.org/ms/-/ms-2.1.3.tgz",
+      "integrity": "sha512-6FlzubTLZG3J2a/NVCAleEhjzq5oxgHyaCU9yYXvcLsvoVaHJq/s5xXI6/XXP6tz7R9xAOtHnSO/tXtF3WRTlA==",
+      "license": "MIT"
+    },
+    "node_modules/mpath": {
+      "version": "0.9.0",
+      "resolved": "https://registry.npmjs.org/mpath/-/mpath-0.9.0.tgz",
+      "integrity": "sha512-ikJRQTk8hw5DEoFVxHG1Gn9T/xcjtdnOKIU1JTmGjZZlg9LST2mBLmcX3/ICIbgJydT2GOc15RnNy5mHmzfSew==",
+      "license": "MIT",
+      "engines": {
+        "node": ">=4.0.0"
+      }
+    },
+    "node_modules/mquery": {
+      "version": "5.0.0",
+      "resolved": "https://registry.npmjs.org/mquery/-/mquery-5.0.0.tgz",
+      "integrity": "sha512-iQMncpmEK8R8ncT8HJGsGc9Dsp8xcgYMVSbs5jgnm1lFHTZqMJTUWTDx1LBO8+mK3tPNZWFLBghQEIOULSTHZg==",
+      "license": "MIT",
+      "dependencies": {
+        "debug": "4.x"
+      },
+      "engines": {
+        "node": ">=14.0.0"
+      }
+    },
+    "node_modules/mquery/node_modules/debug": {
+      "version": "4.4.3",
+      "resolved": "https://registry.npmjs.org/debug/-/debug-4.4.3.tgz",
+      "integrity": "sha512-RGwwWnwQvkVfavKVt22FGLw+xYSdzARwm0ru6DhTVA3umU5hZc28V3kO4stgYryrTlLpuvgI9GiijltAjNbcqA==",
+      "license": "MIT",
+      "dependencies": {
+        "ms": "^2.1.3"
+      },
+      "engines": {
+        "node": ">=6.0"
+      },
+      "peerDependenciesMeta": {
+        "supports-color": {
+          "optional": true
+        }
+      }
+    },
+    "node_modules/mquery/node_modules/ms": {
+      "version": "2.1.3",
+      "resolved": "https://registry.npmjs.org/ms/-/ms-2.1.3.tgz",
+      "integrity": "sha512-6FlzubTLZG3J2a/NVCAleEhjzq5oxgHyaCU9yYXvcLsvoVaHJq/s5xXI6/XXP6tz7R9xAOtHnSO/tXtF3WRTlA==",
+      "license": "MIT"
+    },
+    "node_modules/ms": {
+      "version": "2.0.0",
+      "resolved": "https://registry.npmjs.org/ms/-/ms-2.0.0.tgz",
+      "integrity": "sha512-Tpp60P6IUJDTuOq/5Z8cdskzJujfwqfOTkrwIwj7IRISpnkJnT6SyJ4PCPnGMoFjC9ddhal5KVIYtAt97ix05A==",
+      "license": "MIT"
+    },
+    "node_modules/negotiator": {
+      "version": "0.6.3",
+      "resolved": "https://registry.npmjs.org/negotiator/-/negotiator-0.6.3.tgz",
+      "integrity": "sha512-+EUsqGPLsM+j/zdChZjsnX51g4XrHFOIXwfnCVPGlQk/k5giakcKsuxCObBRu6DSm9opw/O6slWbJdghQM4bBg==",
+      "license": "MIT",
+      "engines": {
+        "node": ">= 0.6"
+      }
+    },
+    "node_modules/nodemon": {
+      "version": "3.1.11",
+      "resolved": "https://registry.npmjs.org/nodemon/-/nodemon-3.1.11.tgz",
+      "integrity": "sha512-is96t8F/1//UHAjNPHpbsNY46ELPpftGUoSVNXwUfMk/qdjSylYrWSu1XavVTBOn526kFiOR733ATgNBCQyH0g==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "chokidar": "^3.5.2",
+        "debug": "^4",
+        "ignore-by-default": "^1.0.1",
+        "minimatch": "^3.1.2",
+        "pstree.remy": "^1.1.8",
+        "semver": "^7.5.3",
+        "simple-update-notifier": "^2.0.0",
+        "supports-color": "^5.5.0",
+        "touch": "^3.1.0",
+        "undefsafe": "^2.0.5"
+      },
+      "bin": {
+        "nodemon": "bin/nodemon.js"
+      },
+      "engines": {
+        "node": ">=10"
+      },
+      "funding": {
+        "type": "opencollective",
+        "url": "https://opencollective.com/nodemon"
+      }
+    },
+    "node_modules/nodemon/node_modules/debug": {
+      "version": "4.4.3",
+      "resolved": "https://registry.npmjs.org/debug/-/debug-4.4.3.tgz",
+      "integrity": "sha512-RGwwWnwQvkVfavKVt22FGLw+xYSdzARwm0ru6DhTVA3umU5hZc28V3kO4stgYryrTlLpuvgI9GiijltAjNbcqA==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "ms": "^2.1.3"
+      },
+      "engines": {
+        "node": ">=6.0"
+      },
+      "peerDependenciesMeta": {
+        "supports-color": {
+          "optional": true
+        }
+      }
+    },
+    "node_modules/nodemon/node_modules/ms": {
+      "version": "2.1.3",
+      "resolved": "https://registry.npmjs.org/ms/-/ms-2.1.3.tgz",
+      "integrity": "sha512-6FlzubTLZG3J2a/NVCAleEhjzq5oxgHyaCU9yYXvcLsvoVaHJq/s5xXI6/XXP6tz7R9xAOtHnSO/tXtF3WRTlA==",
+      "dev": true,
+      "license": "MIT"
+    },
+    "node_modules/normalize-path": {
+      "version": "3.0.0",
+      "resolved": "https://registry.npmjs.org/normalize-path/-/normalize-path-3.0.0.tgz",
+      "integrity": "sha512-6eZs5Ls3WtCisHWp9S2GUy8dqkpGi4BVSz3GaqiE6ezub0512ESztXUwUB6C6IKbQkY2Pnb/mD4WYojCRwcwLA==",
+      "dev": true,
+      "license": "MIT",
+      "engines": {
+        "node": ">=0.10.0"
+      }
+    },
+    "node_modules/object-assign": {
+      "version": "4.1.1",
+      "resolved": "https://registry.npmjs.org/object-assign/-/object-assign-4.1.1.tgz",
+      "integrity": "sha512-rJgTQnkUnH1sFw8yT6VSU3zD3sWmu6sZhIseY8VX+GRu3P6F7Fu+JNDoXfklElbLJSnc3FUQHVe4cU5hj+BcUg==",
+      "license": "MIT",
+      "engines": {
+        "node": ">=0.10.0"
+      }
+    },
+    "node_modules/object-inspect": {
+      "version": "1.13.4",
+      "resolved": "https://registry.npmjs.org/object-inspect/-/object-inspect-1.13.4.tgz",
+      "integrity": "sha512-W67iLl4J2EXEGTbfeHCffrjDfitvLANg0UlX3wFUUSTx92KXRFegMHUVgSqE+wvhAbi4WqjGg9czysTV2Epbew==",
+      "license": "MIT",
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/on-finished": {
+      "version": "2.4.1",
+      "resolved": "https://registry.npmjs.org/on-finished/-/on-finished-2.4.1.tgz",
+      "integrity": "sha512-oVlzkg3ENAhCk2zdv7IJwd/QUD4z2RxRwpkcGY8psCVcCYZNq4wYnVWALHM+brtuJjePWiYF/ClmuDr8Ch5+kg==",
+      "license": "MIT",
+      "dependencies": {
+        "ee-first": "1.1.1"
+      },
+      "engines": {
+        "node": ">= 0.8"
+      }
+    },
+    "node_modules/parseurl": {
+      "version": "1.3.3",
+      "resolved": "https://registry.npmjs.org/parseurl/-/parseurl-1.3.3.tgz",
+      "integrity": "sha512-CiyeOxFT/JZyN5m0z9PfXw4SCBJ6Sygz1Dpl0wqjlhDEGGBP1GnsUVEL0p63hoG1fcj3fHynXi9NYO4nWOL+qQ==",
+      "license": "MIT",
+      "engines": {
+        "node": ">= 0.8"
+      }
+    },
+    "node_modules/path-to-regexp": {
+      "version": "0.1.12",
+      "resolved": "https://registry.npmjs.org/path-to-regexp/-/path-to-regexp-0.1.12.tgz",
+      "integrity": "sha512-RA1GjUVMnvYFxuqovrEqZoxxW5NUZqbwKtYz/Tt7nXerk0LbLblQmrsgdeOxV5SFHf0UDggjS/bSeOZwt1pmEQ==",
+      "license": "MIT"
+    },
+    "node_modules/picomatch": {
+      "version": "2.3.1",
+      "resolved": "https://registry.npmjs.org/picomatch/-/picomatch-2.3.1.tgz",
+      "integrity": "sha512-JU3teHTNjmE2VCGFzuY8EXzCDVwEqB2a8fsIvwaStHhAWJEeVd1o1QD80CU6+ZdEXXSLbSsuLwJjkCBWqRQUVA==",
+      "dev": true,
+      "license": "MIT",
+      "engines": {
+        "node": ">=8.6"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/jonschlinkert"
+      }
+    },
+    "node_modules/proxy-addr": {
+      "version": "2.0.7",
+      "resolved": "https://registry.npmjs.org/proxy-addr/-/proxy-addr-2.0.7.tgz",
+      "integrity": "sha512-llQsMLSUDUPT44jdrU/O37qlnifitDP+ZwrmmZcoSKyLKvtZxpyV0n2/bD/N4tBAAZ/gJEdZU7KMraoK1+XYAg==",
+      "license": "MIT",
+      "dependencies": {
+        "forwarded": "0.2.0",
+        "ipaddr.js": "1.9.1"
+      },
+      "engines": {
+        "node": ">= 0.10"
+      }
+    },
+    "node_modules/pstree.remy": {
+      "version": "1.1.8",
+      "resolved": "https://registry.npmjs.org/pstree.remy/-/pstree.remy-1.1.8.tgz",
+      "integrity": "sha512-77DZwxQmxKnu3aR542U+X8FypNzbfJ+C5XQDk3uWjWxn6151aIMGthWYRXTqT1E5oJvg+ljaa2OJi+VfvCOQ8w==",
+      "dev": true,
+      "license": "MIT"
+    },
+    "node_modules/punycode": {
+      "version": "2.3.1",
+      "resolved": "https://registry.npmjs.org/punycode/-/punycode-2.3.1.tgz",
+      "integrity": "sha512-vYt7UD1U9Wg6138shLtLOvdAu+8DsC/ilFtEVHcH+wydcSpNE20AfSOduf6MkRFahL5FY7X1oU7nKVZFtfq8Fg==",
+      "license": "MIT",
+      "engines": {
+        "node": ">=6"
+      }
+    },
+    "node_modules/qs": {
+      "version": "6.14.1",
+      "resolved": "https://registry.npmjs.org/qs/-/qs-6.14.1.tgz",
+      "integrity": "sha512-4EK3+xJl8Ts67nLYNwqw/dsFVnCf+qR7RgXSK9jEEm9unao3njwMDdmsdvoKBKHzxd7tCYz5e5M+SnMjdtXGQQ==",
+      "license": "BSD-3-Clause",
+      "dependencies": {
+        "side-channel": "^1.1.0"
+      },
+      "engines": {
+        "node": ">=0.6"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/range-parser": {
+      "version": "1.2.1",
+      "resolved": "https://registry.npmjs.org/range-parser/-/range-parser-1.2.1.tgz",
+      "integrity": "sha512-Hrgsx+orqoygnmhFbKaHE6c296J+HTAQXoxEF6gNupROmmGJRoyzfG3ccAveqCBrwr/2yxQ5BVd/GTl5agOwSg==",
+      "license": "MIT",
+      "engines": {
+        "node": ">= 0.6"
+      }
+    },
+    "node_modules/raw-body": {
+      "version": "2.5.3",
+      "resolved": "https://registry.npmjs.org/raw-body/-/raw-body-2.5.3.tgz",
+      "integrity": "sha512-s4VSOf6yN0rvbRZGxs8Om5CWj6seneMwK3oDb4lWDH0UPhWcxwOWw5+qk24bxq87szX1ydrwylIOp2uG1ojUpA==",
+      "license": "MIT",
+      "dependencies": {
+        "bytes": "~3.1.2",
+        "http-errors": "~2.0.1",
+        "iconv-lite": "~0.4.24",
+        "unpipe": "~1.0.0"
+      },
+      "engines": {
+        "node": ">= 0.8"
+      }
+    },
+    "node_modules/readdirp": {
+      "version": "3.6.0",
+      "resolved": "https://registry.npmjs.org/readdirp/-/readdirp-3.6.0.tgz",
+      "integrity": "sha512-hOS089on8RduqdbhvQ5Z37A0ESjsqz6qnRcffsMU3495FuTdqSm+7bhJ29JvIOsBDEEnan5DPu9t3To9VRlMzA==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "picomatch": "^2.2.1"
+      },
+      "engines": {
+        "node": ">=8.10.0"
+      }
+    },
+    "node_modules/safe-buffer": {
+      "version": "5.2.1",
+      "resolved": "https://registry.npmjs.org/safe-buffer/-/safe-buffer-5.2.1.tgz",
+      "integrity": "sha512-rp3So07KcdmmKbGvgaNxQSJr7bGVSVk5S9Eq1F+ppbRo70+YeaDxkw5Dd8NPN+GD6bjnYm2VuPuCXmpuYvmCXQ==",
+      "funding": [
+        {
+          "type": "github",
+          "url": "https://github.com/sponsors/feross"
+        },
+        {
+          "type": "patreon",
+          "url": "https://www.patreon.com/feross"
+        },
+        {
+          "type": "consulting",
+          "url": "https://feross.org/support"
+        }
+      ],
+      "license": "MIT"
+    },
+    "node_modules/safer-buffer": {
+      "version": "2.1.2",
+      "resolved": "https://registry.npmjs.org/safer-buffer/-/safer-buffer-2.1.2.tgz",
+      "integrity": "sha512-YZo3K82SD7Riyi0E1EQPojLz7kpepnSQI9IyPbHHg1XXXevb5dJI7tpyN2ADxGcQbHG7vcyRHk0cbwqcQriUtg==",
+      "license": "MIT"
+    },
+    "node_modules/semver": {
+      "version": "7.7.3",
+      "resolved": "https://registry.npmjs.org/semver/-/semver-7.7.3.tgz",
+      "integrity": "sha512-SdsKMrI9TdgjdweUSR9MweHA4EJ8YxHn8DFaDisvhVlUOe4BF1tLD7GAj0lIqWVl+dPb/rExr0Btby5loQm20Q==",
+      "dev": true,
+      "license": "ISC",
+      "bin": {
+        "semver": "bin/semver.js"
+      },
+      "engines": {
+        "node": ">=10"
+      }
+    },
+    "node_modules/send": {
+      "version": "0.19.2",
+      "resolved": "https://registry.npmjs.org/send/-/send-0.19.2.tgz",
+      "integrity": "sha512-VMbMxbDeehAxpOtWJXlcUS5E8iXh6QmN+BkRX1GARS3wRaXEEgzCcB10gTQazO42tpNIya8xIyNx8fll1OFPrg==",
+      "license": "MIT",
+      "dependencies": {
+        "debug": "2.6.9",
+        "depd": "2.0.0",
+        "destroy": "1.2.0",
+        "encodeurl": "~2.0.0",
+        "escape-html": "~1.0.3",
+        "etag": "~1.8.1",
+        "fresh": "~0.5.2",
+        "http-errors": "~2.0.1",
+        "mime": "1.6.0",
+        "ms": "2.1.3",
+        "on-finished": "~2.4.1",
+        "range-parser": "~1.2.1",
+        "statuses": "~2.0.2"
+      },
+      "engines": {
+        "node": ">= 0.8.0"
+      }
+    },
+    "node_modules/send/node_modules/ms": {
+      "version": "2.1.3",
+      "resolved": "https://registry.npmjs.org/ms/-/ms-2.1.3.tgz",
+      "integrity": "sha512-6FlzubTLZG3J2a/NVCAleEhjzq5oxgHyaCU9yYXvcLsvoVaHJq/s5xXI6/XXP6tz7R9xAOtHnSO/tXtF3WRTlA==",
+      "license": "MIT"
+    },
+    "node_modules/serve-static": {
+      "version": "1.16.3",
+      "resolved": "https://registry.npmjs.org/serve-static/-/serve-static-1.16.3.tgz",
+      "integrity": "sha512-x0RTqQel6g5SY7Lg6ZreMmsOzncHFU7nhnRWkKgWuMTu5NN0DR5oruckMqRvacAN9d5w6ARnRBXl9xhDCgfMeA==",
+      "license": "MIT",
+      "dependencies": {
+        "encodeurl": "~2.0.0",
+        "escape-html": "~1.0.3",
+        "parseurl": "~1.3.3",
+        "send": "~0.19.1"
+      },
+      "engines": {
+        "node": ">= 0.8.0"
+      }
+    },
+    "node_modules/setprototypeof": {
+      "version": "1.2.0",
+      "resolved": "https://registry.npmjs.org/setprototypeof/-/setprototypeof-1.2.0.tgz",
+      "integrity": "sha512-E5LDX7Wrp85Kil5bhZv46j8jOeboKq5JMmYM3gVGdGH8xFpPWXUMsNrlODCrkoxMEeNi/XZIwuRvY4XNwYMJpw==",
+      "license": "ISC"
+    },
+    "node_modules/side-channel": {
+      "version": "1.1.0",
+      "resolved": "https://registry.npmjs.org/side-channel/-/side-channel-1.1.0.tgz",
+      "integrity": "sha512-ZX99e6tRweoUXqR+VBrslhda51Nh5MTQwou5tnUDgbtyM0dBgmhEDtWGP/xbKn6hqfPRHujUNwz5fy/wbbhnpw==",
+      "license": "MIT",
+      "dependencies": {
+        "es-errors": "^1.3.0",
+        "object-inspect": "^1.13.3",
+        "side-channel-list": "^1.0.0",
+        "side-channel-map": "^1.0.1",
+        "side-channel-weakmap": "^1.0.2"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/side-channel-list": {
+      "version": "1.0.0",
+      "resolved": "https://registry.npmjs.org/side-channel-list/-/side-channel-list-1.0.0.tgz",
+      "integrity": "sha512-FCLHtRD/gnpCiCHEiJLOwdmFP+wzCmDEkc9y7NsYxeF4u7Btsn1ZuwgwJGxImImHicJArLP4R0yX4c2KCrMrTA==",
+      "license": "MIT",
+      "dependencies": {
+        "es-errors": "^1.3.0",
+        "object-inspect": "^1.13.3"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/side-channel-map": {
+      "version": "1.0.1",
+      "resolved": "https://registry.npmjs.org/side-channel-map/-/side-channel-map-1.0.1.tgz",
+      "integrity": "sha512-VCjCNfgMsby3tTdo02nbjtM/ewra6jPHmpThenkTYh8pG9ucZ/1P8So4u4FGBek/BjpOVsDCMoLA/iuBKIFXRA==",
+      "license": "MIT",
+      "dependencies": {
+        "call-bound": "^1.0.2",
+        "es-errors": "^1.3.0",
+        "get-intrinsic": "^1.2.5",
+        "object-inspect": "^1.13.3"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/side-channel-weakmap": {
+      "version": "1.0.2",
+      "resolved": "https://registry.npmjs.org/side-channel-weakmap/-/side-channel-weakmap-1.0.2.tgz",
+      "integrity": "sha512-WPS/HvHQTYnHisLo9McqBHOJk2FkHO/tlpvldyrnem4aeQp4hai3gythswg6p01oSoTl58rcpiFAjF2br2Ak2A==",
+      "license": "MIT",
+      "dependencies": {
+        "call-bound": "^1.0.2",
+        "es-errors": "^1.3.0",
+        "get-intrinsic": "^1.2.5",
+        "object-inspect": "^1.13.3",
+        "side-channel-map": "^1.0.1"
+      },
+      "engines": {
+        "node": ">= 0.4"
+      },
+      "funding": {
+        "url": "https://github.com/sponsors/ljharb"
+      }
+    },
+    "node_modules/sift": {
+      "version": "17.1.3",
+      "resolved": "https://registry.npmjs.org/sift/-/sift-17.1.3.tgz",
+      "integrity": "sha512-Rtlj66/b0ICeFzYTuNvX/EF1igRbbnGSvEyT79McoZa/DeGhMyC5pWKOEsZKnpkqtSeovd5FL/bjHWC3CIIvCQ==",
+      "license": "MIT"
+    },
+    "node_modules/simple-update-notifier": {
+      "version": "2.0.0",
+      "resolved": "https://registry.npmjs.org/simple-update-notifier/-/simple-update-notifier-2.0.0.tgz",
+      "integrity": "sha512-a2B9Y0KlNXl9u/vsW6sTIu9vGEpfKu2wRV6l1H3XEas/0gUIzGzBoP/IouTcUQbm9JWZLH3COxyn03TYlFax6w==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "semver": "^7.5.3"
+      },
+      "engines": {
+        "node": ">=10"
+      }
+    },
+    "node_modules/sparse-bitfield": {
+      "version": "3.0.3",
+      "resolved": "https://registry.npmjs.org/sparse-bitfield/-/sparse-bitfield-3.0.3.tgz",
+      "integrity": "sha512-kvzhi7vqKTfkh0PZU+2D2PIllw2ymqJKujUcyPMd9Y75Nv4nPbGJZXNhxsgdQab2BmlDct1YnfQCguEvHr7VsQ==",
+      "license": "MIT",
+      "dependencies": {
+        "memory-pager": "^1.0.2"
+      }
+    },
+    "node_modules/statuses": {
+      "version": "2.0.2",
+      "resolved": "https://registry.npmjs.org/statuses/-/statuses-2.0.2.tgz",
+      "integrity": "sha512-DvEy55V3DB7uknRo+4iOGT5fP1slR8wQohVdknigZPMpMstaKJQWhwiYBACJE3Ul2pTnATihhBYnRhZQHGBiRw==",
+      "license": "MIT",
+      "engines": {
+        "node": ">= 0.8"
+      }
+    },
+    "node_modules/supports-color": {
+      "version": "5.5.0",
+      "resolved": "https://registry.npmjs.org/supports-color/-/supports-color-5.5.0.tgz",
+      "integrity": "sha512-QjVjwdXIt408MIiAqCX4oUKsgU2EqAGzs2Ppkm4aQYbjm+ZEWEcW4SfFNTr4uMNZma0ey4f5lgLrkB0aX0QMow==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "has-flag": "^3.0.0"
+      },
+      "engines": {
+        "node": ">=4"
+      }
+    },
+    "node_modules/to-regex-range": {
+      "version": "5.0.1",
+      "resolved": "https://registry.npmjs.org/to-regex-range/-/to-regex-range-5.0.1.tgz",
+      "integrity": "sha512-65P7iz6X5yEr1cwcgvQxbbIw7Uk3gOy5dIdtZ4rDveLqhrdJP+Li/Hx6tyK0NEb+2GCyneCMJiGqrADCSNk8sQ==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "is-number": "^7.0.0"
+      },
+      "engines": {
+        "node": ">=8.0"
+      }
+    },
+    "node_modules/toidentifier": {
+      "version": "1.0.1",
+      "resolved": "https://registry.npmjs.org/toidentifier/-/toidentifier-1.0.1.tgz",
+      "integrity": "sha512-o5sSPKEkg/DIQNmH43V0/uerLrpzVedkUh8tGNvaeXpfpuwjKenlSox/2O/BTlZUtEe+JG7s5YhEz608PlAHRA==",
+      "license": "MIT",
+      "engines": {
+        "node": ">=0.6"
+      }
+    },
+    "node_modules/touch": {
+      "version": "3.1.1",
+      "resolved": "https://registry.npmjs.org/touch/-/touch-3.1.1.tgz",
+      "integrity": "sha512-r0eojU4bI8MnHr8c5bNo7lJDdI2qXlWWJk6a9EAFG7vbhTjElYhBVS3/miuE0uOuoLdb8Mc/rVfsmm6eo5o9GA==",
+      "dev": true,
+      "license": "ISC",
+      "bin": {
+        "nodetouch": "bin/nodetouch.js"
+      }
+    },
+    "node_modules/tr46": {
+      "version": "5.1.1",
+      "resolved": "https://registry.npmjs.org/tr46/-/tr46-5.1.1.tgz",
+      "integrity": "sha512-hdF5ZgjTqgAntKkklYw0R03MG2x/bSzTtkxmIRw/sTNV8YXsCJ1tfLAX23lhxhHJlEf3CRCOCGGWw3vI3GaSPw==",
+      "license": "MIT",
+      "dependencies": {
+        "punycode": "^2.3.1"
+      },
+      "engines": {
+        "node": ">=18"
+      }
+    },
+    "node_modules/type-is": {
+      "version": "1.6.18",
+      "resolved": "https://registry.npmjs.org/type-is/-/type-is-1.6.18.tgz",
+      "integrity": "sha512-TkRKr9sUTxEH8MdfuCSP7VizJyzRNMjj2J2do2Jr3Kym598JVdEksuzPQCnlFPW4ky9Q+iA+ma9BGm06XQBy8g==",
+      "license": "MIT",
+      "dependencies": {
+        "media-typer": "0.3.0",
+        "mime-types": "~2.1.24"
+      },
+      "engines": {
+        "node": ">= 0.6"
+      }
+    },
+    "node_modules/undefsafe": {
+      "version": "2.0.5",
+      "resolved": "https://registry.npmjs.org/undefsafe/-/undefsafe-2.0.5.tgz",
+      "integrity": "sha512-WxONCrssBM8TSPRqN5EmsjVrsv4A8X12J4ArBiiayv3DyyG3ZlIg6yysuuSYdZsVz3TKcTg2fd//Ujd4CHV1iA==",
+      "dev": true,
+      "license": "MIT"
+    },
+    "node_modules/unpipe": {
+      "version": "1.0.0",
+      "resolved": "https://registry.npmjs.org/unpipe/-/unpipe-1.0.0.tgz",
+      "integrity": "sha512-pjy2bYhSsufwWlKwPc+l3cN7+wuJlK6uz0YdJEOlQDbl6jo/YlPi4mb8agUkVC8BF7V8NuzeyPNqRksA3hztKQ==",
+      "license": "MIT",
+      "engines": {
+        "node": ">= 0.8"
+      }
+    },
+    "node_modules/utils-merge": {
+      "version": "1.0.1",
+      "resolved": "https://registry.npmjs.org/utils-merge/-/utils-merge-1.0.1.tgz",
+      "integrity": "sha512-pMZTvIkT1d+TFGvDOqodOclx0QWkkgi6Tdoa8gC8ffGAAqz9pzPTZWAybbsHHoED/ztMtkv/VoYTYyShUn81hA==",
+      "license": "MIT",
+      "engines": {
+        "node": ">= 0.4.0"
+      }
+    },
+    "node_modules/vary": {
+      "version": "1.1.2",
+      "resolved": "https://registry.npmjs.org/vary/-/vary-1.1.2.tgz",
+      "integrity": "sha512-BNGbWLfd0eUPabhkXUVm0j8uuvREyTh5ovRa/dyow/BqAbZJyC+5fU+IzQOzmAKzYqYRAISoRhdQr3eIZ/PXqg==",
+      "license": "MIT",
+      "engines": {
+        "node": ">= 0.8"
+      }
+    },
+    "node_modules/webidl-conversions": {
+      "version": "7.0.0",
+      "resolved": "https://registry.npmjs.org/webidl-conversions/-/webidl-conversions-7.0.0.tgz",
+      "integrity": "sha512-VwddBukDzu71offAQR975unBIGqfKZpM+8ZX6ySk8nYhVoo5CYaZyzt3YBvYtRtO+aoGlqxPg/B87NGVZ/fu6g==",
+      "license": "BSD-2-Clause",
+      "engines": {
+        "node": ">=12"
+      }
+    },
+    "node_modules/whatwg-url": {
+      "version": "14.2.0",
+      "resolved": "https://registry.npmjs.org/whatwg-url/-/whatwg-url-14.2.0.tgz",
+      "integrity": "sha512-De72GdQZzNTUBBChsXueQUnPKDkg/5A5zp7pFDuQAj5UFoENpiACU0wlCvzpAGnTkj++ihpKwKyYewn/XNUbKw==",
+      "license": "MIT",
+      "dependencies": {
+        "tr46": "^5.1.0",
+        "webidl-conversions": "^7.0.0"
+      },
+      "engines": {
+        "node": ">=18"
+      }
+    }
+  }
+}
+
+
+---------------------------------------------------------------------------------------------------------------------------------------
+
+C:\develop\UNILA-AQI\unila-iot-simulator\package.json
+
+{
+  "name": "unila-aqi-iot-simulator-simple",
+  "version": "1.0.0",
+  "description": "Simple IoT Simulator for UNILA AQI - No Dependencies Required",
+  "main": "iot-simulator-server-simple.js",
+  "scripts": {
+    "start": "node iot-simulator-server-simple.js",
+    "dev": "node iot-simulator-server-simple.js"
+  },
+  "keywords": ["iot", "aqi", "unila", "sensor", "simulator"],
+  "author": "UNILA AQI Team",
+  "license": "MIT"
+}

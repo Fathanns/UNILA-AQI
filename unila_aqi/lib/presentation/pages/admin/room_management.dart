@@ -30,6 +30,9 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
 
   static const String _cacheKey = 'cache_rooms';
 
+  // FIXED: auto-refresh 1 menit (sebelumnya live socket tiap 10 detik)
+  static const Duration _autoRefreshInterval = Duration(minutes: 1);
+
   List<Room> _rooms = [];
   List<Room> _filteredRooms = [];
   List<Building> _buildings = [];
@@ -40,31 +43,45 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
   String _errorMessage = '';
 
   Timer? _reloadDebounce;
+  Timer? _autoRefreshTimer;
 
   List<String> get _availableBuildings {
-  final set = <String>{'Semua Gedung'};
-  for (final b in _buildings) {
-    final name = b.name.trim();
-    if (name.isNotEmpty) set.add(name);
+    final set = <String>{'Semua Gedung'};
+    for (final b in _buildings) {
+      final name = b.name.trim();
+      if (name.isNotEmpty) set.add(name);
+    }
+    for (final r in _rooms) {
+      final name = r.buildingName.trim();
+      if (name.isNotEmpty) set.add(name);
+    }
+    if (set.length <= 1) return set.toList();
+    final rest = set.toList().sublist(1)..sort();
+    return ['Semua Gedung', ...rest];
   }
-  for (final r in _rooms) {
-    final name = r.buildingName.trim();
-    if (name.isNotEmpty) set.add(name);
-  }
-  if (set.length <= 1) return set.toList();
-  final rest = set.toList().sublist(1)..sort();
-  return ['Semua Gedung', ...rest];
-}
 
   @override
   void initState() {
     super.initState();
     _loadCacheThenFetch();
     _setupSocketListeners();
+    _startAutoRefreshTimer();
   }
 
   // ============================================================
-  // SOCKET LISTENERS — auto-update saat data berubah
+  // AUTO-REFRESH 1 MENIT
+  // ============================================================
+  void _startAutoRefreshTimer() {
+    _autoRefreshTimer?.cancel();
+    _autoRefreshTimer = Timer.periodic(_autoRefreshInterval, (_) async {
+      if (_isRefreshing || !mounted) return;
+      print('🔄 Room management auto-refresh (1 minute): fetching fresh data...');
+      await _loadData();
+    });
+  }
+
+  // ============================================================
+  // SOCKET LISTENERS — hanya event STRUKTURAL
   // ============================================================
   Map<String, dynamic>? _asMap(dynamic data) {
     if (data == null) return null;
@@ -80,51 +97,18 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
   }
 
   void _setupSocketListeners() {
-    // Pastikan socket terkoneksi. Kalau belum (mis. user buka halaman ini
-    // pertama kali tanpa lewat Dashboard), coba connect.
+    // Pastikan socket terkoneksi.
     if (!_socketService.isConnected && !_socketService.isConnecting) {
       _socketService.connect();
     }
 
-    _socketService.on('dashboard-update', _handleDashboardUpdate);
+    // FIXED: 'dashboard-update' (data AQI tiap 10s) TIDAK di-listen lagi.
+    // Data di-refresh via _autoRefreshTimer (60 detik) atau tombol manual.
+    // Hanya event struktural yang di-handle secara instan:
     _socketService.on('dashboard-room-updated', _handleDashboardRoomUpdated);
     _socketService.on('room-deleted', _handleRoomDeleted);
     _socketService.on('room-name-changed', _handleRoomNameChanged);
     _socketService.on('room-building-changed', _handleRoomBuildingChanged);
-  }
-
-  void _handleDashboardUpdate(dynamic data) {
-    if (!mounted) return;
-    final map = _asMap(data);
-    if (map == null) return;
-    if (map['type'] != 'room-data-updated') return;
-
-    // 1) Update AQI di memori secara instan supaya UI terasa real-time.
-    final roomId = map['roomId']?.toString();
-    final aqi = (map['aqi'] as num?)?.toInt();
-    if (roomId != null && aqi != null) {
-      final idx = _rooms.indexWhere((r) => r.id == roomId);
-      if (idx != -1 && _rooms[idx].currentAQI != aqi) {
-        final old = _rooms[idx];
-        _rooms[idx] = Room(
-          id: old.id,
-          name: old.name,
-          buildingId: old.buildingId,
-          buildingName: old.buildingName,
-          dataSource: old.dataSource,
-          iotDeviceId: old.iotDeviceId,
-          currentAQI: aqi,
-          currentData: old.currentData,
-          createdAt: old.createdAt,
-          updatedAt: DateTime.now(),
-        );
-        _filterRooms(); // setState → rebuild UI dgn AQI terbaru
-      }
-    }
-
-    // 2) Reload lengkap (debounced) supaya currentData terbaru
-    //    (PM2.5, PM10, CO2, suhu, kelembaban) juga ikut ter-update.
-    _scheduleReload();
   }
 
   void _handleDashboardRoomUpdated(dynamic data) {
@@ -164,11 +148,11 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
   @override
   void dispose() {
     _reloadDebounce?.cancel();
-    _socketService.off('dashboard-update', _handleDashboardUpdate);
-    _socketService.off('dashboard-room-updated', _handleDashboardRoomUpdated);
-    _socketService.off('room-deleted', _handleRoomDeleted);
-    _socketService.off('room-name-changed', _handleRoomNameChanged);
-    _socketService.off('room-building-changed', _handleRoomBuildingChanged);
+    _autoRefreshTimer?.cancel();
+    _socketService.off('dashboard-room-updated');
+    _socketService.off('room-deleted');
+    _socketService.off('room-name-changed');
+    _socketService.off('room-building-changed');
     _searchController.dispose();
     super.dispose();
   }
@@ -177,55 +161,44 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
   // LOAD DATA
   // ============================================================
   Future<void> _loadCacheThenFetch() async {
-  Map<String, dynamic>? cached;
-  try {
-    cached = _storage.getJson(_cacheKey);
-  } catch (_) {
-    cached = null;
-  }
-
-  // 1) Hidrasi _rooms dari cache (perilaku lama)
-  if (cached != null && cached['data'] is List) {
+    Map<String, dynamic>? cached;
     try {
-      final list = (cached['data'] as List)
-          .map((e) => Room.fromJson(Map<String, dynamic>.from(e as Map)))
-          .toList();
-      if (mounted) {
-        setState(() {
-          _rooms = list;
-        });
-      }
+      cached = _storage.getJson(_cacheKey);
     } catch (_) {
-      // cache rusak — abaikan
+      cached = null;
     }
-  }
 
-  // 2) Hidrasi _buildings dari cache (BARU)
-  //    Supaya dropdown filter gedung langsung terisi saat cold-start,
-  //    tanpa menunggu _loadData() selesai.
-  if (cached != null && cached['buildings'] is List) {
-    try {
-      final bList = (cached['buildings'] as List)
-          .map((e) =>
-              Building.fromJson(Map<String, dynamic>.from(e as Map)))
-          .toList();
-      if (mounted) {
-        setState(() {
-          _buildings = bList;
-        });
-      }
-    } catch (_) {
-      // cache rusak — abaikan
+    if (cached != null && cached['data'] is List) {
+      try {
+        final list = (cached['data'] as List)
+            .map((e) => Room.fromJson(Map<String, dynamic>.from(e as Map)))
+            .toList();
+        if (mounted) {
+          setState(() {
+            _rooms = list;
+          });
+        }
+      } catch (_) {}
     }
+
+    if (cached != null && cached['buildings'] is List) {
+      try {
+        final bList = (cached['buildings'] as List)
+            .map((e) =>
+                Building.fromJson(Map<String, dynamic>.from(e as Map)))
+            .toList();
+        if (mounted) {
+          setState(() {
+            _buildings = bList;
+          });
+        }
+      } catch (_) {}
+    }
+
+    _filterRooms();
+
+    await _loadData();
   }
-
-  // 3) Terapkan filter setelah data cache masuk
-  //    (juga memvalidasi _selectedBuildingFilter terhadap _availableBuildings)
-  _filterRooms();
-
-  // 4) Fetch data terbaru dari server
-  await _loadData();
-}
 
   Future<void> _loadData() async {
     setState(() {
@@ -284,8 +257,6 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
   /// Refresh button handler:
   /// 1) Picu health-check indikator server.
   /// 2) Minta backend poll device/simulasi SEKARANG (force-refresh).
-  ///    Ini yang membuat nilai AQI langsung berubah tanpa menunggu
-  ///    siklus cron 60 detik / 10 detik.
   /// 3) Reload data dari server.
   Future<void> _handleManualRefresh() async {
     if (_isRefreshing) return;
@@ -297,7 +268,7 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
       try {
         await _apiService.forceRefresh();
       } catch (_) {
-        // best-effort: kalau token expired / server sibuk, abaikan
+        // best-effort
       }
 
       await _loadData();
@@ -307,34 +278,33 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
   }
 
   void _filterRooms() {
-  // Pastikan filter yang tersimpan masih valid; kalau tidak, reset.
-  if (!_availableBuildings.contains(_selectedBuildingFilter)) {
-    _selectedBuildingFilter = 'Semua Gedung';
-  }
+    if (!_availableBuildings.contains(_selectedBuildingFilter)) {
+      _selectedBuildingFilter = 'Semua Gedung';
+    }
 
-  List<Room> filtered = _rooms;
+    List<Room> filtered = _rooms;
 
-  if (_selectedBuildingFilter != 'Semua Gedung') {
-    filtered = filtered
-        .where((room) => room.buildingName == _selectedBuildingFilter)
-        .toList();
-  }
+    if (_selectedBuildingFilter != 'Semua Gedung') {
+      filtered = filtered
+          .where((room) => room.buildingName == _selectedBuildingFilter)
+          .toList();
+    }
 
-  if (_searchController.text.isNotEmpty) {
-    final query = _searchController.text.toLowerCase();
-    filtered = filtered
-        .where((room) =>
-            room.name.toLowerCase().contains(query) ||
-            room.buildingName.toLowerCase().contains(query))
-        .toList();
-  }
+    if (_searchController.text.isNotEmpty) {
+      final query = _searchController.text.toLowerCase();
+      filtered = filtered
+          .where((room) =>
+              room.name.toLowerCase().contains(query) ||
+              room.buildingName.toLowerCase().contains(query))
+          .toList();
+    }
 
-  if (mounted) {
-    setState(() => _filteredRooms = filtered);
-  } else {
-    _filteredRooms = filtered;
+    if (mounted) {
+      setState(() => _filteredRooms = filtered);
+    } else {
+      _filteredRooms = filtered;
+    }
   }
-}
 
   Future<void> _deleteRoom(String roomId) async {
     final confirmed = await showDialog<bool>(
@@ -728,7 +698,7 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
 }
 
 // ============================================================
-// ADD / EDIT ROOM SCREEN
+// ADD / EDIT ROOM SCREEN (tidak berubah)
 // ============================================================
 class AddEditRoomScreen extends StatefulWidget {
   final Room? room;
@@ -817,7 +787,6 @@ class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
 
     try {
       if (widget.isEditing) {
-        // Deteksi apakah device / data source berubah
         final dataSourceChanged =
             _selectedDataSource != (widget.room?.dataSource ?? 'simulation');
         final deviceChanged =
@@ -834,8 +803,6 @@ class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
 
         if (!mounted) return;
 
-        // Reload DULU sebelum pop supaya data fresh dari server
-        // — backend sudah force-fetch partikel device baru pada PUT.
         widget.onRoomSaved();
 
         final String message;
@@ -966,7 +933,7 @@ class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
                       },
                     ),
                     title: const Text('Simulasi'),
-                    subtitle: const Text('Data acak setiap 1 menit'),
+                    subtitle: const Text('Data acak setiap 10 detik'),
                     dense: true,
                   ),
                   ListTile(

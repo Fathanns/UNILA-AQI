@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:unila_aqi/core/constants/colors.dart';
 import 'package:unila_aqi/core/services/socket_service.dart';
@@ -23,9 +24,13 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
   final SocketService _socketService = SocketService();
   final RoomRepository _roomRepository = RoomRepository();
 
+  // FIXED: auto-refresh 1 menit (sebelumnya live socket tiap 10 detik)
+  static const Duration _autoRefreshInterval = Duration(minutes: 1);
+
   bool _isRefreshing = false;
   bool _isMounted = false;
   late Room _currentRoomData;
+  Timer? _autoRefreshTimer;
 
   @override
   void initState() {
@@ -39,6 +44,7 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
       _setupBuildingUpdateListener();
       _setupRoomNameUpdateListener();
       _ensureSocketConnected();
+      _startAutoRefreshTimer();
     });
   }
 
@@ -54,6 +60,16 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
       }
     }
     return null;
+  }
+
+  // FIXED: auto-refresh 60 detik — fetch ulang dari API.
+  void _startAutoRefreshTimer() {
+    _autoRefreshTimer?.cancel();
+    _autoRefreshTimer = Timer.periodic(_autoRefreshInterval, (_) async {
+      if (_isRefreshing || !_isMounted) return;
+      print('🔄 Room detail auto-refresh (1 minute): fetching fresh data...');
+      await _refreshData();
+    });
   }
 
   void _ensureSocketConnected() {
@@ -76,7 +92,7 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
     }
   }
 
-  // FIXED: guard data + nested access (data['room'] bisa null).
+  // FIXED: guard data + nested access.
   void _setupRoomNameUpdateListener() {
     _socketService.on('room-name-updated', (data) {
       if (!_isMounted) return;
@@ -182,17 +198,10 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
     _socketService.joinRoom(widget.room.id);
   }
 
-  // FIXED: guard data sebelum dispatch.
+  // FIXED: hanya listen 'notification' dari socket.
+  // 'room-update' (data tiap 10 detik) TIDAK di-listen lagi —
+  // data di-refresh via _autoRefreshTimer (60 detik) atau tombol refresh.
   void _setupRealtimeListener() {
-    _socketService.on('room-update', (data) {
-      if (!_isMounted) return;
-      final map = _asMap(data);
-      if (map == null) return;
-      if (map['roomId'] != widget.room.id) return;
-
-      _handleRoomUpdate(map);
-    });
-
     _socketService.on('notification', (data) {
       if (!_isMounted) return;
       final map = _asMap(data);
@@ -203,60 +212,6 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
         map['type']?.toString() ?? 'info',
       );
     });
-  }
-
-  // FIXED: defensive null checks pada nested field currentData.
-  void _handleRoomUpdate(dynamic data) {
-    try {
-      final map = _asMap(data);
-      if (map == null) return;
-
-      final roomData = map['data'];
-      if (roomData is! Map) return;
-      final roomMap = Map<String, dynamic>.from(roomData);
-
-      final currentData = roomMap['currentData'];
-      if (currentData is! Map) return;
-      final cdMap = Map<String, dynamic>.from(currentData);
-
-      final oldName = _currentRoomData.name;
-      final newName = roomMap['name']?.toString() ?? _currentRoomData.name;
-      final nameChanged = oldName != newName;
-
-      setState(() {
-        _currentRoomData = Room(
-          id: _currentRoomData.id,
-          name: newName,
-          buildingId: _currentRoomData.buildingId,
-          buildingName: _currentRoomData.buildingName,
-          dataSource: _currentRoomData.dataSource,
-          iotDeviceId: _currentRoomData.iotDeviceId,
-          currentAQI: (roomMap['currentAQI'] as num?)?.toInt() ??
-              _currentRoomData.currentAQI,
-          currentData: RoomData(
-            pm25: (cdMap['pm25'] as num?)?.toDouble() ?? 0,
-            pm10: (cdMap['pm10'] as num?)?.toDouble() ?? 0,
-            co2: (cdMap['co2'] as num?)?.toDouble() ?? 0,
-            temperature: (cdMap['temperature'] as num?)?.toDouble() ?? 0,
-            humidity: (cdMap['humidity'] as num?)?.toDouble() ?? 0,
-            updatedAt: cdMap['updatedAt'] != null
-                ? DateTime.parse(cdMap['updatedAt'].toString())
-                : DateTime.now(),
-          ),
-          createdAt: _currentRoomData.createdAt,
-          updatedAt: roomMap['updatedAt'] != null
-              ? DateTime.parse(roomMap['updatedAt'].toString())
-              : DateTime.now(),
-        );
-      });
-
-      if (nameChanged) {
-        _showNotification(
-            'Nama ruangan diperbarui: $oldName -> $newName', 'info');
-      }
-    } catch (e) {
-      print('❌ Error handling room update: $e');
-    }
   }
 
   void _showNotification(String message, String type) {
@@ -309,7 +264,7 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
     );
   }
 
-  /// Fetch data terbaru dari server.
+  /// Fetch data terbaru dari server — dipakai manual refresh & auto-refresh.
   Future<void> _refreshData() async {
     if (!_isMounted) return;
 
@@ -342,7 +297,7 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
   }
 
   // ------------------------------------------------------------
-  // UI BUILDING METHODS
+  // UI BUILDING METHODS (tidak berubah)
   // ------------------------------------------------------------
 
   Widget _buildAQICard() {
@@ -954,10 +909,10 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
   @override
   void dispose() {
     _isMounted = false;
+    _autoRefreshTimer?.cancel();
 
     _socketService.leaveRoom(widget.room.id);
 
-    _socketService.off('room-update');
     _socketService.off('notification');
     _socketService.off('room-building-updated');
     _socketService.off('room-name-updated');
