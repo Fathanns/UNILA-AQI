@@ -11,7 +11,6 @@ class IoTService {
     this.task = null;
     this.io = null;
     this.deviceLastData = new Map();
-    // FIXED: polling interval 10 detik (sudah benar dari awal)
     this.pollingInterval = 10000;
   }
 
@@ -30,8 +29,6 @@ class IoTService {
 
     this.isRunning = true;
     console.log('✅ IoT Service started');
-
-    // Poll pertama kali langsung
     this.pollAllIoTDevices();
   }
 
@@ -63,7 +60,10 @@ class IoTService {
 
       const results = await Promise.allSettled(pollPromises);
 
-      const successfulPolls = results.filter(r => r.status === 'fulfilled' && r.value && r.value.success).length;
+      const successfulPolls = results.filter(
+        r => r.status === 'fulfilled' && r.value && r.value.success
+      ).length;
+
       console.log(`✅ IoT polling completed: ${successfulPolls}/${devices.length} successful`);
       console.log(`✅ Updated at ${new Date().toLocaleTimeString()}`);
     } catch (error) {
@@ -83,7 +83,6 @@ class IoTService {
           throw new Error('Invalid IoT data structure');
         }
 
-        // FIXED: threshold = 0, jadi practically selalu update
         const lastData = this.deviceLastData.get(device._id.toString());
         const hasChanged = this._hasDataChanged(lastData, iotData);
 
@@ -93,8 +92,6 @@ class IoTService {
         device.lastUpdate = new Date();
         await device.save();
 
-        // FIXED: dengan threshold 0, hasChanged hampir selalu true
-        // → setiap poll 10s akan update room & broadcast
         if (hasChanged || !lastData) {
           console.log(`🔄 Data changed for device ${device.name}, broadcasting...`);
 
@@ -132,21 +129,11 @@ class IoTService {
            typeof data.humidity === 'number';
   }
 
-  /**
-   * FIXED: threshold = 0 untuk semua parameter.
-   * Dengan IoT simulator update tiap 10s, dan threshold 0,
-   * practically setiap poll akan mendeteksi perubahan → always update.
-   */
   _hasDataChanged(oldData, newData) {
     if (!oldData || !newData) return true;
 
     const thresholds = {
-      aqi: 0,
-      pm25: 0,
-      pm10: 0,
-      co2: 0,
-      temperature: 0,
-      humidity: 0
+      aqi: 0, pm25: 0, pm10: 0, co2: 0, temperature: 0, humidity: 0
     };
 
     return (
@@ -161,7 +148,18 @@ class IoTService {
 
   async updateRoomFromIoT(room, iotData, deviceName) {
     try {
-      // ✅ Hitung ulang AQI pakai ISPU: MAX(ISPU_PM25, ISPU_PM10)
+      // FIXED: skip room demoMode — jangan timpa nilai demo
+      if (room.demoMode) {
+        console.log(`ℹ️ Skipping room ${room.name} (demoMode active)`);
+        return;
+      }
+
+      // FIXED: deteksi device error (nilai negatif) SEBELUM kalkulasi AQI
+      if (iotData.aqi < 0 || iotData.pm25 < 0 || iotData.pm10 < 0) {
+        await this.handleDeviceError(room, deviceName);
+        return;
+      }
+
       const aqiResult = calculateAQI(iotData.pm25, iotData.pm10);
 
       const normalizedData = {
@@ -176,7 +174,6 @@ class IoTService {
       };
 
       const currentData = room.currentData;
-      // FIXED: threshold 0 → any change triggers update
       const hasRoomDataChanged = this._hasDataChanged(
         {
           aqi: room.currentAQI,
@@ -223,9 +220,16 @@ class IoTService {
 
       this.broadcastRoomUpdate(room, normalizedData, 'iot', deviceName);
 
-      console.log(
-        `✅ IoT room ${room.name}: AQI ${normalizedData.aqi} (${aqiResult.dominant.toUpperCase()}), PM2.5=${normalizedData.pm25}, PM10=${normalizedData.pm10}`
-      );
+      // Log extra untuk kategori tinggi
+      if (aqiResult.aqi > 100) {
+        console.log(
+          `🚨 HIGH AQI in ${room.name} (IoT ${deviceName}): ${aqiResult.aqi} (${aqiResult.category})`
+        );
+      } else {
+        console.log(
+          `✅ IoT room ${room.name}: AQI ${normalizedData.aqi} (${aqiResult.dominant.toUpperCase()}), PM2.5=${normalizedData.pm25}, PM10=${normalizedData.pm10}`
+        );
+      }
     } catch (error) {
       console.error(`❌ Error updating IoT room ${room.name}:`, error.message);
     }
@@ -233,7 +237,17 @@ class IoTService {
 
   async updateRoomFromIoTForce(room, iotData, deviceName) {
     try {
-      // ✅ Recalculate AQI via ISPU
+      if (room.demoMode) {
+        console.log(`ℹ️ Skipping force update ${room.name} (demoMode active)`);
+        return;
+      }
+
+      // FIXED: handle error juga di force path
+      if (iotData.aqi < 0 || iotData.pm25 < 0 || iotData.pm10 < 0) {
+        await this.handleDeviceError(room, deviceName);
+        return;
+      }
+
       const aqiResult = calculateAQI(iotData.pm25, iotData.pm10);
 
       room.currentAQI = aqiResult.aqi;
@@ -273,6 +287,45 @@ class IoTService {
     }
   }
 
+  /**
+   * FIXED: handle device error (aqi=-1, pm<0).
+   * Strategi SAMA dengan simulationService:
+   *  - Catat ke SensorData (untuk history)
+   *  - JANGAN overwrite room.currentAQI/currentData
+   *  - Broadcast notification ke dashboard
+   */
+  async handleDeviceError(room, deviceName) {
+    try {
+      await new SensorData({
+        roomId: room._id,
+        roomName: room.name,
+        buildingName: room.buildingName,
+        aqi: -1,
+        pm25: -1,
+        pm10: -1,
+        co2: -1,
+        temperature: -1,
+        humidity: -1,
+        category: 'error',
+        timestamp: new Date(),
+      }).save();
+
+      if (this.io) {
+        this.io.to(room._id.toString()).emit('notification', {
+          type: 'error',
+          message: `Device "${deviceName}" pada ${room.name} melaporkan error. Room tetap menampilkan nilai valid terakhir.`,
+          timestamp: new Date(),
+        });
+      }
+
+      console.log(
+        `⚠️ IoT SENSOR ERROR in ${room.name} (device: ${deviceName}) — room retained last good value`
+      );
+    } catch (err) {
+      console.error(`❌ Error handling device error for ${room.name}:`, err.message);
+    }
+  }
+
   async forceUpdateRoom(roomId) {
     try {
       const room = await Room.findById(roomId);
@@ -296,15 +349,12 @@ class IoTService {
         return { success: false, message: 'Invalid IoT data structure' };
       }
 
-      // Update device metadata
       device.status = 'online';
       device.lastUpdate = new Date();
       await device.save();
 
-      // Sinkronkan cache
       this.deviceLastData.set(device._id.toString(), iotData);
 
-      // FORCE update room
       await this.updateRoomFromIoTForce(room, iotData, device.name);
 
       return { success: true, data: iotData, deviceName: device.name };
@@ -327,7 +377,6 @@ class IoTService {
         return { success: false, message: 'Invalid IoT data' };
       }
 
-      // Update cache
       this.deviceLastData.set(device._id.toString(), iotData);
 
       device.status = 'online';
@@ -416,5 +465,4 @@ class IoTService {
 }
 
 const iotService = new IoTService();
-
 module.exports = iotService;

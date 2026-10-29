@@ -1,3 +1,18 @@
+*QUESTIONABLE*
+
+- bagaimana nantinya kita dapat melihat hasil tampilan pada aplikasi di semua kemungkinan data yang dapat dimunculkan
+- bagaimana cara saya menentukan nilai partikel pada rentang waktu, dan mengapa saya memilih rentang waktu tersebut. apakah harus ada metode yang menentukan hal tersebut
+
+*SUGGESTION*
+
+- tambah rumus perhitungan aqi di laporan
+
+*FITUR*
+
+- perbaiki halmaman bantuan, perbaiki jadi lebih bagus
+
+======================================================================================================================
+
 perbaikan
 
 error
@@ -94,8 +109,7 @@ tambahan feature:
 
 *FITUR*
 
-- perlengkap ambang batas tiap partikel, perbaiki jadi lebih bagus
-- perbaiki ambang batas simuasi pada siang dan malam
+- ~~perbaiki ambang batas simuasi pada siang dan malam~~
 - ~~tambah halaman yang dapat mengetahui aktif atau tidak nya server atau alat iot yang ada~~
 - ~~hilangkan drawer di kanan atas pada dashboard~~
 

@@ -1,9 +1,5 @@
 const { calculateAQI } = require('./aqiCalculator');
 
-/**
- * Rentang nilai per slot waktu (sesuai tabel rentang waktu).
- * Unit: µg/m³ untuk PM, ppm untuk CO₂, °C untuk suhu, % untuk RH.
- */
 const TIME_RANGES = {
   '06-08': {
     pm25:        { min: 8,  max: 20, mean: 14  },
@@ -58,10 +54,6 @@ function getTimeSlot(hour) {
   return '20-06';
 }
 
-/**
- * Triangular distribution: puncak di `mean`, dibatasi [min, max].
- * Menghasilkan data lebih natural daripada uniform.
- */
 function randomInRange(min, max, mean) {
   const mode = Math.max(min, Math.min(max, mean ?? (min + max) / 2));
   const u = Math.random();
@@ -74,10 +66,7 @@ function randomInRange(min, max, mean) {
 }
 
 /**
- * Generate data sensor berdasarkan slot waktu saat ini.
- * AQI dihitung via ISPU: MAX(ISPU_PM25, ISPU_PM10).
- *
- * @param {string} roomType - opsional (diabaikan; kompatibilitas dgn caller lama)
+ * Generate data sensor normal berdasarkan slot waktu saat ini.
  */
 const generateSensorData = (roomType = 'normal') => {
   const now = new Date();
@@ -100,23 +89,45 @@ const generateSensorData = (roomType = 'normal') => {
     humidity: Math.round(humidity),
     aqi: aqiResult.aqi,
     category: aqiResult.category,
-    dominant: aqiResult.dominant,     // 'pm25' | 'pm10'
+    dominant: aqiResult.dominant,
     ispuPM25: aqiResult.ispuPM25,
     ispuPM10: aqiResult.ispuPM10,
     timeSlot: slot,
     timestamp: now,
+    isAnomaly: false,
+    anomalyType: null,
   };
 };
 
 /**
- * Simulasi anomali (dipakai opsional). AQI juga dihitung via ISPU.
+ * FIXED: simulateAnomaly dengan multiplier dinaikkan drastis.
+ *
+ * Distribusi:
+ *   - 92% normal → data dari generateSensorData
+ *   -  5% spike  → multiplier 8-17x lipat → AQI 100-500 (SEMUA kategori)
+ *        ├─ 60% dalam 8-10x  → AQI ~100-200 (Tidak Sehat)
+ *        ├─ 30% dalam 10-13x → AQI ~200-300 (Sangat Tidak Sehat)
+ *        └─ 10% dalam 13-17x → AQI ~300-500 (Berbahaya)
+ *   -  3% error  → aqi=-1 (sensor mati), ditangani terpisah oleh service
  */
 const simulateAnomaly = (normalData) => {
   const roll = Math.random();
 
+  // ── 5% SPIKE ──
   if (roll < 0.05) {
-    const pm25 = normalData.pm25 * (3 + Math.random() * 2);
-    const pm10 = normalData.pm10 * (3 + Math.random() * 2);
+    const subRoll = Math.random();
+    let multiplier;
+
+    if (subRoll < 0.60) {
+      multiplier = 8 + Math.random() * 2;       // 8-10x → Tidak Sehat
+    } else if (subRoll < 0.90) {
+      multiplier = 10 + Math.random() * 3;      // 10-13x → Sangat Tidak Sehat
+    } else {
+      multiplier = 13 + Math.random() * 4;      // 13-17x → Berbahaya
+    }
+
+    const pm25 = normalData.pm25 * multiplier;
+    const pm10 = normalData.pm10 * multiplier;
     const aqiResult = calculateAQI(pm25, pm10);
 
     return {
@@ -129,20 +140,28 @@ const simulateAnomaly = (normalData) => {
       dominant: aqiResult.dominant,
       ispuPM25: aqiResult.ispuPM25,
       ispuPM10: aqiResult.ispuPM10,
+      isAnomaly: true,
+      anomalyType: 'spike',
     };
   }
 
+  // ── 3% SENSOR ERROR ──
   if (roll < 0.08) {
     return {
       ...normalData,
       pm25: -1,
       pm10: -1,
       co2: -1,
+      temperature: -1,
+      humidity: -1,
       aqi: -1,
       category: 'error',
+      isAnomaly: true,
+      anomalyType: 'error',
     };
   }
 
+  // ── 92% NORMAL ──
   return normalData;
 };
 

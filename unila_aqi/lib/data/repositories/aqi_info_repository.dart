@@ -1,5 +1,4 @@
-import 'dart:ui';
-
+import 'package:unila_aqi/core/constants/colors.dart';
 import 'package:unila_aqi/data/models/aqi_info.dart';
 
 class AQIInfoRepository {
@@ -26,7 +25,7 @@ class AQIInfoRepository {
         unit: 'μg/m³',
         impact: 'Gangguan pernafasan, penyakit jantung, kanker paru-paru',
         source: 'Asap kendaraan, industri, kebakaran hutan, pembakaran sampah',
-        safeRange: '0 - 12 μg/m³',
+        safeRange: '0 - 55 μg/m³ (ISPU ≤ 50)',
         icon: '🏗️',
       ),
       AQIParameter(
@@ -37,7 +36,7 @@ class AQIInfoRepository {
         unit: 'μg/m³',
         impact: 'Iritasi mata, hidung, tenggorokan, dan paru-paru',
         source: 'Debu jalanan, konstruksi, industri, serbuk sari',
-        safeRange: '0 - 54 μg/m³',
+        safeRange: '0 - 50 μg/m³ (ISPU ≤ 50)',
         icon: '🏗️',
       ),
       AQIParameter(
@@ -76,12 +75,17 @@ class AQIInfoRepository {
     ];
   }
 
+  // ============================================================
+  // Kategori AQI — PP 22/2021
+  // Warna diambil dari AppColors (single source of truth).
+  // Range diselaraskan dengan backend aqiCalculator.js.
+  // ============================================================
   List<AQICategory> _getCategories() {
     return [
       AQICategory(
         name: 'Baik',
         description: 'Kualitas udara sangat baik, tidak ada risiko kesehatan',
-        color: Color(0xFF00E400),
+        color: AppColors.aqiGood,
         min: 0,
         max: 50,
         healthEffect: 'Kualitas udara dianggap memuaskan, dan polusi udara menimbulkan sedikit atau tidak ada risiko',
@@ -90,7 +94,7 @@ class AQIInfoRepository {
       AQICategory(
         name: 'Sedang',
         description: 'Kualitas udara dapat diterima, risiko kecil untuk sebagian orang sensitif',
-        color: Color(0xFFFFFF00),
+        color: AppColors.aqiModerate,
         min: 51,
         max: 100,
         healthEffect: 'Orang dengan kondisi pernafasan mungkin merasakan efek ringan',
@@ -99,27 +103,27 @@ class AQIInfoRepository {
       AQICategory(
         name: 'Tidak Sehat',
         description: 'Setiap orang mungkin mulai mengalami efek kesehatan',
-        color: Color(0xFFFF7E00),
+        color: AppColors.aqiUnhealthySensitive,
         min: 101,
-        max: 150,
+        max: 200,
         healthEffect: 'Anggota kelompok sensitif mungkin mengalami efek kesehatan yang lebih serius',
         recommendation: 'Hindari aktivitas di luar ruangan yang terlalu lama',
       ),
       AQICategory(
         name: 'Sangat Tidak Sehat',
         description: 'Peringatan kesehatan darurat, seluruh populasi terpengaruh',
-        color: Color(0xFFFF0000),
-        min: 151,
-        max: 200,
+        color: AppColors.aqiUnhealthy,
+        min: 201,
+        max: 300,
         healthEffect: 'Setiap orang mungkin mengalami efek kesehatan yang lebih serius',
         recommendation: 'Hindari semua aktivitas di luar ruangan',
       ),
       AQICategory(
         name: 'Berbahaya',
         description: 'Kondisi darurat kesehatan, seluruh populasi akan terpengaruh',
-        color: Color(0xFF8F3F97),
-        min: 201,
-        max: 300,
+        color: AppColors.aqiHazardous,
+        min: 301,
+        max: 500,
         healthEffect: 'Peringatan kesehatan darurat, efek kesehatan pada seluruh populasi',
         recommendation: 'Tetap di dalam ruangan dengan ventilasi yang baik',
       ),

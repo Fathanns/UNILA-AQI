@@ -7,15 +7,12 @@ import '../constants/app_constants.dart';
 
 class Helpers {
 
+  // ============================================================
+  // ERROR / NETWORK HELPERS
+  // ============================================================
   // FIXED: hapus substring generic 'failed to fetch' dari daftar pencocokan
-  // karena bertabrakan dengan pesan error kita sendiri di repository
-  // (mis. 'Failed to fetch history data: 401'). Sebelumnya ini menyebabkan
-  // HTTP 401 (unauthenticated) terdeteksi sebagai network error, sehingga
-  // snackbar "server mati" muncul padahal server hidup.
-  //
-  // Sekarang:
-  //  - 'clientexception' / 'socketexception' → tetap menangkap error jaringan asli
-  //  - 'typeerror: failed to fetch'          → tetap menangkap error Fetch API browser asli
+  // karena bertabrakan dengan pesan error kita sendiri di repository.
+  // Dipertahankan dari versi sebelumnya — JANGAN diubah.
   static bool isNetworkError(dynamic error) {
     final s = (error?.toString() ?? '').toLowerCase();
     return s.contains('socketexception') ||
@@ -43,7 +40,6 @@ class Helpers {
     );
   }
 
-  /// Pesan ramah untuk ditampilkan di halaman error.
   static String friendlyErrorMessage(dynamic error) {
     if (isNetworkError(error)) {
       return 'Tidak dapat terhubung ke server.\nPeriksa koneksi internet Anda atau coba beberapa saat lagi.';
@@ -72,16 +68,25 @@ class Helpers {
     return msg;
   }
 
-  // AQI Helpers
+  // ============================================================
+  // AQI HELPERS — PP 22/2021
+  // Menggunakan warna dari AppColors (single source of truth).
+  // ============================================================
+
+  /// Mendeteksi AQI error (sensor rusak/offline).
+  static bool isErrorAQI(int aqi) => aqi < 0;
+
   static Color getAQIColor(int aqi) {
-    if (aqi <= 50) return AppColors.aqiGood; // hijau
-    if (aqi <= 100) return AppColors.aqiModerate; // orange untuk sedang
-    if (aqi <= 200) return AppColors.aqiUnhealthySensitive; // merah
-    if (aqi <= 300) return AppColors.aqiUnhealthy; // purple
-    return AppColors.aqiHazardous; // hitam
+    if (aqi < 0) return AppColors.aqiError;
+    if (aqi <= 50) return AppColors.aqiGood;
+    if (aqi <= 100) return AppColors.aqiModerate;
+    if (aqi <= 200) return AppColors.aqiUnhealthySensitive;
+    if (aqi <= 300) return AppColors.aqiUnhealthy;
+    return AppColors.aqiHazardous;
   }
 
   static String getAQILabel(int aqi) {
+    if (aqi < 0) return 'ERROR';
     if (aqi <= 50) return 'BAIK';
     if (aqi <= 100) return 'SEDANG';
     if (aqi <= 200) return 'TIDAK SEHAT';
@@ -90,6 +95,9 @@ class Helpers {
   }
 
   static String getAQIHealthMessage(int aqi) {
+    if (aqi < 0) {
+      return 'Sensor ruangan melaporkan error. Nilai AQI yang ditampilkan adalah nilai valid terakhir.';
+    }
     if (aqi <= 50) return AppConstants.healthRecommendations['good']!;
     if (aqi <= 100) return AppConstants.healthRecommendations['moderate']!;
     if (aqi <= 200) return AppConstants.healthRecommendations['unhealthy']!;
@@ -97,8 +105,21 @@ class Helpers {
     return AppConstants.healthRecommendations['dangerous']!;
   }
 
-  // Parameter Status Helpers
+  static String getAQICategory(int aqi) {
+    if (aqi < 0) return 'error';
+    if (aqi <= 50) return 'baik';
+    if (aqi <= 100) return 'sedang';
+    if (aqi <= 200) return 'tidak_sehat';
+    if (aqi <= 300) return 'sangat_tidak_sehat';
+    return 'berbahaya';
+  }
+
+  // ============================================================
+  // PM2.5 — threshold concentration per PP 22/2021
+  //   0-55 / 56-150 / 151-250 / 251-350 / >350
+  // ============================================================
   static String getPM25Status(double value) {
+    if (value < 0) return 'ERROR';
     if (value <= 55) return 'BAIK';
     if (value <= 150) return 'SEDANG';
     if (value <= 250) return 'TIDAK SEHAT';
@@ -107,58 +128,81 @@ class Helpers {
   }
 
   static Color getPM25Color(double value) {
-    if (value <= 55) return AppColors.aqiGood; // hijau
-    if (value <= 150) return AppColors.aqiModerate; // orange untuk sedang
-    if (value <= 250) return AppColors.aqiUnhealthySensitive; // merah
-    if (value <= 350) return AppColors.aqiUnhealthy; // purple
-    return AppColors.aqiHazardous; // hitam
+    if (value < 0) return AppColors.aqiError;
+    if (value <= 55) return AppColors.aqiGood;
+    if (value <= 150) return AppColors.aqiModerate;
+    if (value <= 250) return AppColors.aqiUnhealthySensitive;
+    if (value <= 350) return AppColors.aqiUnhealthy;
+    return AppColors.aqiHazardous;
   }
 
+  // ============================================================
+  // PM10 — threshold concentration per PP 22/2021
+  //   0-50 / 51-150 / 151-350 / 351-420 / >420
+  //   (berbeda dari PM2.5 — jangan disamakan!)
+  // ============================================================
   static String getPM10Status(double value) {
-    if (value <= 55) return 'BAIK';
+    if (value < 0) return 'ERROR';
+    if (value <= 50) return 'BAIK';
     if (value <= 150) return 'SEDANG';
-    if (value <= 250) return 'TIDAK SEHAT';
-    if (value <= 350) return 'SANGAT TIDAK SEHAT';
+    if (value <= 350) return 'TIDAK SEHAT';
+    if (value <= 420) return 'SANGAT TIDAK SEHAT';
     return 'BERBAHAYA';
   }
 
   static Color getPM10Color(double value) {
-    if (value <= 55) return AppColors.aqiGood; // hijau
-    if (value <= 150) return AppColors.aqiModerate; // orange untuk sedang
-    if (value <= 250) return AppColors.aqiUnhealthySensitive; // merah
-    if (value <= 350) return AppColors.aqiUnhealthy; // purple
-    return AppColors.aqiHazardous; // hitam
+    if (value < 0) return AppColors.aqiError;
+    if (value <= 50) return AppColors.aqiGood;
+    if (value <= 150) return AppColors.aqiModerate;
+    if (value <= 350) return AppColors.aqiUnhealthySensitive;
+    if (value <= 420) return AppColors.aqiUnhealthy;
+    return AppColors.aqiHazardous;
   }
 
+  // ============================================================
+  // TEMPERATURE — SNI 03-6572-2001
+  // ============================================================
   static String getTemperatureStatus(double value) {
-    if ( value <= 20) return 'DINGIN';
-    if (value >= 20 && value <= 24) return 'IDEAL';
-    if (value >= 24 && value <= 30) return 'HANGAT';
+    if (value < 0) return 'ERROR';
+    if (value <= 20) return 'DINGIN';
+    if (value < 24) return 'IDEAL';
+    if (value <= 30) return 'HANGAT';
     return 'PANAS';
   }
 
   static Color getTemperatureColor(double value) {
-    if ( value <= 20) return Colors.blue; // hijau
-    if (value >= 20 && value <= 24) return AppColors.success; // orange
-    if (value >= 24 && value <= 30) return AppColors.warning; // merah
-    return AppColors.error; // purple
+    if (value < 0) return AppColors.aqiError;
+    if (value <= 20) return Colors.blue;
+    if (value < 24) return AppColors.success;
+    if (value <= 30) return AppColors.warning;
+    return AppColors.error;
   }
 
+  // ============================================================
+  // HUMIDITY — SNI 03-6572-2001
+  // ============================================================
   static String getHumidityStatus(double value) {
-    if (value <= 40) return 'KERING';
-    if (value >= 40 && value <= 60) return 'IDEAL';
-    if (value >= 60 && value <= 70) return 'LEMBAB';
+    if (value < 0) return 'ERROR';
+    if (value < 40) return 'KERING';
+    if (value <= 60) return 'IDEAL';
+    if (value <= 70) return 'LEMBAB';
     return 'TIDAK NYAMAN';
   }
 
   static Color getHumidityColor(double value) {
-    if (value <= 40) return AppColors.warning; // hijau
-    if (value >= 40 && value <= 60) return AppColors.success; // orange
-    if (value >= 60 && value <= 70) return Colors.blue; // merah
-    return AppColors.error; // purple
+    if (value < 0) return AppColors.aqiError;
+    if (value < 40) return AppColors.aqiUnhealthySensitive;
+    if (value <= 60) return AppColors.aqiGood;
+    if (value <= 70) return AppColors.aqiModerate;
+    return AppColors.aqiUnhealthy;
   }
 
+  // ============================================================
+  // CO2 — selaras dengan AppColors (bukan lagi warna hardcoded)
+  //   0-600 / 601-1000 / 1001-1500 / 1501-2000 / >2000
+  // ============================================================
   static String getCO2Status(double value) {
+    if (value < 0) return 'ERROR';
     if (value <= 600) return 'BAIK';
     if (value <= 1000) return 'SEDANG';
     if (value <= 1500) return 'TIDAK SEHAT';
@@ -167,13 +211,17 @@ class Helpers {
   }
 
   static Color getCO2Color(double value) {
-    if (value <= 800) return AppColors.aqiGood; // hijau
-    if (value <= 1000) return Colors.orange; // orange untuk sedang
+    if (value < 0) return AppColors.aqiError;
+    if (value <= 600) return AppColors.aqiGood;
+    if (value <= 1000) return AppColors.aqiModerate;
     if (value <= 1500) return AppColors.aqiUnhealthySensitive;
-    return AppColors.aqiVeryUnhealthy; // hitam
+    if (value <= 2000) return AppColors.aqiUnhealthy;
+    return AppColors.aqiHazardous;
   }
 
-  // Date & Time Helpers
+  // ============================================================
+  // DATE & TIME HELPERS
+  // ============================================================
   static String formatDateTime(DateTime dateTime, {String format = 'dd/MM/yyyy HH:mm'}) {
     return DateFormat(format).format(dateTime);
   }
@@ -182,14 +230,12 @@ class Helpers {
     final localTime = dateTime.toLocal();
     final now = DateTime.now().toLocal();
 
-    // Hari ini → jam saja (perilaku lama, dengan padding 2 spasi)
     if (localTime.year == now.year &&
         localTime.month == now.month &&
         localTime.day == now.day) {
       return '  ${_formatLocalTime(localTime)}';
     }
 
-    // Kemarin → "Kemarin HH:mm"
     final yesterday = DateTime(now.year, now.month, now.day - 1);
     if (localTime.year == yesterday.year &&
         localTime.month == yesterday.month &&
@@ -197,7 +243,6 @@ class Helpers {
       return 'Kemarin ${_formatLocalTime(localTime)}';
     }
 
-    // Lebih lama → "dd/MM HH:mm" (tanggal + jam)
     return DateFormat('dd/MM HH:mm').format(localTime);
   }
 
@@ -229,14 +274,12 @@ class Helpers {
 
   static String formatLocalTimeForDisplay(DateTime dateTime) {
     final localTime = dateTime.toLocal();
-    final format = DateFormat.Hm();
-    return format.format(localTime);
+    return DateFormat.Hm().format(localTime);
   }
 
   static String formatLocalTimeWithAmPm(DateTime dateTime) {
     final localTime = dateTime.toLocal();
-    final format = DateFormat('hh:mm a');
-    return format.format(localTime);
+    return DateFormat('hh:mm a').format(localTime);
   }
 
   static String formatLocalDateTimeFull(DateTime dateTime) {
@@ -315,16 +358,40 @@ class Helpers {
     }
   }
 
-  // UI Helpers
+  static Map<String, String> formatCompactLastUpdate(DateTime dateTime) {
+    final localTime = dateTime.toLocal();
+    final now = DateTime.now().toLocal();
+    final timeStr = _formatLocalTime(localTime);
+
+    if (localTime.year == now.year &&
+        localTime.month == now.month &&
+        localTime.day == now.day) {
+      return {'label': 'HARI INI', 'time': timeStr};
+    }
+
+    final yesterday = DateTime(now.year, now.month, now.day - 1);
+    if (localTime.year == yesterday.year &&
+        localTime.month == yesterday.month &&
+        localTime.day == yesterday.day) {
+      return {'label': 'KEMARIN', 'time': timeStr};
+    }
+
+    return {
+      'label': DateFormat('dd/MM').format(localTime),
+      'time': timeStr,
+    };
+  }
+
+  // ============================================================
+  // UI HELPERS
+  // ============================================================
   static void showSnackBar(BuildContext context, String message, {bool isError = false}) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
         backgroundColor: isError ? AppColors.error : AppColors.success,
         behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       ),
     );
   }
@@ -349,7 +416,9 @@ class Helpers {
     Navigator.of(context, rootNavigator: true).pop();
   }
 
-  // Validation Helpers
+  // ============================================================
+  // VALIDATION HELPERS
+  // ============================================================
   static bool isValidEmail(String email) {
     final emailRegex = RegExp(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$');
     return emailRegex.hasMatch(email);
@@ -359,7 +428,9 @@ class Helpers {
     return password.length >= 8;
   }
 
-  // String Helpers
+  // ============================================================
+  // STRING HELPERS
+  // ============================================================
   static String capitalize(String text) {
     if (text.isEmpty) return text;
     return text[0].toUpperCase() + text.substring(1).toLowerCase();
@@ -370,7 +441,9 @@ class Helpers {
     return '${text.substring(0, maxLength)}...';
   }
 
-  // JSON Helpers
+  // ============================================================
+  // JSON HELPERS
+  // ============================================================
   static Map<String, dynamic> safeJsonDecode(String jsonString) {
     try {
       return jsonDecode(jsonString);
@@ -387,22 +460,15 @@ class Helpers {
     }
   }
 
-  static String getAQICategory(int aqi) {
-  if (aqi <= 50)  return 'baik';
-  if (aqi <= 100) return 'sedang';
-  if (aqi <= 200) return 'tidak_sehat';
-  if (aqi <= 300) return 'sangat_tidak_sehat';
-  return 'berbahaya';
-}
-
-  // Network Helpers
+  // ============================================================
+  // NETWORK / COLOR HELPERS
+  // ============================================================
   static String formatBytes(int bytes) {
     if (bytes < 1024) return '$bytes B';
     if (bytes < 1048576) return '${(bytes / 1024).toStringAsFixed(1)} KB';
     return '${(bytes / 1048576).toStringAsFixed(1)} MB';
   }
 
-  // Color Helpers
   static Color hexToColor(String hexString) {
     final buffer = StringBuffer();
     if (hexString.length == 6 || hexString.length == 7) buffer.write('ff');
@@ -414,36 +480,21 @@ class Helpers {
     return '#${color.value.toRadixString(16).padLeft(8, '0').substring(2)}';
   }
 
-  static Map<String, String> formatCompactLastUpdate(DateTime dateTime) {
-    final localTime = dateTime.toLocal();
-    final now = DateTime.now().toLocal();
-
-    final timeStr = _formatLocalTime(localTime);
-
-    if (localTime.year == now.year &&
-        localTime.month == now.month &&
-        localTime.day == now.day) {
-      return {'label': 'HARI INI', 'time': timeStr};
-    }
-
-    final yesterday = DateTime(now.year, now.month, now.day - 1);
-    if (localTime.year == yesterday.year &&
-        localTime.month == yesterday.month &&
-        localTime.day == yesterday.day) {
-      return {'label': 'KEMARIN', 'time': timeStr};
-    }
-
-    return {
-      'label': DateFormat('dd/MM').format(localTime),
-      'time': timeStr,
-    };
-  }
-
+  // ============================================================
+  // REKOMENDASI KESEHATAN
+  // ============================================================
   static List<String> getDetailedRecommendations(Room room) {
     final recommendations = <String>[];
     final data = room.currentData;
-
     final aqi = room.currentAQI;
+
+    if (aqi < 0) {
+      recommendations.add('SENSOR RUANGAN MELAPORKAN ERROR');
+      recommendations.add('Nilai AQI yang ditampilkan adalah nilai valid terakhir sebelum sensor bermasalah');
+      recommendations.add('Hubungi admin untuk memeriksa perangkat sensor pada ruangan ini');
+      return recommendations;
+    }
+
     if (aqi > 300) {
       recommendations.add('KONDISI SANGAT BERBAHAYA - TIDAK ADA AKTIVITAS AKADEMIK TATAP MUKA');
       recommendations.add('Tim manajemen gedung melakukan pemantauan AQI setiap jam');
@@ -455,7 +506,7 @@ class Helpers {
     } else if (aqi > 150) {
       recommendations.add('Kualitas udara dalam kelas buruk dan berisiko bagi semua penghuni ruangan');
       recommendations.add('Gunakan masker ketika berada di ruangan ini');
-      recommendations.add('Wjib menyalakan air purifier di setiap kelas yang digunakan');
+      recommendations.add('Wajib menyalakan air purifier di setiap kelas yang digunakan');
     } else if (aqi > 100) {
       recommendations.add('Kualitas udara dalam kelas mulai berdampak pada kelompok sensitif');
       recommendations.add('Kurangi aktivitas fisik berat');
@@ -468,27 +519,24 @@ class Helpers {
       recommendations.add('Aman untuk perkuliahan dengan durasi berapapun');
     }
 
-    if (data.pm25 > 35.4) {
-      recommendations.add('PM2.5 tinggi: Gunakan air purifier');
+    // Threshold diselaraskan dengan PP 22/2021
+    if (data.pm25 > 55 && data.pm25 >= 0) {
+      recommendations.add('PM2.5 melewati ambang "Baik" (ISPU > 50): Gunakan air purifier');
     }
-
-    if (data.pm10 > 100) {
-      recommendations.add('PM10 tinggi: Bersihkan kelas secara basah sebelum perkuliahan');
+    if (data.pm10 > 50 && data.pm10 >= 0) {
+      recommendations.add('PM10 melewati ambang "Baik" (ISPU > 50): Bersihkan kelas secara basah sebelum perkuliahan');
     }
-
-    if (data.co2 > 1000) {
+    if (data.co2 > 1000 && data.co2 >= 0) {
       recommendations.add('CO₂ tinggi: Buka jendela untuk ventilasi');
     }
-
-    if (data.temperature > 28) {
+    if (data.temperature > 28 && data.temperature >= 0) {
       recommendations.add('Suhu panas: Nyalakan AC atau kipas');
-    } else if (data.temperature < 22) {
+    } else if (data.temperature >= 0 && data.temperature < 22 && data.temperature > 0) {
       recommendations.add('Suhu dingin: Gunakan pemanas ruangan');
     }
-
-    if (data.humidity > 70) {
+    if (data.humidity > 70 && data.humidity >= 0) {
       recommendations.add('Kelembaban tinggi: Gunakan dehumidifier');
-    } else if (data.humidity < 40) {
+    } else if (data.humidity >= 0 && data.humidity < 40 && data.humidity > 0) {
       recommendations.add('Kelembaban rendah: Gunakan humidifier');
     }
 

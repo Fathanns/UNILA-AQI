@@ -2,14 +2,16 @@ const cron = require('node-cron');
 const Room = require('../models/Room');
 const SensorData = require('../models/SensorData');
 const { getAQICategory } = require('../utils/aqiCalculator');
-const { generateSensorData } = require('../utils/dataGenerator');
+const {
+  generateSensorData,
+  simulateAnomaly,
+} = require('../utils/dataGenerator');
 
 class SimulationService {
   constructor() {
     this.isRunning = false;
     this.task = null;
     this.io = null;
-    // FIXED: update setiap 10 detik (sebelumnya 60 detik)
     this.updateInterval = 10000;
   }
 
@@ -22,15 +24,12 @@ class SimulationService {
     this.io = io;
     console.log(`🚀 Starting Simulation Service (update every ${this.updateInterval/1000}s)...`);
 
-    // FIXED: cron setiap 10 detik → '*/10 * * * * *'
     this.task = cron.schedule(`*/${this.updateInterval/1000} * * * * *`, async () => {
       await this.updateAllRooms();
     });
 
     this.isRunning = true;
     console.log('✅ Simulation Service started');
-
-    // Update pertama kali langsung
     this.updateAllRooms();
   }
 
@@ -44,7 +43,11 @@ class SimulationService {
 
   async updateAllRooms() {
     try {
-      const rooms = await Room.find({ dataSource: 'simulation' });
+      // FIXED: skip room yang sedang dalam demoMode
+      const rooms = await Room.find({
+        dataSource: 'simulation',
+        demoMode: { $ne: true }
+      });
 
       if (rooms.length === 0) {
         console.log('ℹ️ No active simulation rooms to update');
@@ -66,10 +69,17 @@ class SimulationService {
   async updateRoom(room) {
     try {
       const roomType = this.getRoomType(room.name);
-      const sensorData = generateSensorData(roomType);
 
-      // FIXED: threshold = 0 → selalu update setiap 10 detik
-      // (sebelumnya pakai threshold besar sehingga banyak update ter-skip)
+      // FIXED: 1) generate normal, 2) post-process dengan anomaly
+      const normalData = generateSensorData(roomType);
+      const sensorData = simulateAnomaly(normalData);
+
+      // FIXED: error sensor ditangani terpisah — TIDAK overwrite room
+      if (sensorData.isAnomaly && sensorData.anomalyType === 'error') {
+        await this.handleSensorError(room, sensorData);
+        return;
+      }
+
       const hasChanged = this._hasDataChanged(room, sensorData);
 
       if (!hasChanged) {
@@ -107,17 +117,54 @@ class SimulationService {
       await historicalData.save();
 
       this.broadcastRoomUpdate(room, sensorData);
+
+      if (sensorData.isAnomaly) {
+        console.log(
+          `🚨 ANOMALY in ${room.name}: AQI ${sensorData.aqi} (${sensorData.category}) — type: ${sensorData.anomalyType}`
+        );
+      }
     } catch (error) {
       console.error(`❌ Error updating room ${room.name}:`, error.message);
     }
   }
 
   /**
-   * FIXED: threshold = 0 untuk semua parameter.
-   * Artinya setiap ada perubahan sedikitpun → update & broadcast.
-   * Data baru di-generate tiap 10s via random sampling, jadi
-   * practically selalu berbeda → always update.
+   * FIXED: saat sensor error (aqi=-1):
+   *  - Catat ke SensorData (untuk grafik history)
+   *  - JANGAN overwrite room.currentAQI agar dashboard tetap menampilkan
+   *    nilai valid terakhir (tidak menipu pengguna dengan -1)
+   *  - Broadcast notification
    */
+  async handleSensorError(room, sensorData) {
+    try {
+      await new SensorData({
+        roomId: room._id,
+        roomName: room.name,
+        buildingName: room.buildingName,
+        aqi: -1,
+        pm25: -1,
+        pm10: -1,
+        co2: -1,
+        temperature: -1,
+        humidity: -1,
+        category: 'error',
+        timestamp: new Date()
+      }).save();
+
+      if (this.io) {
+        this.io.to(room._id.toString()).emit('notification', {
+          type: 'error',
+          message: `Sensor pada ${room.name} melaporkan error (data tidak valid).`,
+          timestamp: new Date(),
+        });
+      }
+
+      console.log(`⚠️ SENSOR ERROR in ${room.name} (data invalid, room retained last good value)`);
+    } catch (err) {
+      console.error(`❌ Error handling sensor error for ${room.name}:`, err.message);
+    }
+  }
+
   _hasDataChanged(room, newData) {
     const currentData = room.currentData;
 
@@ -201,5 +248,4 @@ class SimulationService {
 }
 
 const simulationService = new SimulationService();
-
 module.exports = simulationService;

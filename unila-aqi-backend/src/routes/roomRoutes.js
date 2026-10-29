@@ -2,7 +2,9 @@ const express = require('express');
 const router = express.Router();
 const Room = require('../models/Room');
 const Building = require('../models/Building');
+const SensorData = require('../models/SensorData');
 const { authMiddleware, adminMiddleware } = require('../middleware/authMiddleware');
+const { getAQICategory, aqiToPm25 } = require('../utils/aqiCalculator');
 
 const broadcastRoomUpdate = (io, room, action, oldData = null) => {
   if (io) {
@@ -85,6 +87,190 @@ router.get('/', async (req, res) => {
   }
 });
 
+// ============================================================
+// DEMO ENDPOINTS — untuk sidang/demo agar dosen bisa melihat
+// semua kategori AQI (termasuk "Tidak Sehat" s/d "Berbahaya")
+// secara deterministik tanpa menunggu random.
+// ============================================================
+
+// POST /demo-cycle — set beberapa ruangan ke kategori berbeda sekaligus.
+// Berguna untuk menunjukkan semua warna AQI dalam 1 dashboard.
+router.post('/demo-cycle', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const targets = [
+      { aqi: 25,  label: 'Baik' },
+      { aqi: 75,  label: 'Sedang' },
+      { aqi: 150, label: 'Tidak Sehat' },
+      { aqi: 250, label: 'Sangat Tidak Sehat' },
+      { aqi: 400, label: 'Berbahaya' },
+    ];
+
+    const rooms = await Room.find().sort({ name: 1 }).limit(targets.length);
+
+    if (rooms.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Belum ada ruangan. Tambahkan ruangan terlebih dahulu.'
+      });
+    }
+
+    const io = req.app.get('socketio');
+    const results = [];
+
+    for (let i = 0; i < rooms.length && i < targets.length; i++) {
+      const target = targets[i];
+      const room = rooms[i];
+
+      const pm25 = aqiToPm25(target.aqi);
+      const pm10 = Math.round(pm25 * 1.5);
+      const co2 = target.aqi > 200 ? 2000 : (target.aqi > 100 ? 1500 : 800);
+      const temperature = target.aqi > 200 ? 33 : (target.aqi > 100 ? 30 : 26);
+      const humidity = target.aqi > 200 ? 80 : (target.aqi > 100 ? 70 : 55);
+
+      room.demoMode = true;
+      room.currentAQI = target.aqi;
+      room.currentData = { pm25, pm10, co2, temperature, humidity, updatedAt: new Date() };
+      room.updatedAt = new Date();
+      await room.save();
+
+      await new SensorData({
+        roomId: room._id,
+        roomName: room.name,
+        buildingName: room.buildingName,
+        aqi: target.aqi,
+        pm25, pm10, co2, temperature, humidity,
+        category: getAQICategory(target.aqi).category,
+        timestamp: new Date(),
+      }).save();
+
+      if (io) {
+        io.emit('dashboard-update', {
+          type: 'room-data-updated',
+          roomId: room._id,
+          aqi: target.aqi,
+          building: room.buildingName,
+          timestamp: new Date()
+        });
+      }
+
+      results.push({
+        roomId: room._id,
+        room: room.name,
+        building: room.buildingName,
+        aqi: target.aqi,
+        category: getAQICategory(target.aqi).category,
+        label: target.label,
+      });
+    }
+
+    res.json({
+      success: true,
+      message: `Demo cycle diterapkan ke ${results.length} ruangan`,
+      results
+    });
+  } catch (error) {
+    console.error('Demo cycle error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// POST /demo-aqi — set 1 ruangan ke AQI tertentu (persist sampai reset)
+router.post('/:id/demo-aqi', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const { targetAqi } = req.body;
+    const target = parseInt(targetAqi, 10);
+
+    if (isNaN(target) || target < 0 || target > 500) {
+      return res.status(400).json({
+        success: false,
+        message: 'targetAqi harus bilangan 0-500'
+      });
+    }
+
+    const room = await Room.findById(req.params.id);
+    if (!room) {
+      return res.status(404).json({ success: false, message: 'Room not found' });
+    }
+
+    const pm25 = aqiToPm25(target);
+    const pm10 = Math.round(pm25 * 1.5);
+    const co2 = target > 200 ? 2000 : (target > 100 ? 1500 : 800);
+    const temperature = target > 200 ? 33 : (target > 100 ? 30 : 26);
+    const humidity = target > 200 ? 80 : (target > 100 ? 70 : 55);
+
+    room.demoMode = true;
+    room.currentAQI = target;
+    room.currentData = {
+      pm25, pm10, co2, temperature, humidity,
+      updatedAt: new Date()
+    };
+    room.updatedAt = new Date();
+    await room.save();
+
+    await new SensorData({
+      roomId: room._id,
+      roomName: room.name,
+      buildingName: room.buildingName,
+      aqi: target,
+      pm25, pm10, co2, temperature, humidity,
+      category: getAQICategory(target).category,
+      timestamp: new Date(),
+    }).save();
+
+    const io = req.app.get('socketio');
+    if (io) {
+      io.emit('dashboard-update', {
+        type: 'room-data-updated',
+        roomId: room._id,
+        aqi: target,
+        building: room.buildingName,
+        timestamp: new Date()
+      });
+    }
+
+    res.json({
+      success: true,
+      message: `Demo AQI diset ke ${target} untuk ${room.name}`,
+      data: {
+        roomId: room._id,
+        roomName: room.name,
+        aqi: target,
+        category: getAQICategory(target).category,
+        pm25, pm10, co2, temperature, humidity
+      }
+    });
+  } catch (error) {
+    console.error('Demo AQI error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// POST /:id/reset-demo — matikan demoMode, room akan di-update normal
+// oleh simulationService / iotService pada tick berikutnya
+router.post('/:id/reset-demo', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const room = await Room.findById(req.params.id);
+    if (!room) {
+      return res.status(404).json({ success: false, message: 'Room not found' });
+    }
+
+    room.demoMode = false;
+    room.updatedAt = new Date();
+    await room.save();
+
+    res.json({
+      success: true,
+      message: `Demo mode untuk ${room.name} dimatikan. Data akan update otomatis.`,
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// ============================================================
+// ROUTE UMUM
+// ============================================================
+
 // GET single room
 router.get('/:id', async (req, res) => {
   try {
@@ -118,25 +304,16 @@ router.post('/', authMiddleware, adminMiddleware, async (req, res) => {
     const io = req.app.get('socketio');
 
     if (!name) {
-      return res.status(400).json({
-        success: false,
-        message: 'Room name is required'
-      });
+      return res.status(400).json({ success: false, message: 'Room name is required' });
     }
 
     if (!buildingId) {
-      return res.status(400).json({
-        success: false,
-        message: 'Building ID is required'
-      });
+      return res.status(400).json({ success: false, message: 'Building ID is required' });
     }
 
     const building = await Building.findById(buildingId);
     if (!building) {
-      return res.status(404).json({
-        success: false,
-        message: 'Building not found'
-      });
+      return res.status(404).json({ success: false, message: 'Building not found' });
     }
 
     const validDataSources = ['simulation', 'iot'];
@@ -154,11 +331,7 @@ router.post('/', authMiddleware, adminMiddleware, async (req, res) => {
       });
     }
 
-    const existingRoom = await Room.findOne({
-      name: name.trim(),
-      building: buildingId
-    });
-
+    const existingRoom = await Room.findOne({ name: name.trim(), building: buildingId });
     if (existingRoom) {
       return res.status(400).json({
         success: false,
@@ -174,11 +347,7 @@ router.post('/', authMiddleware, adminMiddleware, async (req, res) => {
       iotDeviceId: dataSource === 'iot' ? iotDeviceId : null,
       currentAQI: 0,
       currentData: {
-        pm25: 0,
-        pm10: 0,
-        co2: 0,
-        temperature: 0,
-        humidity: 0,
+        pm25: 0, pm10: 0, co2: 0, temperature: 0, humidity: 0,
         updatedAt: new Date()
       },
       createdAt: new Date(),
@@ -190,9 +359,7 @@ router.post('/', authMiddleware, adminMiddleware, async (req, res) => {
     building.roomCount = await Room.countDocuments({ building: buildingId });
     await building.save();
 
-    if (io) {
-      broadcastRoomUpdate(io, room, 'created');
-    }
+    if (io) broadcastRoomUpdate(io, room, 'created');
 
     res.status(201).json({
       success: true,
@@ -214,14 +381,9 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
     const { name, buildingId, dataSource, iotDeviceId } = req.body;
     const io = req.app.get('socketio');
 
-    const room = await Room.findById(req.params.id)
-      .populate('building', 'name');
-
+    const room = await Room.findById(req.params.id).populate('building', 'name');
     if (!room) {
-      return res.status(404).json({
-        success: false,
-        message: 'Room not found'
-      });
+      return res.status(404).json({ success: false, message: 'Room not found' });
     }
 
     const oldData = {
@@ -256,10 +418,7 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
     if (buildingId && buildingId !== room.building.toString()) {
       newBuilding = await Building.findById(buildingId);
       if (!newBuilding) {
-        return res.status(404).json({
-          success: false,
-          message: 'Building not found'
-        });
+        return res.status(404).json({ success: false, message: 'Building not found' });
       }
 
       const existingRoom = await Room.findOne({
@@ -298,9 +457,6 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
       room.name = name.trim();
     }
 
-    // ============================================================
-    // FIXED: deteksi perubahan data source / device SEBELUM diubah
-    // ============================================================
     const prevDataSource = oldData.dataSource;
     const prevIotDeviceId = oldData.iotDeviceId || null;
 
@@ -317,16 +473,10 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
       (prevDataSource !== room.dataSource) ||
       (prevIotDeviceId !== (room.iotDeviceId || null));
 
-    // FIXED: reset data partikel supaya UI tidak menampilkan angka device LAMA
-    // saat admin mengganti device. Data baru akan diisi oleh force-fetch di bawah.
     if (deviceChanged) {
       room.currentAQI = 0;
       room.currentData = {
-        pm25: 0,
-        pm10: 0,
-        co2: 0,
-        temperature: 0,
-        humidity: 0,
+        pm25: 0, pm10: 0, co2: 0, temperature: 0, humidity: 0,
         updatedAt: new Date()
       };
       console.log(
@@ -343,35 +493,24 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
 
     await room.save();
 
-    // ============================================================
-    // FIXED: jika device berubah & sekarang mode IoT → force-fetch data
-    // fresh dari device baru SEKARANG juga, sebelum response dikirim.
-    // ============================================================
     let deviceFetchStatus = null;
 
     if (deviceChanged && room.dataSource === 'iot' && room.iotDeviceId) {
       try {
         const iotService = require('../services/iotService');
-        const fetchResult = await iotService.forceUpdateRoom(
-          room._id.toString()
-        );
+        const fetchResult = await iotService.forceUpdateRoom(room._id.toString());
 
         if (fetchResult.success) {
           deviceFetchStatus = 'success';
 
-          // Re-fetch dari DB supaya object `room` di memori ikut terbarui
-          const refreshed = await Room.findById(room._id)
-            .populate('building', 'name');
-
+          const refreshed = await Room.findById(room._id).populate('building', 'name');
           if (refreshed) {
             room.currentAQI = refreshed.currentAQI;
             room.currentData = refreshed.currentData;
             room.updatedAt = refreshed.updatedAt;
           }
 
-          console.log(
-            `✅ Device baru langsung fetch: AQI ${room.currentAQI}`
-          );
+          console.log(`✅ Device baru langsung fetch: AQI ${room.currentAQI}`);
         } else {
           deviceFetchStatus = 'failed';
           console.warn(
@@ -380,10 +519,7 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
         }
       } catch (iotError) {
         deviceFetchStatus = 'error';
-        console.error(
-          '⚠️  Error force-fetch device baru:',
-          iotError.message
-        );
+        console.error('⚠️  Error force-fetch device baru:', iotError.message);
       }
     }
 
@@ -391,9 +527,7 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
       if (oldBuildingId) {
         const oldBuilding = await Building.findById(oldBuildingId);
         if (oldBuilding) {
-          oldBuilding.roomCount = await Room.countDocuments({
-            building: oldBuildingId
-          });
+          oldBuilding.roomCount = await Room.countDocuments({ building: oldBuildingId });
           await oldBuilding.save();
 
           if (io) {
@@ -409,9 +543,7 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
       }
 
       if (newBuilding) {
-        newBuilding.roomCount = await Room.countDocuments({
-          building: buildingId
-        });
+        newBuilding.roomCount = await Room.countDocuments({ building: buildingId });
         await newBuilding.save();
 
         if (io) {
@@ -427,9 +559,7 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
     } else {
       const currentBuilding = await Building.findById(room.building);
       if (currentBuilding) {
-        currentBuilding.roomCount = await Room.countDocuments({
-          building: room.building
-        });
+        currentBuilding.roomCount = await Room.countDocuments({ building: room.building });
         await currentBuilding.save();
       }
     }
@@ -448,7 +578,6 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
       }
     }
 
-    // FIXED: tambah deviceChanged & deviceFetchStatus ke response `changes`
     const changes = {
       nameChanged: name && name !== oldData.name,
       buildingChanged: buildingChanged,
@@ -457,18 +586,12 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
       deviceFetchStatus: deviceFetchStatus
     };
 
-    // FIXED: pesan response menyesuaikan status force-fetch
     let responseMessage = 'Room updated successfully';
     if (deviceChanged && room.dataSource === 'iot') {
       if (deviceFetchStatus === 'success') {
-        responseMessage =
-          'Room updated & data partikel device baru berhasil dimuat.';
-      } else if (
-        deviceFetchStatus === 'failed' ||
-        deviceFetchStatus === 'error'
-      ) {
-        responseMessage =
-          'Room updated. Data partikel akan dimuat pada poll berikutnya karena device baru tidak merespons.';
+        responseMessage = 'Room updated & data partikel device baru berhasil dimuat.';
+      } else if (deviceFetchStatus === 'failed' || deviceFetchStatus === 'error') {
+        responseMessage = 'Room updated. Data partikel akan dimuat pada poll berikutnya karena device baru tidak merespons.';
       } else {
         responseMessage = 'Room updated.';
       }
@@ -497,10 +620,7 @@ router.delete('/:id', authMiddleware, adminMiddleware, async (req, res) => {
     const room = await Room.findById(req.params.id);
 
     if (!room) {
-      return res.status(404).json({
-        success: false,
-        message: 'Room not found'
-      });
+      return res.status(404).json({ success: false, message: 'Room not found' });
     }
 
     const buildingId = room.building;
@@ -542,10 +662,7 @@ router.delete('/:id', authMiddleware, adminMiddleware, async (req, res) => {
       });
     }
 
-    res.json({
-      success: true,
-      message: 'Room deleted successfully'
-    });
+    res.json({ success: true, message: 'Room deleted successfully' });
   } catch (error) {
     res.status(500).json({
       success: false,
@@ -562,10 +679,7 @@ router.post('/:id/force-refresh', authMiddleware, adminMiddleware, async (req, r
     const room = await Room.findById(req.params.id);
 
     if (!room) {
-      return res.status(404).json({
-        success: false,
-        message: 'Room not found'
-      });
+      return res.status(404).json({ success: false, message: 'Room not found' });
     }
 
     if (io) {
@@ -602,10 +716,7 @@ router.post('/:id/sync-building', authMiddleware, adminMiddleware, async (req, r
     const room = await Room.findById(req.params.id).populate('building', 'name');
 
     if (!room) {
-      return res.status(404).json({
-        success: false,
-        message: 'Room not found'
-      });
+      return res.status(404).json({ success: false, message: 'Room not found' });
     }
 
     const oldBuildingName = room.buildingName;

@@ -1,15 +1,8 @@
 /**
  * ISPU (Indeks Standar Pencemar Udara) Calculator
  * Berdasarkan PP No. 22 Tahun 2021 (Indonesia)
- *
- * Rumus interpolasi linear:
- *   ISPU = ((Ia - Ib) / (Xa - Xb)) * (Xx - Xb) + Ib
- *
- * AQI total = MAXIMUM dari ISPU PM2.5 dan ISPU PM10
- * (sesuai PP 22/2021 - nilai tertinggi mewakili kualitas udara)
  */
 
-// Breakpoints PM2.5 (24 jam) - PP 22/2021
 const PM25_BREAKPOINTS = [
   { ispuLow: 0,   ispuHigh: 50,  concLow: 0,   concHigh: 55  },
   { ispuLow: 51,  ispuHigh: 100, concLow: 56,  concHigh: 150 },
@@ -18,7 +11,6 @@ const PM25_BREAKPOINTS = [
   { ispuLow: 301, ispuHigh: 500, concLow: 351, concHigh: 500 },
 ];
 
-// Breakpoints PM10 (24 jam) - PP 22/2021
 const PM10_BREAKPOINTS = [
   { ispuLow: 0,   ispuHigh: 50,  concLow: 0,   concHigh: 50  },
   { ispuLow: 51,  ispuHigh: 100, concLow: 51,  concHigh: 150 },
@@ -27,9 +19,6 @@ const PM10_BREAKPOINTS = [
   { ispuLow: 301, ispuHigh: 500, concLow: 421, concHigh: 500 },
 ];
 
-/**
- * Hitung ISPU dari konsentrasi via interpolasi linear.
- */
 function calculateISPUFromConcentration(concentration, breakpoints) {
   if (concentration == null || isNaN(concentration) || concentration < 0) {
     return 0;
@@ -49,7 +38,6 @@ function calculateISPUFromConcentration(concentration, breakpoints) {
     }
   }
 
-  // Di atas batas maksimum → ISPU maksimum
   return 500;
 }
 
@@ -61,10 +49,6 @@ function calculateISPUFromPM10(pm10) {
   return calculateISPUFromConcentration(pm10, PM10_BREAKPOINTS);
 }
 
-/**
- * Hitung AQI = MAX(ISPU_PM25, ISPU_PM10)
- * @returns { aqi, ispuPM25, ispuPM10, dominant, category, color, label }
- */
 function calculateAQI(pm25, pm10) {
   const ispuPM25 = calculateISPUFromPM25(pm25);
   const ispuPM10 = calculateISPUFromPM10(pm10);
@@ -84,26 +68,36 @@ function calculateAQI(pm25, pm10) {
   };
 }
 
-/**
- * Kategori ISPU (PP 22/2021)
- *   0-50    Baik
- *   51-100  Sedang
- *   101-200 Tidak Sehat
- *   201-300 Sangat Tidak Sehat
- *   301-500 Berbahaya
- */
 function getAQICategory(aqi) {
-  if (aqi <= 50)  return { category: 'baik',              color: '#00E400', label: 'Baik' };
-  if (aqi <= 100) return { category: 'sedang',            color: '#0000FF', label: 'Sedang' };
-  if (aqi <= 200) return { category: 'tidak_sehat',       color: '#FFFF00', label: 'Tidak Sehat' };
+  if (aqi <= 50)  return { category: 'baik',               color: '#00E400', label: 'Baik' };
+  if (aqi <= 100) return { category: 'sedang',             color: '#0000FF', label: 'Sedang' };
+  if (aqi <= 200) return { category: 'tidak_sehat',        color: '#FFFF00', label: 'Tidak Sehat' };
   if (aqi <= 300) return { category: 'sangat_tidak_sehat', color: '#FF0000', label: 'Sangat Tidak Sehat' };
   return { category: 'berbahaya', color: '#000000', label: 'Berbahaya' };
 }
 
 /**
- * Evaluasi status per parameter.
- * PM2.5 & PM10 memakai ISPU; CO₂/suhu/RH memakai ambang Permenkes 1076/SNI 03-6572.
+ * Konversi nilai AQI/ISPU target → konsentrasi PM2.5 (approx).
+ * Inverse interpolation dari breakpoint PP 22/2021.
+ * Dipakai untuk DEMO MODE: set nilai AQI spesifik agar dosen bisa
+ * melihat semua kategori tanpa menunggu random.
  */
+function aqiToPm25(aqi) {
+  if (aqi == null || isNaN(aqi) || aqi <= 0) return 0;
+  const target = Math.min(500, aqi);
+
+  for (const bp of PM25_BREAKPOINTS) {
+    if (target <= bp.ispuHigh) {
+      const ispuRange = bp.ispuHigh - bp.ispuLow;
+      if (ispuRange === 0) return bp.concLow;
+      const ratio = (target - bp.ispuLow) / ispuRange;
+      const conc = bp.concLow + ratio * (bp.concHigh - bp.concLow);
+      return Math.round(conc);
+    }
+  }
+  return 500;
+}
+
 const evaluateParameter = (type, value) => {
   switch (type) {
     case 'pm25': {
@@ -117,9 +111,9 @@ const evaluateParameter = (type, value) => {
       return { status: cat.category, color: cat.color, ispu };
     }
     case 'co2':
-      if (value <= 600)  return { status: 'baik',              color: '#00E400' };
-      if (value <= 1000) return { status: 'sedang',            color: '#0000FF' };
-      if (value <= 1500) return { status: 'tidak_sehat',       color: '#FFFF00' };
+      if (value <= 600)  return { status: 'baik',               color: '#00E400' };
+      if (value <= 1000) return { status: 'sedang',             color: '#0000FF' };
+      if (value <= 1500) return { status: 'tidak_sehat',        color: '#FFFF00' };
       if (value <= 2000) return { status: 'sangat_tidak_sehat', color: '#FF0000' };
       return { status: 'berbahaya', color: '#000000' };
 
@@ -146,7 +140,7 @@ module.exports = {
   calculateAQI,
   getAQICategory,
   evaluateParameter,
-  // backward-compat (dipakai di kode lama jika ada)
+  aqiToPm25,
   calculateAQIFromPM25: (pm25) => {
     const ispu = calculateISPUFromPM25(pm25);
     const cat = getAQICategory(ispu);

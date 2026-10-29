@@ -36,6 +36,13 @@ const roomSchema = new mongoose.Schema({
     humidity: { type: Number, default: 0 },
     updatedAt: { type: Date }
   },
+  // FIXED: flag untuk demo mode — kalau true, simulationService & iotService
+  // TIDAK akan menimpa nilai currentAQI. Dipakai untuk sidang/demo
+  // agar dosen bisa melihat kategori AQI ekstrem secara deterministik.
+  demoMode: {
+    type: Boolean,
+    default: false
+  },
   createdAt: {
     type: Date,
     default: Date.now
