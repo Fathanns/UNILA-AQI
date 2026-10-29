@@ -30,6 +30,10 @@ class _HistoryChartState extends State<HistoryChart> {
   String _error = '';
   final ScrollController _scrollController = ScrollController();
 
+  // FOV config — 8 titik per viewport
+  static const int _pointsInView = 8;
+  static const double _containerPadding = 16.0;
+
   // Parameter options
   final List<String> _parameters = [
     'aqi',
@@ -81,7 +85,7 @@ class _HistoryChartState extends State<HistoryChart> {
     super.dispose();
   }
 
-    Future<void> _loadHistoryData() async {
+  Future<void> _loadHistoryData() async {
     if (!mounted) return;
 
     final hadData = _historyData.isNotEmpty;
@@ -156,9 +160,6 @@ class _HistoryChartState extends State<HistoryChart> {
     }
   }
 
-  // Helper function untuk mendapatkan kategori AQI
-
-
   // FIXED: bungkus dengan try-catch. showDatePicker dapat melempar
   // (mis. context tidak valid saat widget sudah unmounted).
   Future<void> _selectDate(BuildContext context) async {
@@ -225,35 +226,45 @@ class _HistoryChartState extends State<HistoryChart> {
     return spots;
   }
 
+  // FIXED: interval diubah dari 2 → 1 agar getTitlesWidget dipanggil
+  // untuk SETIAP titik. Penyaringan label dilakukan di dalam widget
+  // berdasarkan minute == 0 (jam genap: 14:00, 15:00, 16:00).
+  //
+  // Dengan cara ini, label tetap muncul dengan benar meskipun titik
+  // pertama bukan berada di menit :00 (mis. chart dibuka saat 14:30,
+  // maka titik pertama adalah 14:30 → label pertama di 15:00).
   SideTitles _getBottomTitles() {
     return SideTitles(
       showTitles: true,
       reservedSize: 30,
-      interval: 2,
+      interval: 1,
       getTitlesWidget: (value, meta) {
-        if (value < 0 || value >= _historyData.length) {
+        // Hanya untuk nilai x yang berupa bilangan bulat (indeks valid)
+        final index = value.toInt();
+        if (value != index.toDouble()) return const SizedBox.shrink();
+        if (index < 0 || index >= _historyData.length) {
           return const SizedBox.shrink();
         }
 
-        final data = _historyData[value.toInt()];
+        final data = _historyData[index];
         final hour = data.timestamp.hour;
         final minute = data.timestamp.minute;
 
-        if (minute == 0) {
-          final hourLabel =
-              hour == 0 ? '00' : hour.toString().padLeft(2, '0');
-          return Padding(
-            padding: const EdgeInsets.only(top: 8.0),
-            child: Text(
-              '$hourLabel:00',
-              style: const TextStyle(
-                fontSize: 10,
-                color: Colors.grey,
-              ),
+        // FIXED: hanya tampilkan label di jam genap (minute == 0).
+        // Titik di menit :30 (14:30, 15:30, ...) tidak diberi label.
+        if (minute != 0) return const SizedBox.shrink();
+
+        final hourLabel = hour.toString().padLeft(2, '0');
+        return Padding(
+          padding: const EdgeInsets.only(top: 8.0),
+          child: Text(
+            '$hourLabel:00',
+            style: const TextStyle(
+              fontSize: 10,
+              color: Colors.grey,
             ),
-          );
-        }
-        return const SizedBox.shrink();
+          ),
+        );
       },
     );
   }
@@ -262,14 +273,29 @@ class _HistoryChartState extends State<HistoryChart> {
     final spots = _getDataPoints();
     final color = _parameterColors[_selectedParameter]!;
 
-    final chartWidth = _historyData.length * 60.0;
-    final minChartWidth = MediaQuery.of(context).size.width * 1.5;
-    final actualChartWidth =
-        chartWidth > minChartWidth ? chartWidth : minChartWidth;
+    // FIXED: FOV 8 titik per viewport.
+    //   pointSpacing = (lebar layar − padding container) / 8
+    //   chartWidth   = jumlah titik × pointSpacing
+    //   minimal      = lebar viewport (agar chart tidak lebih sempit dari layar)
+    //
+    // Contoh pada layar 400px:
+    //   availableViewport = 400 − 32 = 368
+    //   pointSpacing      = 368 / 8 = 46px
+    //   48 titik (24 jam) → chartWidth = 48 × 46 = 2208px
+    //   viewport 368px    → menampilkan 368/46 = 8 titik
+    final screenWidth = MediaQuery.of(context).size.width;
+    final availableViewport =
+        screenWidth - (_containerPadding * 2);
+    final pointSpacing = availableViewport / _pointsInView;
+
+    final calculatedWidth = _historyData.length * pointSpacing;
+    final actualChartWidth = calculatedWidth > availableViewport
+        ? calculatedWidth
+        : availableViewport;
 
     return Container(
       height: 350,
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(_containerPadding),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
@@ -477,6 +503,10 @@ class _HistoryChartState extends State<HistoryChart> {
     );
   }
 
+  // FIXED: tetap pertahankan padding 10% di atas & di bawah agar
+  // spike (lonjakan mendadak) tetap MUAT di dalam FOV chart.
+  // Contoh: data normal AQI 40-60, spike 350 → maxY = 350 × 1.1 = 385,
+  // sehingga spike terlihat penuh tanpa terpotong.
   double _getMinY() {
     if (_historyData.isEmpty) return 0.0;
 

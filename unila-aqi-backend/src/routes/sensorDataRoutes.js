@@ -3,9 +3,6 @@ const router = express.Router();
 const mongoose = require('mongoose');
 const SensorData = require('../models/SensorData');
 
-// FIXED: authMiddleware dihapus dari import karena kedua endpoint
-// di bawah kini PUBLIC (lihat penjelasan di masing-masing route).
-
 // Helper function untuk convert string ke ObjectId
 const toObjectId = (id) => {
   try {
@@ -63,10 +60,20 @@ router.get('/:roomId', async (req, res) => {
   }
 });
 
-// NEW: GET sensor data by date untuk grafik history
-// FIXED: route dibuat PUBLIC (authMiddleware dihapus) — alasan sama
-// dengan endpoint di atas. Grafik historis per tanggal harus bisa
-// dilihat oleh visitor tanpa login.
+// GET sensor data by date untuk grafik history
+// FIXED (2026): route ini sekarang mengambil data TEPAT di kelipatan
+// interval (default 30 menit) dengan menggunakan $first setelah $sort,
+// sehingga tiap titik merepresentasikan nilai pada awal slot
+// (14:00, 14:30, 15:00, 15:30, dst) — bukan nilai di akhir slot
+// (yang lebih dekat ke 14:29 / 14:59).
+//
+// Pipeline:
+//   1. $match      — filter roomId + rentang tanggal
+//   2. $addFields  — hitung slot interval (0 atau 30 untuk interval=30)
+//   3. $sort       — urutkan ascending (WAJIB untuk $first yang deterministik)
+//   4. $group      — per (hour, interval), ambil $first (= data di awal slot)
+//   5. $sort       — urutkan hasil akhir secara kronologis
+//   6. $project    — format timeLabel "HH:MM" + field yang dibutuhkan chart
 router.get('/:roomId/history', async (req, res) => {
   try {
     const { roomId } = req.params;
@@ -94,7 +101,11 @@ router.get('/:roomId/history', async (req, res) => {
       endDate = new Date(today.setHours(23, 59, 59, 999));
     }
 
-    console.log(`📊 Fetching history data for room ${roomId} from ${startDate} to ${endDate}`);
+    const intervalNum = parseInt(interval);
+
+    console.log(
+      `📊 Fetching history data for room ${roomId} from ${startDate} to ${endDate} (interval: ${intervalNum}m)`
+    );
 
     // Aggregation pipeline untuk data per interval
     const aggregationPipeline = [
@@ -107,13 +118,20 @@ router.get('/:roomId/history', async (req, res) => {
       {
         $addFields: {
           // Buat interval waktu (misal: 30 menit)
+          // minute 0-29 → 0, minute 30-59 → 30 (untuk interval=30)
           timeInterval: {
             $subtract: [
               { $minute: "$timestamp" },
-              { $mod: [{ $minute: "$timestamp" }, parseInt(interval)] }
+              { $mod: [{ $minute: "$timestamp" }, intervalNum] }
             ]
           }
         }
+      },
+      // FIXED: sort ascending SEBELUM $group, agar $first di bawah
+      // menghasilkan nilai TEPAT di awal slot (menit :00 / :30).
+      // Tanpa sort, $first mengembalikan dokumen non-deterministik.
+      {
+        $sort: { "timestamp": 1 }
       },
       {
         $group: {
@@ -121,16 +139,17 @@ router.get('/:roomId/history', async (req, res) => {
             hour: { $hour: "$timestamp" },
             interval: "$timeInterval"
           },
-          // Ambil data terakhir di setiap interval
-          timestamp: { $last: "$timestamp" },
-          aqi: { $last: "$aqi" },
-          pm25: { $last: "$pm25" },
-          pm10: { $last: "$pm10" },
-          co2: { $last: "$co2" },
-          temperature: { $last: "$temperature" },
-          humidity: { $last: "$humidity" },
-          category: { $last: "$category" },
-          // Juga simpan data mentah untuk tooltip
+          // FIXED: $first (bukan $last) agar titik merepresentasikan
+          // nilai pada awal slot — cocok dengan label "14:00", "14:30".
+          timestamp: { $first: "$timestamp" },
+          aqi: { $first: "$aqi" },
+          pm25: { $first: "$pm25" },
+          pm10: { $first: "$pm10" },
+          co2: { $first: "$co2" },
+          temperature: { $first: "$temperature" },
+          humidity: { $first: "$humidity" },
+          category: { $first: "$category" },
+          // Simpan semua data mentah slot (untuk tooltip / audit)
           rawData: { $push: "$$ROOT" }
         }
       },
@@ -193,8 +212,8 @@ router.get('/:roomId/history', async (req, res) => {
 
     res.json({
       success: true,
-      data: aggregatedData, // Atau rawData
-      aggregated: true, // Atau false
+      data: aggregatedData,
+      aggregated: true,
       count: aggregatedData.length,
       startDate: startDate,
       endDate: endDate,

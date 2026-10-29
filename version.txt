@@ -2407,9 +2407,6 @@ const router = express.Router();
 const mongoose = require('mongoose');
 const SensorData = require('../models/SensorData');
 
-// FIXED: authMiddleware dihapus dari import karena kedua endpoint
-// di bawah kini PUBLIC (lihat penjelasan di masing-masing route).
-
 // Helper function untuk convert string ke ObjectId
 const toObjectId = (id) => {
   try {
@@ -2467,10 +2464,20 @@ router.get('/:roomId', async (req, res) => {
   }
 });
 
-// NEW: GET sensor data by date untuk grafik history
-// FIXED: route dibuat PUBLIC (authMiddleware dihapus) — alasan sama
-// dengan endpoint di atas. Grafik historis per tanggal harus bisa
-// dilihat oleh visitor tanpa login.
+// GET sensor data by date untuk grafik history
+// FIXED (2026): route ini sekarang mengambil data TEPAT di kelipatan
+// interval (default 30 menit) dengan menggunakan $first setelah $sort,
+// sehingga tiap titik merepresentasikan nilai pada awal slot
+// (14:00, 14:30, 15:00, 15:30, dst) — bukan nilai di akhir slot
+// (yang lebih dekat ke 14:29 / 14:59).
+//
+// Pipeline:
+//   1. $match      — filter roomId + rentang tanggal
+//   2. $addFields  — hitung slot interval (0 atau 30 untuk interval=30)
+//   3. $sort       — urutkan ascending (WAJIB untuk $first yang deterministik)
+//   4. $group      — per (hour, interval), ambil $first (= data di awal slot)
+//   5. $sort       — urutkan hasil akhir secara kronologis
+//   6. $project    — format timeLabel "HH:MM" + field yang dibutuhkan chart
 router.get('/:roomId/history', async (req, res) => {
   try {
     const { roomId } = req.params;
@@ -2498,7 +2505,11 @@ router.get('/:roomId/history', async (req, res) => {
       endDate = new Date(today.setHours(23, 59, 59, 999));
     }
 
-    console.log(`📊 Fetching history data for room ${roomId} from ${startDate} to ${endDate}`);
+    const intervalNum = parseInt(interval);
+
+    console.log(
+      `📊 Fetching history data for room ${roomId} from ${startDate} to ${endDate} (interval: ${intervalNum}m)`
+    );
 
     // Aggregation pipeline untuk data per interval
     const aggregationPipeline = [
@@ -2511,13 +2522,20 @@ router.get('/:roomId/history', async (req, res) => {
       {
         $addFields: {
           // Buat interval waktu (misal: 30 menit)
+          // minute 0-29 → 0, minute 30-59 → 30 (untuk interval=30)
           timeInterval: {
             $subtract: [
               { $minute: "$timestamp" },
-              { $mod: [{ $minute: "$timestamp" }, parseInt(interval)] }
+              { $mod: [{ $minute: "$timestamp" }, intervalNum] }
             ]
           }
         }
+      },
+      // FIXED: sort ascending SEBELUM $group, agar $first di bawah
+      // menghasilkan nilai TEPAT di awal slot (menit :00 / :30).
+      // Tanpa sort, $first mengembalikan dokumen non-deterministik.
+      {
+        $sort: { "timestamp": 1 }
       },
       {
         $group: {
@@ -2525,16 +2543,17 @@ router.get('/:roomId/history', async (req, res) => {
             hour: { $hour: "$timestamp" },
             interval: "$timeInterval"
           },
-          // Ambil data terakhir di setiap interval
-          timestamp: { $last: "$timestamp" },
-          aqi: { $last: "$aqi" },
-          pm25: { $last: "$pm25" },
-          pm10: { $last: "$pm10" },
-          co2: { $last: "$co2" },
-          temperature: { $last: "$temperature" },
-          humidity: { $last: "$humidity" },
-          category: { $last: "$category" },
-          // Juga simpan data mentah untuk tooltip
+          // FIXED: $first (bukan $last) agar titik merepresentasikan
+          // nilai pada awal slot — cocok dengan label "14:00", "14:30".
+          timestamp: { $first: "$timestamp" },
+          aqi: { $first: "$aqi" },
+          pm25: { $first: "$pm25" },
+          pm10: { $first: "$pm10" },
+          co2: { $first: "$co2" },
+          temperature: { $first: "$temperature" },
+          humidity: { $first: "$humidity" },
+          category: { $first: "$category" },
+          // Simpan semua data mentah slot (untuk tooltip / audit)
           rawData: { $push: "$$ROOT" }
         }
       },
@@ -2597,8 +2616,8 @@ router.get('/:roomId/history', async (req, res) => {
 
     res.json({
       success: true,
-      data: aggregatedData, // Atau rawData
-      aggregated: true, // Atau false
+      data: aggregatedData,
+      aggregated: true,
       count: aggregatedData.length,
       startDate: startDate,
       endDate: endDate,
@@ -20564,6 +20583,10 @@ class _HistoryChartState extends State<HistoryChart> {
   String _error = '';
   final ScrollController _scrollController = ScrollController();
 
+  // FOV config — 8 titik per viewport
+  static const int _pointsInView = 8;
+  static const double _containerPadding = 16.0;
+
   // Parameter options
   final List<String> _parameters = [
     'aqi',
@@ -20615,7 +20638,7 @@ class _HistoryChartState extends State<HistoryChart> {
     super.dispose();
   }
 
-    Future<void> _loadHistoryData() async {
+  Future<void> _loadHistoryData() async {
     if (!mounted) return;
 
     final hadData = _historyData.isNotEmpty;
@@ -20690,9 +20713,6 @@ class _HistoryChartState extends State<HistoryChart> {
     }
   }
 
-  // Helper function untuk mendapatkan kategori AQI
-
-
   // FIXED: bungkus dengan try-catch. showDatePicker dapat melempar
   // (mis. context tidak valid saat widget sudah unmounted).
   Future<void> _selectDate(BuildContext context) async {
@@ -20759,35 +20779,45 @@ class _HistoryChartState extends State<HistoryChart> {
     return spots;
   }
 
+  // FIXED: interval diubah dari 2 → 1 agar getTitlesWidget dipanggil
+  // untuk SETIAP titik. Penyaringan label dilakukan di dalam widget
+  // berdasarkan minute == 0 (jam genap: 14:00, 15:00, 16:00).
+  //
+  // Dengan cara ini, label tetap muncul dengan benar meskipun titik
+  // pertama bukan berada di menit :00 (mis. chart dibuka saat 14:30,
+  // maka titik pertama adalah 14:30 → label pertama di 15:00).
   SideTitles _getBottomTitles() {
     return SideTitles(
       showTitles: true,
       reservedSize: 30,
-      interval: 2,
+      interval: 1,
       getTitlesWidget: (value, meta) {
-        if (value < 0 || value >= _historyData.length) {
+        // Hanya untuk nilai x yang berupa bilangan bulat (indeks valid)
+        final index = value.toInt();
+        if (value != index.toDouble()) return const SizedBox.shrink();
+        if (index < 0 || index >= _historyData.length) {
           return const SizedBox.shrink();
         }
 
-        final data = _historyData[value.toInt()];
+        final data = _historyData[index];
         final hour = data.timestamp.hour;
         final minute = data.timestamp.minute;
 
-        if (minute == 0) {
-          final hourLabel =
-              hour == 0 ? '00' : hour.toString().padLeft(2, '0');
-          return Padding(
-            padding: const EdgeInsets.only(top: 8.0),
-            child: Text(
-              '$hourLabel:00',
-              style: const TextStyle(
-                fontSize: 10,
-                color: Colors.grey,
-              ),
+        // FIXED: hanya tampilkan label di jam genap (minute == 0).
+        // Titik di menit :30 (14:30, 15:30, ...) tidak diberi label.
+        if (minute != 0) return const SizedBox.shrink();
+
+        final hourLabel = hour.toString().padLeft(2, '0');
+        return Padding(
+          padding: const EdgeInsets.only(top: 8.0),
+          child: Text(
+            '$hourLabel:00',
+            style: const TextStyle(
+              fontSize: 10,
+              color: Colors.grey,
             ),
-          );
-        }
-        return const SizedBox.shrink();
+          ),
+        );
       },
     );
   }
@@ -20796,14 +20826,29 @@ class _HistoryChartState extends State<HistoryChart> {
     final spots = _getDataPoints();
     final color = _parameterColors[_selectedParameter]!;
 
-    final chartWidth = _historyData.length * 60.0;
-    final minChartWidth = MediaQuery.of(context).size.width * 1.5;
-    final actualChartWidth =
-        chartWidth > minChartWidth ? chartWidth : minChartWidth;
+    // FIXED: FOV 8 titik per viewport.
+    //   pointSpacing = (lebar layar − padding container) / 8
+    //   chartWidth   = jumlah titik × pointSpacing
+    //   minimal      = lebar viewport (agar chart tidak lebih sempit dari layar)
+    //
+    // Contoh pada layar 400px:
+    //   availableViewport = 400 − 32 = 368
+    //   pointSpacing      = 368 / 8 = 46px
+    //   48 titik (24 jam) → chartWidth = 48 × 46 = 2208px
+    //   viewport 368px    → menampilkan 368/46 = 8 titik
+    final screenWidth = MediaQuery.of(context).size.width;
+    final availableViewport =
+        screenWidth - (_containerPadding * 2);
+    final pointSpacing = availableViewport / _pointsInView;
+
+    final calculatedWidth = _historyData.length * pointSpacing;
+    final actualChartWidth = calculatedWidth > availableViewport
+        ? calculatedWidth
+        : availableViewport;
 
     return Container(
       height: 350,
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(_containerPadding),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
@@ -21011,6 +21056,10 @@ class _HistoryChartState extends State<HistoryChart> {
     );
   }
 
+  // FIXED: tetap pertahankan padding 10% di atas & di bawah agar
+  // spike (lonjakan mendadak) tetap MUAT di dalam FOV chart.
+  // Contoh: data normal AQI 40-60, spike 350 → maxY = 350 × 1.1 = 385,
+  // sehingga spike terlihat penuh tanpa terpotong.
   double _getMinY() {
     if (_historyData.isEmpty) return 0.0;
 
