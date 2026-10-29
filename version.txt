@@ -18024,14 +18024,36 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
   }
 
-  void _handleRoomTap(Room room) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => RoomDetailScreen(room: room),
-      ),
-    );
+  Future<void> _refreshDataSilently() async {
+  if (!_isMounted) return;
+
+  final roomProvider = Provider.of<RoomProvider>(context, listen: false);
+
+  try {
+    // `refresh()` di provider sudah punya guard `if (_isRefreshing) return;`
+    // sehingga aman dipanggil meskipun timer 60 detik sedang berjalan.
+    await roomProvider.refresh();
+  } catch (e) {
+    // Silent — cukup log, jangan ganggu user dengan snackbar
+    debugPrint('Auto-refresh on return failed: $e');
   }
+}
+
+  void _handleRoomTap(Room room) {
+  Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (context) => RoomDetailScreen(room: room),
+    ),
+  ).then((_) {
+    // FIXED: begitu user kembali dari detail ruangan, ambil data terbaru
+    // dari server. Ini menangkap perubahan yang terjadi di detail
+    // (manual refresh, auto-refresh 60s, atau notification socket).
+    if (_isMounted) {
+      _refreshDataSilently();
+    }
+  });
+}
 
   // FIXED: sebelumnya tidak ada try-catch → unhandled exception saat server
   // mati. Sekarang: error di-log, navigasi tetap dijalankan di `finally`.
@@ -18098,23 +18120,31 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ],
       ),
       drawer: AppDrawer(
-        isAdmin: widget.isAdminMode,
-        onDashboardTap: () => Navigator.pop(context),
-        onBuildingsTap: () {
-          Navigator.pushNamed(context, '/admin/buildings');
-        },
-        onRoomsTap: () {
-          Navigator.pushNamed(context, '/admin/rooms');
-        },
-        onDevicesTap: () {
-          Navigator.pushNamed(context, '/admin/iot-devices');
-        },
-        onProfileTap: () {
-          Navigator.pushNamed(context, '/admin/profile');
-        },
-        onHelpTap: _handleHelpTap,
-        onLogoutTap: _handleLogout,
-      ),
+      isAdmin: widget.isAdminMode,
+      onDashboardTap: () => Navigator.pop(context),
+      onBuildingsTap: () {
+        Navigator.pushNamed(context, '/admin/buildings').then((_) {
+          if (_isMounted) _refreshDataSilently();
+        });
+      },
+      onRoomsTap: () {
+        Navigator.pushNamed(context, '/admin/rooms').then((_) {
+          if (_isMounted) _refreshDataSilently();
+        });
+      },
+      onDevicesTap: () {
+        Navigator.pushNamed(context, '/admin/iot-devices').then((_) {
+          if (_isMounted) _refreshDataSilently();
+        });
+      },
+      onProfileTap: () {
+        Navigator.pushNamed(context, '/admin/profile').then((_) {
+          if (_isMounted) _refreshDataSilently();
+        });
+  },
+  onHelpTap: _handleHelpTap,
+  onLogoutTap: _handleLogout,
+),
       body: CustomScrollView(
         slivers: [
           // Search and Filter Section
