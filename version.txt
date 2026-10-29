@@ -771,6 +771,7 @@ const buildingSchema = new mongoose.Schema({
   code: {
     type: String,
     unique: true,
+    sparse: true, // ✅ FIX: izinkan banyak dokumen tanpa `code`
     trim: true,
     uppercase: true
   },
@@ -793,7 +794,7 @@ const buildingSchema = new mongoose.Schema({
   }
 });
 
-// KOMENTARI SEMUA HOOKS UNTUK SEKARANG
+// Hook lama dinonaktifkan, biar service yang atur manual
 // buildingSchema.pre('save', function(next) {
 //   this.updatedAt = Date.now();
 //   next();
@@ -805,7 +806,6 @@ const buildingSchema = new mongoose.Schema({
 // });
 
 module.exports = mongoose.model('Building', buildingSchema);
-
 
 ---------------------------------------------------------------------------------------------------------------------------------------
 src/models/IotDevice.js:
@@ -1073,7 +1073,7 @@ const Building = require('../models/Building');
 const Room = require('../models/Room');
 const { authMiddleware, adminMiddleware } = require('../middleware/authMiddleware');
 
-// GET all buildings (public — dipakai dashboard pengunjung)
+// GET all buildings (public)
 router.get('/', async (req, res) => {
   try {
     const buildings = await Building.find().sort({ name: 1 });
@@ -1087,8 +1087,7 @@ router.get('/', async (req, res) => {
     console.error('Error fetching buildings:', error);
     res.status(500).json({
       success: false,
-      message: 'Error fetching buildings',
-      error: error.message
+      message: 'Gagal memuat data gedung'
     });
   }
 });
@@ -1101,7 +1100,7 @@ router.get('/:id', async (req, res) => {
     if (!building) {
       return res.status(404).json({
         success: false,
-        message: 'Building not found'
+        message: 'Gedung tidak ditemukan'
       });
     }
 
@@ -1113,8 +1112,7 @@ router.get('/:id', async (req, res) => {
     console.error('Error fetching building:', error);
     res.status(500).json({
       success: false,
-      message: 'Error fetching building',
-      error: error.message
+      message: 'Gagal memuat data gedung'
     });
   }
 });
@@ -1127,11 +1125,11 @@ router.post('/', authMiddleware, adminMiddleware, async (req, res) => {
     if (!name || !name.trim()) {
       return res.status(400).json({
         success: false,
-        message: 'Building name is required'
+        message: 'Nama gedung wajib diisi'
       });
     }
 
-    // Cek duplikat code jika diisi
+    // Cek duplikat code HANYA jika code diisi
     if (code && code.trim()) {
       const existingCode = await Building.findOne({
         code: code.toUpperCase().trim()
@@ -1139,42 +1137,50 @@ router.post('/', authMiddleware, adminMiddleware, async (req, res) => {
       if (existingCode) {
         return res.status(400).json({
           success: false,
-          message: 'Building code already exists'
+          message: 'Kode gedung sudah digunakan. Gunakan kode lain atau kosongkan.'
         });
       }
     }
 
-    const building = new Building({
+    // ✅ FIX: jangan set field `code` sama sekali jika kosong
+    const buildingData = {
       name: name.trim(),
-      code: code && code.trim() ? code.toUpperCase().trim() : undefined,
-      description: description && description.trim() ? description.trim() : undefined,
       roomCount: 0,
       createdAt: new Date(),
       updatedAt: new Date()
-    });
+    };
 
+    if (code && code.trim()) {
+      buildingData.code = code.toUpperCase().trim();
+    }
+    if (description && description.trim()) {
+      buildingData.description = description.trim();
+    }
+
+    const building = new Building(buildingData);
     await building.save();
 
     res.status(201).json({
       success: true,
-      message: 'Building created successfully',
+      message: 'Gedung berhasil dibuat',
       data: building
     });
   } catch (error) {
     console.error('Error creating building:', error);
 
-    // Handle duplicate key dari unique index (code)
     if (error.code === 11000) {
+      const dupField = Object.keys(error.keyPattern || {})[0];
       return res.status(400).json({
         success: false,
-        message: 'Building code already exists'
+        message: dupField === 'code'
+          ? 'Kode gedung sudah digunakan. Gunakan kode lain atau kosongkan.'
+          : 'Data gedung sudah ada'
       });
     }
 
     res.status(500).json({
       success: false,
-      message: 'Error creating building',
-      error: error.message
+      message: 'Gagal membuat gedung. Silakan coba lagi.'
     });
   }
 });
@@ -1188,7 +1194,7 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
     if (!building) {
       return res.status(404).json({
         success: false,
-        message: 'Building not found'
+        message: 'Gedung tidak ditemukan'
       });
     }
 
@@ -1203,23 +1209,32 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
       if (existing) {
         return res.status(400).json({
           success: false,
-          message: 'Building code already exists'
+          message: 'Kode gedung sudah digunakan. Gunakan kode lain atau kosongkan.'
         });
       }
     }
 
     if (name && name.trim()) building.name = name.trim();
+
     if (code !== undefined) {
-      building.code = code && code.trim() ? code.toUpperCase().trim() : undefined;
+      if (code && code.trim()) {
+        building.code = code.toUpperCase().trim();
+      } else {
+        // ✅ FIX: benar-benar unset field agar tidak tersimpan sebagai `null`
+        building.set('code', undefined);
+      }
     }
+
     if (description !== undefined) {
-      building.description = description && description.trim() ? description.trim() : undefined;
+      building.description = description && description.trim()
+        ? description.trim()
+        : undefined;
     }
     building.updatedAt = new Date();
 
     await building.save();
 
-    // FIXED: sinkronkan buildingName di semua Room terkait saat nama berubah
+    // Sinkronkan buildingName di semua Room terkait saat nama berubah
     if (oldName !== building.name) {
       await Room.updateMany(
         { building: building._id },
@@ -1229,23 +1244,25 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
 
     res.json({
       success: true,
-      message: 'Building updated successfully',
+      message: 'Gedung berhasil diperbarui',
       data: building
     });
   } catch (error) {
     console.error('Error updating building:', error);
 
     if (error.code === 11000) {
+      const dupField = Object.keys(error.keyPattern || {})[0];
       return res.status(400).json({
         success: false,
-        message: 'Building code already exists'
+        message: dupField === 'code'
+          ? 'Kode gedung sudah digunakan. Gunakan kode lain atau kosongkan.'
+          : 'Data gedung sudah ada'
       });
     }
 
     res.status(500).json({
       success: false,
-      message: 'Error updating building',
-      error: error.message
+      message: 'Gagal memperbarui gedung. Silakan coba lagi.'
     });
   }
 });
@@ -1257,7 +1274,7 @@ router.delete('/:id', authMiddleware, adminMiddleware, async (req, res) => {
     if (!building) {
       return res.status(404).json({
         success: false,
-        message: 'Building not found'
+        message: 'Gedung tidak ditemukan'
       });
     }
 
@@ -1266,8 +1283,7 @@ router.delete('/:id', authMiddleware, adminMiddleware, async (req, res) => {
     if (roomCount > 0) {
       return res.status(400).json({
         success: false,
-        message: 'Cannot delete building that has rooms',
-        roomCount: roomCount
+        message: `Gedung tidak dapat dihapus karena masih memiliki ${roomCount} ruangan`
       });
     }
 
@@ -1275,14 +1291,13 @@ router.delete('/:id', authMiddleware, adminMiddleware, async (req, res) => {
 
     res.json({
       success: true,
-      message: 'Building deleted successfully'
+      message: 'Gedung berhasil dihapus'
     });
   } catch (error) {
     console.error('Error deleting building:', error);
     res.status(500).json({
       success: false,
-      message: 'Error deleting building',
-      error: error.message
+      message: 'Gagal menghapus gedung. Silakan coba lagi.'
     });
   }
 });
@@ -1290,7 +1305,7 @@ router.delete('/:id', authMiddleware, adminMiddleware, async (req, res) => {
 module.exports = router;
 
 ---------------------------------------------------------------------------------------------------------------------------------------
-src\routes\buildingRoutes.js
+C:\develop\UNILA-AQI\unila-aqi-backend\src\routes\iotDeviceRoutes.js
 
 const express = require('express');
 const router = express.Router();
@@ -4154,8 +4169,6 @@ const { authMiddleware } = require('./middleware/authMiddleware');
 const app = express();
 const server = http.createServer(app);
 
-// FIXED: tangani error server-level (mis. EADDRINUSE) agar proses tidak
-// crash dengan stack trace default Node.
 server.on('error', (err) => {
   console.error('❌ Server error:', err.message);
   if (err.code === 'EADDRINUSE') {
@@ -4167,7 +4180,7 @@ server.on('error', (err) => {
 
 const io = socketIo(server, {
   cors: {
-    origin: "*", // Allow all origins for development
+    origin: "*",
     methods: ["GET", "POST", "PUT", "DELETE"],
     credentials: true
   }
@@ -4177,7 +4190,7 @@ const io = socketIo(server, {
 app.use(cors());
 app.use(express.json());
 
-// Make io accessible to other modules (routes membaca req.app.get('socketio'))
+// Make io accessible to other modules
 app.set('socketio', io);
 
 // Routes
@@ -4189,7 +4202,7 @@ app.use('/api/rooms', roomRoutes);
 app.use('/api/iot-devices', iotDeviceRoutes);
 app.use('/api/sensor-data', sensorDataRoutes);
 
-// Basic route for testing
+// Basic route
 app.get('/', (req, res) => {
   res.json({
     message: 'UNILA AQI Backend API is running',
@@ -4203,7 +4216,6 @@ app.get('/', (req, res) => {
 io.on('connection', (socket) => {
   console.log(`🔌 New client connected: ${socket.id}`);
 
-  // Join specific room
   socket.on('join-room', (roomId) => {
     socket.join(roomId);
     console.log(`📡 Socket ${socket.id} joined room: ${roomId}`);
@@ -4215,13 +4227,11 @@ io.on('connection', (socket) => {
     });
   });
 
-  // Leave room
   socket.on('leave-room', (roomId) => {
     socket.leave(roomId);
     console.log(`📡 Socket ${socket.id} left room: ${roomId}`);
   });
 
-  // Subscribe to dashboard updates
   socket.on('subscribe-dashboard', () => {
     socket.join('dashboard');
     console.log(`📊 Socket ${socket.id} subscribed to dashboard updates`);
@@ -4232,19 +4242,16 @@ io.on('connection', (socket) => {
     });
   });
 
-  // Unsubscribe from dashboard
   socket.on('unsubscribe-dashboard', () => {
     socket.leave('dashboard');
     console.log(`📊 Socket ${socket.id} unsubscribed from dashboard`);
   });
 
-  // Subscribe to room updates
   socket.on('subscribe-room-updates', (roomId) => {
     socket.join(`room-updates-${roomId}`);
     console.log(`📡 Socket ${socket.id} subscribed to room ${roomId} updates`);
   });
 
-  // Request manual refresh
   socket.on('request-refresh', (data) => {
     const roomId = data?.roomId;
     console.log(`🔄 Socket ${socket.id} requested refresh${roomId ? ` for room ${roomId}` : ''}`);
@@ -4274,7 +4281,6 @@ io.on('connection', (socket) => {
     });
   });
 
-  // Handle disconnection
   socket.on('disconnect', (reason) => {
     console.log(`🔌 Client disconnected: ${socket.id} (reason: ${reason})`);
 
@@ -4285,7 +4291,6 @@ io.on('connection', (socket) => {
     });
   });
 
-  // Ping for connection testing
   socket.on('ping', (data) => {
     const clientTime = data?.timestamp;
     socket.emit('pong', {
@@ -4295,7 +4300,6 @@ io.on('connection', (socket) => {
     });
   });
 
-  // Send connection confirmation
   socket.emit('connected', {
     socketId: socket.id,
     message: 'Connected to UNILA AQI WebSocket server',
@@ -4308,7 +4312,6 @@ io.on('connection', (socket) => {
   });
 });
 
-// Function to broadcast room updates
 const broadcastRoomUpdate = (roomId, data) => {
   if (io) {
     io.to(roomId).emit('room-update', {
@@ -4320,14 +4323,12 @@ const broadcastRoomUpdate = (roomId, data) => {
   }
 };
 
-// Function to broadcast to all connected clients
 const broadcastToAll = (event, data) => {
   if (io) {
     io.emit(event, data);
   }
 };
 
-// Export for use in other modules
 module.exports = {
   broadcastRoomUpdate,
   broadcastToAll
@@ -4339,6 +4340,16 @@ mongoose.connect(process.env.MONGODB_URI)
     console.log('✅ Connected to MongoDB Atlas');
     console.log(`📊 Database: ${mongoose.connection.db.databaseName}`);
     console.log(`📍 Host: ${mongoose.connection.host}`);
+
+    // ✅ FIX: drop index lama (non-sparse) & buat ulang yang sparse
+    // Wajib dijalankan agar index `code` jadi sparse dan error E11000
+    // untuk gedung tanpa kode tidak muncul lagi.
+    try {
+      await Building.syncIndexes();
+      console.log('✅ Building indexes synced (code sparse)');
+    } catch (syncErr) {
+      console.error('⚠️  Building index sync warning:', syncErr.message);
+    }
 
     // Seed admin user
     await seedInitialAdmin();
@@ -4370,7 +4381,6 @@ mongoose.connect(process.env.MONGODB_URI)
     console.error('Connection string:', maskedUri);
   });
 
-// Function to sync building names
 async function syncBuildingNames() {
   try {
     console.log('🔄 Syncing building names in rooms...');
@@ -4396,7 +4406,6 @@ async function syncBuildingNames() {
   }
 }
 
-// Start server
 const PORT = process.env.PORT || 5000;
 
 const seedInitialAdmin = async () => {
@@ -4436,8 +4445,6 @@ app.get('/api/simple-test', (req, res) => {
   });
 });
 
-// FIXED: endpoint ini sebelumnya tidak await & tanpa auth.
-// Sekarang: wajib login (authMiddleware) + await agar reject tertangkap.
 app.post('/api/force-refresh', authMiddleware, async (req, res) => {
   try {
     await simulationService.forceUpdate();
@@ -4456,7 +4463,7 @@ app.post('/api/force-refresh', authMiddleware, async (req, res) => {
     console.error('❌ Force refresh error:', error);
     res.status(500).json({
       success: false,
-      message: 'Error forcing refresh',
+      message: 'Gagal melakukan refresh',
       error: error.message
     });
   }
@@ -11185,9 +11192,6 @@ class Helpers {
   // ============================================================
   // ERROR / NETWORK HELPERS
   // ============================================================
-  // FIXED: hapus substring generic 'failed to fetch' dari daftar pencocokan
-  // karena bertabrakan dengan pesan error kita sendiri di repository.
-  // Dipertahankan dari versi sebelumnya — JANGAN diubah.
   static bool isNetworkError(dynamic error) {
     final s = (error?.toString() ?? '').toLowerCase();
     return s.contains('socketexception') ||
@@ -11222,6 +11226,7 @@ class Helpers {
     return 'Terjadi kesalahan saat memuat data.\nSilakan coba lagi.';
   }
 
+  /// ✅ FIX: filter noisy tokens diperluas + buang semua prefix teknis
   static String extractBackendMessage(
     dynamic error, {
     required String fallback,
@@ -11230,14 +11235,25 @@ class Helpers {
     msg = msg.replaceFirst('Exception: ', '').trim();
 
     final lower = msg.toLowerCase();
-    if (msg.isEmpty ||
-        isNetworkError(error) ||
-        lower.contains('clientexception') ||
-        lower.contains('socketexception') ||
-        lower.contains('http exception') ||
-        lower.contains('xmlhttprequest') ||
-        lower.contains('instance of') ||
-        lower.contains('failed host lookup')) {
+
+    const noisyTokens = [
+      'clientexception',
+      'socketexception',
+      'http exception',
+      'httpexception',
+      'xmlhttprequest',
+      'instance of',
+      'failed host lookup',
+      'stacktrace',
+      'stack trace',
+      'mongooseerror',
+      'cast to objectid',
+      'typeerror',
+      'null check operator',
+    ];
+    final hasNoise = noisyTokens.any(lower.contains);
+
+    if (msg.isEmpty || isNetworkError(error) || hasNoise) {
       return fallback;
     }
     return msg;
@@ -11245,10 +11261,7 @@ class Helpers {
 
   // ============================================================
   // AQI HELPERS — PP 22/2021
-  // Menggunakan warna dari AppColors (single source of truth).
   // ============================================================
-
-  /// Mendeteksi AQI error (sensor rusak/offline).
   static bool isErrorAQI(int aqi) => aqi < 0;
 
   static Color getAQIColor(int aqi) {
@@ -11289,10 +11302,7 @@ class Helpers {
     return 'berbahaya';
   }
 
-  // ============================================================
-  // PM2.5 — threshold concentration per PP 22/2021
-  //   0-55 / 56-150 / 151-250 / 251-350 / >350
-  // ============================================================
+  // PM2.5
   static String getPM25Status(double value) {
     if (value < 0) return 'ERROR';
     if (value <= 55) return 'BAIK';
@@ -11311,11 +11321,7 @@ class Helpers {
     return AppColors.aqiHazardous;
   }
 
-  // ============================================================
-  // PM10 — threshold concentration per PP 22/2021
-  //   0-50 / 51-150 / 151-350 / 351-420 / >420
-  //   (berbeda dari PM2.5 — jangan disamakan!)
-  // ============================================================
+  // PM10
   static String getPM10Status(double value) {
     if (value < 0) return 'ERROR';
     if (value <= 50) return 'BAIK';
@@ -11334,9 +11340,7 @@ class Helpers {
     return AppColors.aqiHazardous;
   }
 
-  // ============================================================
-  // TEMPERATURE — SNI 03-6572-2001
-  // ============================================================
+  // Temperature
   static String getTemperatureStatus(double value) {
     if (value < 0) return 'ERROR';
     if (value <= 20) return 'DINGIN';
@@ -11353,9 +11357,7 @@ class Helpers {
     return AppColors.error;
   }
 
-  // ============================================================
-  // HUMIDITY — SNI 03-6572-2001
-  // ============================================================
+  // Humidity
   static String getHumidityStatus(double value) {
     if (value < 0) return 'ERROR';
     if (value < 40) return 'KERING';
@@ -11372,10 +11374,7 @@ class Helpers {
     return AppColors.aqiUnhealthy;
   }
 
-  // ============================================================
-  // CO2 — selaras dengan AppColors (bukan lagi warna hardcoded)
-  //   0-600 / 601-1000 / 1001-1500 / 1501-2000 / >2000
-  // ============================================================
+  // CO2
   static String getCO2Status(double value) {
     if (value < 0) return 'ERROR';
     if (value <= 600) return 'BAIK';
@@ -11694,7 +11693,6 @@ class Helpers {
       recommendations.add('Aman untuk perkuliahan dengan durasi berapapun');
     }
 
-    // Threshold diselaraskan dengan PP 22/2021
     if (data.pm25 > 55 && data.pm25 >= 0) {
       recommendations.add('PM2.5 melewati ambang "Baik" (ISPU > 50): Gunakan air purifier');
     }
@@ -13275,8 +13273,6 @@ class _BuildingManagementScreenState extends State<BuildingManagementScreen> {
     _loadCacheThenFetch();
   }
 
-  /// 1) Muat cache dulu agar konten terakhir tampil,
-  /// 2) lalu fetch dari server untuk update terbaru.
   Future<void> _loadCacheThenFetch() async {
     Map<String, dynamic>? cached;
     try {
@@ -13307,7 +13303,6 @@ class _BuildingManagementScreenState extends State<BuildingManagementScreen> {
 
   Future<void> _loadBuildings() async {
     setState(() {
-      // Spinner hanya jika belum ada data (cache kosong)
       _isLoading = _buildings.isEmpty;
       _hasError = false;
     });
@@ -13321,13 +13316,12 @@ class _BuildingManagementScreenState extends State<BuildingManagementScreen> {
       });
       _filterBuildings(_searchController.text);
 
-      // Simpan cache
       try {
         await _storage.setJson(_cacheKey, {
           'data': buildings.map((b) => b.toJson()).toList(),
         });
       } catch (_) {}
-        } catch (e) {
+    } catch (e) {
       if (!mounted) return;
 
       if (Helpers.isNetworkError(e)) {
@@ -13340,7 +13334,6 @@ class _BuildingManagementScreenState extends State<BuildingManagementScreen> {
         );
       }
 
-      // Tampilkan error state HANYA jika tidak ada cache sama sekali
       if (_buildings.isEmpty) {
         setState(() {
           _hasError = true;
@@ -13353,14 +13346,14 @@ class _BuildingManagementScreenState extends State<BuildingManagementScreen> {
   }
 
   Future<void> _handleManualRefresh() async {
-  if (_isRefreshing) return;
-  setState(() => _isRefreshing = true);
-  try {
-    await _loadBuildings();
-  } finally {
-    if (mounted) setState(() => _isRefreshing = false);
+    if (_isRefreshing) return;
+    setState(() => _isRefreshing = true);
+    try {
+      await _loadBuildings();
+    } finally {
+      if (mounted) setState(() => _isRefreshing = false);
+    }
   }
-}
 
   void _filterBuildings(String query) {
     if (query.isEmpty) {
@@ -13409,11 +13402,12 @@ class _BuildingManagementScreenState extends State<BuildingManagementScreen> {
       if (Helpers.isNetworkError(e)) {
         Helpers.showServerError(context);
       } else {
-        Helpers.showSnackBar(
-          context,
-          'Gagal menghapus gedung: $e',
-          isError: true,
+        // ✅ FIX: pesan user-friendly
+        final msg = Helpers.extractBackendMessage(
+          e,
+          fallback: 'Gagal menghapus gedung. Silakan coba lagi.',
         );
+        Helpers.showSnackBar(context, msg, isError: true);
       }
     }
   }
@@ -13444,7 +13438,7 @@ class _BuildingManagementScreenState extends State<BuildingManagementScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-     appBar: AppBar(
+      appBar: AppBar(
         title: const Text('Kelola Gedung'),
         actions: [
           const ServerStatusIndicator(),
@@ -13518,7 +13512,7 @@ class _BuildingManagementScreenState extends State<BuildingManagementScreen> {
             const Expanded(
               child: Center(child: CircularProgressIndicator()),
             )
-                    else if (_hasError && _filteredBuildings.isEmpty)
+          else if (_hasError && _filteredBuildings.isEmpty)
             Expanded(
               child: Center(
                 child: Padding(
@@ -13534,9 +13528,7 @@ class _BuildingManagementScreenState extends State<BuildingManagementScreen> {
                       const SizedBox(height: 16),
                       Text(
                         'Tidak dapat memuat data',
-                        style: Theme.of(context)
-                            .textTheme
-                            .titleLarge,
+                        style: Theme.of(context).textTheme.titleLarge,
                         textAlign: TextAlign.center,
                       ),
                       const SizedBox(height: 8),
@@ -13571,8 +13563,7 @@ class _BuildingManagementScreenState extends State<BuildingManagementScreen> {
                     const SizedBox(height: 16),
                     const Text(
                       'Tidak ada gedung ditemukan',
-                      style:
-                          TextStyle(fontSize: 16, color: Colors.grey),
+                      style: TextStyle(fontSize: 16, color: Colors.grey),
                     ),
                     const SizedBox(height: 8),
                     if (_searchController.text.isNotEmpty)
@@ -13811,11 +13802,12 @@ class _AddEditBuildingScreenState extends State<AddEditBuildingScreen> {
       if (Helpers.isNetworkError(e)) {
         Helpers.showServerError(context);
       } else {
-        Helpers.showSnackBar(
-          context,
-          'Gagal menyimpan gedung: $e',
-          isError: true,
+        // ✅ FIX: pesan user-friendly
+        final msg = Helpers.extractBackendMessage(
+          e,
+          fallback: 'Gagal menyimpan gedung. Silakan coba lagi.',
         );
+        Helpers.showSnackBar(context, msg, isError: true);
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -13997,7 +13989,7 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
           'data': devices.map((d) => d.toJson()).toList(),
         });
       } catch (_) {}
-        } catch (e) {
+    } catch (e) {
       if (!mounted) return;
 
       if (Helpers.isNetworkError(e)) {
@@ -14022,14 +14014,14 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
   }
 
   Future<void> _handleManualRefresh() async {
-  if (_isRefreshing) return;
-  setState(() => _isRefreshing = true);
-  try {
-    await _loadData();
-  } finally {
-    if (mounted) setState(() => _isRefreshing = false);
+    if (_isRefreshing) return;
+    setState(() => _isRefreshing = true);
+    try {
+      await _loadData();
+    } finally {
+      if (mounted) setState(() => _isRefreshing = false);
+    }
   }
-}
 
   void _filterDevices(String query) {
     if (query.isEmpty) {
@@ -14079,11 +14071,12 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
       if (Helpers.isNetworkError(e)) {
         Helpers.showServerError(context);
       } else {
-        Helpers.showSnackBar(
-          context,
-          'Gagal menghapus device: $e',
-          isError: true,
+        // ✅ FIX: pesan user-friendly
+        final msg = Helpers.extractBackendMessage(
+          e,
+          fallback: 'Gagal menghapus perangkat. Silakan coba lagi.',
         );
+        Helpers.showSnackBar(context, msg, isError: true);
       }
     }
   }
@@ -14114,34 +14107,34 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-     appBar: AppBar(
-      title: const Text('Kelola Device IoT'),
-      actions: [
-        const ServerStatusIndicator(),
-        IconButton(
-          icon: _isRefreshing
-              ? const SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: AppColors.primary,
+      appBar: AppBar(
+        title: const Text('Kelola Device IoT'),
+        actions: [
+          const ServerStatusIndicator(),
+          IconButton(
+            icon: _isRefreshing
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: AppColors.primary,
+                    ),
+                  )
+                : const Icon(
+                    Icons.refresh_rounded,
+                    size: 22,
+                    color: AppColors.textSecondary,
                   ),
-                )
-              : const Icon(
-                  Icons.refresh_rounded,
-                  size: 22,
-                  color: AppColors.textSecondary,
-                ),
-          onPressed: () {
-            ServerStatusIndicator.checkNow();
-            _handleManualRefresh();
-          },
-          splashRadius: 20,
-          tooltip: 'Refresh',
-        ),
-      ],
-    ),
+            onPressed: () {
+              ServerStatusIndicator.checkNow();
+              _handleManualRefresh();
+            },
+            splashRadius: 20,
+            tooltip: 'Refresh',
+          ),
+        ],
+      ),
       body: Column(
         children: [
           Padding(
@@ -14188,7 +14181,7 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
             const Expanded(
               child: Center(child: CircularProgressIndicator()),
             )
-                    else if (_hasError && _filteredDevices.isEmpty)
+          else if (_hasError && _filteredDevices.isEmpty)
             Expanded(
               child: Center(
                 child: Padding(
@@ -14204,9 +14197,7 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
                       const SizedBox(height: 16),
                       Text(
                         'Tidak dapat memuat data',
-                        style: Theme.of(context)
-                            .textTheme
-                            .titleLarge,
+                        style: Theme.of(context).textTheme.titleLarge,
                         textAlign: TextAlign.center,
                       ),
                       const SizedBox(height: 8),
@@ -14435,11 +14426,12 @@ class _AddEditIoTDeviceScreenState extends State<AddEditIoTDeviceScreen> {
       if (Helpers.isNetworkError(e)) {
         Helpers.showServerError(context);
       } else {
-        Helpers.showSnackBar(
-          context,
-          'Gagal menyimpan device: $e',
-          isError: true,
+        // ✅ FIX: pesan user-friendly
+        final msg = Helpers.extractBackendMessage(
+          e,
+          fallback: 'Gagal menyimpan perangkat. Silakan coba lagi.',
         );
+        Helpers.showSnackBar(context, msg, isError: true);
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -16068,45 +16060,46 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
   }
 
   Future<void> _deleteRoom(String roomId) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Hapus Ruangan'),
-        content: const Text('Apakah Anda yakin ingin menghapus ruangan ini?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Batal'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Hapus',
-                style: TextStyle(color: AppColors.error)),
-          ),
-        ],
-      ),
-    );
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Hapus Ruangan'),
+      content: const Text('Apakah Anda yakin ingin menghapus ruangan ini?'),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: const Text('Batal'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context, true),
+          child: const Text('Hapus',
+              style: TextStyle(color: AppColors.error)),
+        ),
+      ],
+    ),
+  );
 
-    if (confirmed != true) return;
+  if (confirmed != true) return;
 
-    try {
-      await _roomRepository.deleteRoom(roomId);
-      await _loadData();
-      if (!mounted) return;
-      Helpers.showSnackBar(context, 'Ruangan berhasil dihapus');
-    } catch (e) {
-      if (!mounted) return;
-      if (Helpers.isNetworkError(e)) {
-        Helpers.showServerError(context);
-      } else {
-        Helpers.showSnackBar(
-          context,
-          'Gagal menghapus ruangan',
-          isError: true,
-        );
-      }
+  try {
+    await _roomRepository.deleteRoom(roomId);
+    await _loadData();
+    if (!mounted) return;
+    Helpers.showSnackBar(context, 'Ruangan berhasil dihapus');
+  } catch (e) {
+    if (!mounted) return;
+    if (Helpers.isNetworkError(e)) {
+      Helpers.showServerError(context);
+    } else {
+      // ✅ FIX: pesan user-friendly
+      final msg = Helpers.extractBackendMessage(
+        e,
+        fallback: 'Gagal menghapus ruangan. Silakan coba lagi.',
+      );
+      Helpers.showSnackBar(context, msg, isError: true);
     }
   }
+}
 
   void _navigateToAddRoom() {
     Navigator.push(
@@ -16595,11 +16588,12 @@ class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
       if (Helpers.isNetworkError(e)) {
         Helpers.showServerError(context);
       } else {
-        Helpers.showSnackBar(
-          context,
-          'Gagal menyimpan ruangan',
-          isError: true,
+        // ✅ FIX: pesan user-friendly
+        final msg = Helpers.extractBackendMessage(
+          e,
+          fallback: 'Gagal menyimpan ruangan. Silakan coba lagi.',
         );
+        Helpers.showSnackBar(context, msg, isError: true);
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);

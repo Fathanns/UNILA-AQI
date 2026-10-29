@@ -9,6 +9,7 @@ const buildingSchema = new mongoose.Schema({
   code: {
     type: String,
     unique: true,
+    sparse: true, // ✅ FIX: izinkan banyak dokumen tanpa `code`
     trim: true,
     uppercase: true
   },
@@ -31,7 +32,7 @@ const buildingSchema = new mongoose.Schema({
   }
 });
 
-// KOMENTARI SEMUA HOOKS UNTUK SEKARANG
+// Hook lama dinonaktifkan, biar service yang atur manual
 // buildingSchema.pre('save', function(next) {
 //   this.updatedAt = Date.now();
 //   next();

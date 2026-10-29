@@ -10,9 +10,6 @@ class Helpers {
   // ============================================================
   // ERROR / NETWORK HELPERS
   // ============================================================
-  // FIXED: hapus substring generic 'failed to fetch' dari daftar pencocokan
-  // karena bertabrakan dengan pesan error kita sendiri di repository.
-  // Dipertahankan dari versi sebelumnya — JANGAN diubah.
   static bool isNetworkError(dynamic error) {
     final s = (error?.toString() ?? '').toLowerCase();
     return s.contains('socketexception') ||
@@ -47,6 +44,7 @@ class Helpers {
     return 'Terjadi kesalahan saat memuat data.\nSilakan coba lagi.';
   }
 
+  /// ✅ FIX: filter noisy tokens diperluas + buang semua prefix teknis
   static String extractBackendMessage(
     dynamic error, {
     required String fallback,
@@ -55,14 +53,25 @@ class Helpers {
     msg = msg.replaceFirst('Exception: ', '').trim();
 
     final lower = msg.toLowerCase();
-    if (msg.isEmpty ||
-        isNetworkError(error) ||
-        lower.contains('clientexception') ||
-        lower.contains('socketexception') ||
-        lower.contains('http exception') ||
-        lower.contains('xmlhttprequest') ||
-        lower.contains('instance of') ||
-        lower.contains('failed host lookup')) {
+
+    const noisyTokens = [
+      'clientexception',
+      'socketexception',
+      'http exception',
+      'httpexception',
+      'xmlhttprequest',
+      'instance of',
+      'failed host lookup',
+      'stacktrace',
+      'stack trace',
+      'mongooseerror',
+      'cast to objectid',
+      'typeerror',
+      'null check operator',
+    ];
+    final hasNoise = noisyTokens.any(lower.contains);
+
+    if (msg.isEmpty || isNetworkError(error) || hasNoise) {
       return fallback;
     }
     return msg;
@@ -70,10 +79,7 @@ class Helpers {
 
   // ============================================================
   // AQI HELPERS — PP 22/2021
-  // Menggunakan warna dari AppColors (single source of truth).
   // ============================================================
-
-  /// Mendeteksi AQI error (sensor rusak/offline).
   static bool isErrorAQI(int aqi) => aqi < 0;
 
   static Color getAQIColor(int aqi) {
@@ -114,10 +120,7 @@ class Helpers {
     return 'berbahaya';
   }
 
-  // ============================================================
-  // PM2.5 — threshold concentration per PP 22/2021
-  //   0-55 / 56-150 / 151-250 / 251-350 / >350
-  // ============================================================
+  // PM2.5
   static String getPM25Status(double value) {
     if (value < 0) return 'ERROR';
     if (value <= 55) return 'BAIK';
@@ -136,11 +139,7 @@ class Helpers {
     return AppColors.aqiHazardous;
   }
 
-  // ============================================================
-  // PM10 — threshold concentration per PP 22/2021
-  //   0-50 / 51-150 / 151-350 / 351-420 / >420
-  //   (berbeda dari PM2.5 — jangan disamakan!)
-  // ============================================================
+  // PM10
   static String getPM10Status(double value) {
     if (value < 0) return 'ERROR';
     if (value <= 50) return 'BAIK';
@@ -159,9 +158,7 @@ class Helpers {
     return AppColors.aqiHazardous;
   }
 
-  // ============================================================
-  // TEMPERATURE — SNI 03-6572-2001
-  // ============================================================
+  // Temperature
   static String getTemperatureStatus(double value) {
     if (value < 0) return 'ERROR';
     if (value <= 20) return 'DINGIN';
@@ -178,9 +175,7 @@ class Helpers {
     return AppColors.error;
   }
 
-  // ============================================================
-  // HUMIDITY — SNI 03-6572-2001
-  // ============================================================
+  // Humidity
   static String getHumidityStatus(double value) {
     if (value < 0) return 'ERROR';
     if (value < 40) return 'KERING';
@@ -197,10 +192,7 @@ class Helpers {
     return AppColors.aqiUnhealthy;
   }
 
-  // ============================================================
-  // CO2 — selaras dengan AppColors (bukan lagi warna hardcoded)
-  //   0-600 / 601-1000 / 1001-1500 / 1501-2000 / >2000
-  // ============================================================
+  // CO2
   static String getCO2Status(double value) {
     if (value < 0) return 'ERROR';
     if (value <= 600) return 'BAIK';
@@ -519,7 +511,6 @@ class Helpers {
       recommendations.add('Aman untuk perkuliahan dengan durasi berapapun');
     }
 
-    // Threshold diselaraskan dengan PP 22/2021
     if (data.pm25 > 55 && data.pm25 >= 0) {
       recommendations.add('PM2.5 melewati ambang "Baik" (ISPU > 50): Gunakan air purifier');
     }

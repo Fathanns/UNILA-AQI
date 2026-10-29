@@ -34,8 +34,6 @@ class _BuildingManagementScreenState extends State<BuildingManagementScreen> {
     _loadCacheThenFetch();
   }
 
-  /// 1) Muat cache dulu agar konten terakhir tampil,
-  /// 2) lalu fetch dari server untuk update terbaru.
   Future<void> _loadCacheThenFetch() async {
     Map<String, dynamic>? cached;
     try {
@@ -66,7 +64,6 @@ class _BuildingManagementScreenState extends State<BuildingManagementScreen> {
 
   Future<void> _loadBuildings() async {
     setState(() {
-      // Spinner hanya jika belum ada data (cache kosong)
       _isLoading = _buildings.isEmpty;
       _hasError = false;
     });
@@ -80,13 +77,12 @@ class _BuildingManagementScreenState extends State<BuildingManagementScreen> {
       });
       _filterBuildings(_searchController.text);
 
-      // Simpan cache
       try {
         await _storage.setJson(_cacheKey, {
           'data': buildings.map((b) => b.toJson()).toList(),
         });
       } catch (_) {}
-        } catch (e) {
+    } catch (e) {
       if (!mounted) return;
 
       if (Helpers.isNetworkError(e)) {
@@ -99,7 +95,6 @@ class _BuildingManagementScreenState extends State<BuildingManagementScreen> {
         );
       }
 
-      // Tampilkan error state HANYA jika tidak ada cache sama sekali
       if (_buildings.isEmpty) {
         setState(() {
           _hasError = true;
@@ -112,14 +107,14 @@ class _BuildingManagementScreenState extends State<BuildingManagementScreen> {
   }
 
   Future<void> _handleManualRefresh() async {
-  if (_isRefreshing) return;
-  setState(() => _isRefreshing = true);
-  try {
-    await _loadBuildings();
-  } finally {
-    if (mounted) setState(() => _isRefreshing = false);
+    if (_isRefreshing) return;
+    setState(() => _isRefreshing = true);
+    try {
+      await _loadBuildings();
+    } finally {
+      if (mounted) setState(() => _isRefreshing = false);
+    }
   }
-}
 
   void _filterBuildings(String query) {
     if (query.isEmpty) {
@@ -168,11 +163,12 @@ class _BuildingManagementScreenState extends State<BuildingManagementScreen> {
       if (Helpers.isNetworkError(e)) {
         Helpers.showServerError(context);
       } else {
-        Helpers.showSnackBar(
-          context,
-          'Gagal menghapus gedung: $e',
-          isError: true,
+        // ✅ FIX: pesan user-friendly
+        final msg = Helpers.extractBackendMessage(
+          e,
+          fallback: 'Gagal menghapus gedung. Silakan coba lagi.',
         );
+        Helpers.showSnackBar(context, msg, isError: true);
       }
     }
   }
@@ -203,7 +199,7 @@ class _BuildingManagementScreenState extends State<BuildingManagementScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-     appBar: AppBar(
+      appBar: AppBar(
         title: const Text('Kelola Gedung'),
         actions: [
           const ServerStatusIndicator(),
@@ -277,7 +273,7 @@ class _BuildingManagementScreenState extends State<BuildingManagementScreen> {
             const Expanded(
               child: Center(child: CircularProgressIndicator()),
             )
-                    else if (_hasError && _filteredBuildings.isEmpty)
+          else if (_hasError && _filteredBuildings.isEmpty)
             Expanded(
               child: Center(
                 child: Padding(
@@ -293,9 +289,7 @@ class _BuildingManagementScreenState extends State<BuildingManagementScreen> {
                       const SizedBox(height: 16),
                       Text(
                         'Tidak dapat memuat data',
-                        style: Theme.of(context)
-                            .textTheme
-                            .titleLarge,
+                        style: Theme.of(context).textTheme.titleLarge,
                         textAlign: TextAlign.center,
                       ),
                       const SizedBox(height: 8),
@@ -330,8 +324,7 @@ class _BuildingManagementScreenState extends State<BuildingManagementScreen> {
                     const SizedBox(height: 16),
                     const Text(
                       'Tidak ada gedung ditemukan',
-                      style:
-                          TextStyle(fontSize: 16, color: Colors.grey),
+                      style: TextStyle(fontSize: 16, color: Colors.grey),
                     ),
                     const SizedBox(height: 8),
                     if (_searchController.text.isNotEmpty)
@@ -570,11 +563,12 @@ class _AddEditBuildingScreenState extends State<AddEditBuildingScreen> {
       if (Helpers.isNetworkError(e)) {
         Helpers.showServerError(context);
       } else {
-        Helpers.showSnackBar(
-          context,
-          'Gagal menyimpan gedung: $e',
-          isError: true,
+        // ✅ FIX: pesan user-friendly
+        final msg = Helpers.extractBackendMessage(
+          e,
+          fallback: 'Gagal menyimpan gedung. Silakan coba lagi.',
         );
+        Helpers.showSnackBar(context, msg, isError: true);
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);

@@ -73,7 +73,7 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
           'data': devices.map((d) => d.toJson()).toList(),
         });
       } catch (_) {}
-        } catch (e) {
+    } catch (e) {
       if (!mounted) return;
 
       if (Helpers.isNetworkError(e)) {
@@ -98,14 +98,14 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
   }
 
   Future<void> _handleManualRefresh() async {
-  if (_isRefreshing) return;
-  setState(() => _isRefreshing = true);
-  try {
-    await _loadData();
-  } finally {
-    if (mounted) setState(() => _isRefreshing = false);
+    if (_isRefreshing) return;
+    setState(() => _isRefreshing = true);
+    try {
+      await _loadData();
+    } finally {
+      if (mounted) setState(() => _isRefreshing = false);
+    }
   }
-}
 
   void _filterDevices(String query) {
     if (query.isEmpty) {
@@ -155,11 +155,12 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
       if (Helpers.isNetworkError(e)) {
         Helpers.showServerError(context);
       } else {
-        Helpers.showSnackBar(
-          context,
-          'Gagal menghapus device: $e',
-          isError: true,
+        // ✅ FIX: pesan user-friendly
+        final msg = Helpers.extractBackendMessage(
+          e,
+          fallback: 'Gagal menghapus perangkat. Silakan coba lagi.',
         );
+        Helpers.showSnackBar(context, msg, isError: true);
       }
     }
   }
@@ -190,34 +191,34 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-     appBar: AppBar(
-      title: const Text('Kelola Device IoT'),
-      actions: [
-        const ServerStatusIndicator(),
-        IconButton(
-          icon: _isRefreshing
-              ? const SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: AppColors.primary,
+      appBar: AppBar(
+        title: const Text('Kelola Device IoT'),
+        actions: [
+          const ServerStatusIndicator(),
+          IconButton(
+            icon: _isRefreshing
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: AppColors.primary,
+                    ),
+                  )
+                : const Icon(
+                    Icons.refresh_rounded,
+                    size: 22,
+                    color: AppColors.textSecondary,
                   ),
-                )
-              : const Icon(
-                  Icons.refresh_rounded,
-                  size: 22,
-                  color: AppColors.textSecondary,
-                ),
-          onPressed: () {
-            ServerStatusIndicator.checkNow();
-            _handleManualRefresh();
-          },
-          splashRadius: 20,
-          tooltip: 'Refresh',
-        ),
-      ],
-    ),
+            onPressed: () {
+              ServerStatusIndicator.checkNow();
+              _handleManualRefresh();
+            },
+            splashRadius: 20,
+            tooltip: 'Refresh',
+          ),
+        ],
+      ),
       body: Column(
         children: [
           Padding(
@@ -264,7 +265,7 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
             const Expanded(
               child: Center(child: CircularProgressIndicator()),
             )
-                    else if (_hasError && _filteredDevices.isEmpty)
+          else if (_hasError && _filteredDevices.isEmpty)
             Expanded(
               child: Center(
                 child: Padding(
@@ -280,9 +281,7 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
                       const SizedBox(height: 16),
                       Text(
                         'Tidak dapat memuat data',
-                        style: Theme.of(context)
-                            .textTheme
-                            .titleLarge,
+                        style: Theme.of(context).textTheme.titleLarge,
                         textAlign: TextAlign.center,
                       ),
                       const SizedBox(height: 8),
@@ -511,11 +510,12 @@ class _AddEditIoTDeviceScreenState extends State<AddEditIoTDeviceScreen> {
       if (Helpers.isNetworkError(e)) {
         Helpers.showServerError(context);
       } else {
-        Helpers.showSnackBar(
-          context,
-          'Gagal menyimpan device: $e',
-          isError: true,
+        // ✅ FIX: pesan user-friendly
+        final msg = Helpers.extractBackendMessage(
+          e,
+          fallback: 'Gagal menyimpan perangkat. Silakan coba lagi.',
         );
+        Helpers.showSnackBar(context, msg, isError: true);
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);

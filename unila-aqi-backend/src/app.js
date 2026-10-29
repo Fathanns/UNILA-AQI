@@ -26,8 +26,6 @@ const { authMiddleware } = require('./middleware/authMiddleware');
 const app = express();
 const server = http.createServer(app);
 
-// FIXED: tangani error server-level (mis. EADDRINUSE) agar proses tidak
-// crash dengan stack trace default Node.
 server.on('error', (err) => {
   console.error('❌ Server error:', err.message);
   if (err.code === 'EADDRINUSE') {
@@ -39,7 +37,7 @@ server.on('error', (err) => {
 
 const io = socketIo(server, {
   cors: {
-    origin: "*", // Allow all origins for development
+    origin: "*",
     methods: ["GET", "POST", "PUT", "DELETE"],
     credentials: true
   }
@@ -49,7 +47,7 @@ const io = socketIo(server, {
 app.use(cors());
 app.use(express.json());
 
-// Make io accessible to other modules (routes membaca req.app.get('socketio'))
+// Make io accessible to other modules
 app.set('socketio', io);
 
 // Routes
@@ -61,7 +59,7 @@ app.use('/api/rooms', roomRoutes);
 app.use('/api/iot-devices', iotDeviceRoutes);
 app.use('/api/sensor-data', sensorDataRoutes);
 
-// Basic route for testing
+// Basic route
 app.get('/', (req, res) => {
   res.json({
     message: 'UNILA AQI Backend API is running',
@@ -75,7 +73,6 @@ app.get('/', (req, res) => {
 io.on('connection', (socket) => {
   console.log(`🔌 New client connected: ${socket.id}`);
 
-  // Join specific room
   socket.on('join-room', (roomId) => {
     socket.join(roomId);
     console.log(`📡 Socket ${socket.id} joined room: ${roomId}`);
@@ -87,13 +84,11 @@ io.on('connection', (socket) => {
     });
   });
 
-  // Leave room
   socket.on('leave-room', (roomId) => {
     socket.leave(roomId);
     console.log(`📡 Socket ${socket.id} left room: ${roomId}`);
   });
 
-  // Subscribe to dashboard updates
   socket.on('subscribe-dashboard', () => {
     socket.join('dashboard');
     console.log(`📊 Socket ${socket.id} subscribed to dashboard updates`);
@@ -104,19 +99,16 @@ io.on('connection', (socket) => {
     });
   });
 
-  // Unsubscribe from dashboard
   socket.on('unsubscribe-dashboard', () => {
     socket.leave('dashboard');
     console.log(`📊 Socket ${socket.id} unsubscribed from dashboard`);
   });
 
-  // Subscribe to room updates
   socket.on('subscribe-room-updates', (roomId) => {
     socket.join(`room-updates-${roomId}`);
     console.log(`📡 Socket ${socket.id} subscribed to room ${roomId} updates`);
   });
 
-  // Request manual refresh
   socket.on('request-refresh', (data) => {
     const roomId = data?.roomId;
     console.log(`🔄 Socket ${socket.id} requested refresh${roomId ? ` for room ${roomId}` : ''}`);
@@ -146,7 +138,6 @@ io.on('connection', (socket) => {
     });
   });
 
-  // Handle disconnection
   socket.on('disconnect', (reason) => {
     console.log(`🔌 Client disconnected: ${socket.id} (reason: ${reason})`);
 
@@ -157,7 +148,6 @@ io.on('connection', (socket) => {
     });
   });
 
-  // Ping for connection testing
   socket.on('ping', (data) => {
     const clientTime = data?.timestamp;
     socket.emit('pong', {
@@ -167,7 +157,6 @@ io.on('connection', (socket) => {
     });
   });
 
-  // Send connection confirmation
   socket.emit('connected', {
     socketId: socket.id,
     message: 'Connected to UNILA AQI WebSocket server',
@@ -180,7 +169,6 @@ io.on('connection', (socket) => {
   });
 });
 
-// Function to broadcast room updates
 const broadcastRoomUpdate = (roomId, data) => {
   if (io) {
     io.to(roomId).emit('room-update', {
@@ -192,14 +180,12 @@ const broadcastRoomUpdate = (roomId, data) => {
   }
 };
 
-// Function to broadcast to all connected clients
 const broadcastToAll = (event, data) => {
   if (io) {
     io.emit(event, data);
   }
 };
 
-// Export for use in other modules
 module.exports = {
   broadcastRoomUpdate,
   broadcastToAll
@@ -211,6 +197,16 @@ mongoose.connect(process.env.MONGODB_URI)
     console.log('✅ Connected to MongoDB Atlas');
     console.log(`📊 Database: ${mongoose.connection.db.databaseName}`);
     console.log(`📍 Host: ${mongoose.connection.host}`);
+
+    // ✅ FIX: drop index lama (non-sparse) & buat ulang yang sparse
+    // Wajib dijalankan agar index `code` jadi sparse dan error E11000
+    // untuk gedung tanpa kode tidak muncul lagi.
+    try {
+      await Building.syncIndexes();
+      console.log('✅ Building indexes synced (code sparse)');
+    } catch (syncErr) {
+      console.error('⚠️  Building index sync warning:', syncErr.message);
+    }
 
     // Seed admin user
     await seedInitialAdmin();
@@ -242,7 +238,6 @@ mongoose.connect(process.env.MONGODB_URI)
     console.error('Connection string:', maskedUri);
   });
 
-// Function to sync building names
 async function syncBuildingNames() {
   try {
     console.log('🔄 Syncing building names in rooms...');
@@ -268,7 +263,6 @@ async function syncBuildingNames() {
   }
 }
 
-// Start server
 const PORT = process.env.PORT || 5000;
 
 const seedInitialAdmin = async () => {
@@ -308,8 +302,6 @@ app.get('/api/simple-test', (req, res) => {
   });
 });
 
-// FIXED: endpoint ini sebelumnya tidak await & tanpa auth.
-// Sekarang: wajib login (authMiddleware) + await agar reject tertangkap.
 app.post('/api/force-refresh', authMiddleware, async (req, res) => {
   try {
     await simulationService.forceUpdate();
@@ -328,7 +320,7 @@ app.post('/api/force-refresh', authMiddleware, async (req, res) => {
     console.error('❌ Force refresh error:', error);
     res.status(500).json({
       success: false,
-      message: 'Error forcing refresh',
+      message: 'Gagal melakukan refresh',
       error: error.message
     });
   }

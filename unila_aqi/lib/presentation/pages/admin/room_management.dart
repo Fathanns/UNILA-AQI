@@ -307,45 +307,46 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
   }
 
   Future<void> _deleteRoom(String roomId) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Hapus Ruangan'),
-        content: const Text('Apakah Anda yakin ingin menghapus ruangan ini?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Batal'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Hapus',
-                style: TextStyle(color: AppColors.error)),
-          ),
-        ],
-      ),
-    );
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Hapus Ruangan'),
+      content: const Text('Apakah Anda yakin ingin menghapus ruangan ini?'),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: const Text('Batal'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context, true),
+          child: const Text('Hapus',
+              style: TextStyle(color: AppColors.error)),
+        ),
+      ],
+    ),
+  );
 
-    if (confirmed != true) return;
+  if (confirmed != true) return;
 
-    try {
-      await _roomRepository.deleteRoom(roomId);
-      await _loadData();
-      if (!mounted) return;
-      Helpers.showSnackBar(context, 'Ruangan berhasil dihapus');
-    } catch (e) {
-      if (!mounted) return;
-      if (Helpers.isNetworkError(e)) {
-        Helpers.showServerError(context);
-      } else {
-        Helpers.showSnackBar(
-          context,
-          'Gagal menghapus ruangan',
-          isError: true,
-        );
-      }
+  try {
+    await _roomRepository.deleteRoom(roomId);
+    await _loadData();
+    if (!mounted) return;
+    Helpers.showSnackBar(context, 'Ruangan berhasil dihapus');
+  } catch (e) {
+    if (!mounted) return;
+    if (Helpers.isNetworkError(e)) {
+      Helpers.showServerError(context);
+    } else {
+      // ✅ FIX: pesan user-friendly
+      final msg = Helpers.extractBackendMessage(
+        e,
+        fallback: 'Gagal menghapus ruangan. Silakan coba lagi.',
+      );
+      Helpers.showSnackBar(context, msg, isError: true);
     }
   }
+}
 
   void _navigateToAddRoom() {
     Navigator.push(
@@ -834,11 +835,12 @@ class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
       if (Helpers.isNetworkError(e)) {
         Helpers.showServerError(context);
       } else {
-        Helpers.showSnackBar(
-          context,
-          'Gagal menyimpan ruangan',
-          isError: true,
+        // ✅ FIX: pesan user-friendly
+        final msg = Helpers.extractBackendMessage(
+          e,
+          fallback: 'Gagal menyimpan ruangan. Silakan coba lagi.',
         );
+        Helpers.showSnackBar(context, msg, isError: true);
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
