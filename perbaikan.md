@@ -1,6 +1,6 @@
 *QUESTIONABLE*
 
-- bagaimana nantinya kita dapat melihat hasil tampilan pada aplikasi di semua kemungkinan data yang dapat dimunculkan
+- ~~bagaimana nantinya kita dapat melihat hasil tampilan pada aplikasi di semua kemungkinan data yang dapat dimunculkan~~
 - bagaimana cara saya menentukan nilai partikel pada rentang waktu, dan mengapa saya memilih rentang waktu tersebut. apakah harus ada metode yang menentukan hal tersebut
 
 *SUGGESTION*

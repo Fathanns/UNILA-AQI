@@ -7,6 +7,7 @@ import 'package:unila_aqi/data/models/room.dart';
 import 'package:unila_aqi/data/repositories/room_repository.dart';
 import 'package:unila_aqi/presentation/widgets/chart/history_chart.dart';
 import '../../widgets/common/server_status_indicator.dart';
+enum _RecSeverity { normal, warning, danger }
 
 class RoomDetailScreen extends StatefulWidget {
   final Room room;
@@ -477,8 +478,7 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
     );
   }
 
-  Widget _buildHealthRecommendations() {
-    final aqi = _currentRoomData.currentAQI;
+      Widget _buildHealthRecommendations() {
     final recommendations =
         Helpers.getDetailedRecommendations(_currentRoomData);
 
@@ -499,50 +499,19 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
+          const Row(
             children: [
-              const Icon(
+              Icon(
                 Icons.health_and_safety_rounded,
                 color: Colors.blue,
                 size: 18,
               ),
-              const SizedBox(width: 6),
-              const Text(
+              SizedBox(width: 6),
+              Text(
                 'REKOMENDASI KESEHATAN',
                 style: TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
-                ),
-              ),
-              const Spacer(),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: Colors.blue.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 6,
-                      height: 6,
-                      decoration: BoxDecoration(
-                        color: Helpers.getAQIColor(
-                            _currentRoomData.currentAQI),
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      'AQI: $aqi',
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: Colors.blue.shade700,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
                 ),
               ),
             ],
@@ -556,13 +525,15 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
     );
   }
 
-  Widget _buildParameterStatus() {
+   Widget _buildParameterStatus() {
     final data = _currentRoomData.currentData;
+    final aqi = _currentRoomData.currentAQI;
 
     return Wrap(
       spacing: 10,
       runSpacing: 10,
       children: [
+        _buildStatusChip('AQI: $aqi', Helpers.getAQIColor(aqi)),
         _buildStatusChip('PM2.5: ${data.pm25.toStringAsFixed(1)}',
             Helpers.getPM25Color(data.pm25)),
         _buildStatusChip('PM10: ${data.pm10.toStringAsFixed(1)}',
@@ -597,13 +568,93 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
     );
   }
 
-  Widget _buildRecommendationItem(String text) {
+    Widget _buildRecommendationItem(String text) {
+
+_RecSeverity _recommendationSeverity(String text) {
+    final data = _currentRoomData.currentData;
+    final aqi = _currentRoomData.currentAQI;
+
+    // --- Sensor error: semua baris error dianggap danger ---
+    if (text.startsWith('SENSOR RUANGAN MELAPORKAN ERROR') ||
+        text.startsWith('Nilai AQI yang ditampilkan') ||
+        text.startsWith('Hubungi admin')) {
+      return _RecSeverity.danger;
+    }
+
+    // --- AQI ---
+    if (text.startsWith('AQI:')) {
+      if (aqi <= 50) return _RecSeverity.normal;
+      if (aqi <= 100) return _RecSeverity.warning;
+      return _RecSeverity.danger;
+    }
+
+    // --- PM2.5 ---
+    if (text.startsWith('PM2.5:')) {
+      if (data.pm25 <= 55) return _RecSeverity.normal;
+      if (data.pm25 <= 150) return _RecSeverity.warning;
+      return _RecSeverity.danger;
+    }
+
+    // --- PM10 ---
+    if (text.startsWith('PM10:')) {
+      if (data.pm10 <= 50) return _RecSeverity.normal;
+      if (data.pm10 <= 150) return _RecSeverity.warning;
+      return _RecSeverity.danger;
+    }
+
+    // --- CO₂ ---
+    if (text.startsWith('CO₂:') || text.startsWith('CO2:')) {
+      if (data.co2 <= 600) return _RecSeverity.normal;
+      if (data.co2 <= 1000) return _RecSeverity.warning;
+      return _RecSeverity.danger;
+    }
+
+    // --- Suhu ---
+    if (text.startsWith('Suhu:')) {
+      final t = data.temperature;
+      if (t <= 24) return _RecSeverity.danger; // DINGIN → merah
+      if (t < 27) return _RecSeverity.normal; // IDEAL
+      if (t <= 30) return _RecSeverity.warning; // HANGAT → kuning
+      return _RecSeverity.danger; // PANAS → merah
+    }
+
+    // --- Kelembaban ---
+    if (text.startsWith('Kelembaban:')) {
+      final h = data.humidity;
+      if (h < 40) return _RecSeverity.warning; // KERING → kuning
+      if (h <= 60) return _RecSeverity.normal; // IDEAL
+      if (h <= 70) return _RecSeverity.warning; // LEMBAB → kuning
+      return _RecSeverity.danger; // TIDAK NYAMAN → merah
+    }
+
+    return _RecSeverity.normal;
+  }
+
+    final severity = _recommendationSeverity(text);
+
+    final IconData icon;
+    final Color iconColor;
+    switch (severity) {
+      case _RecSeverity.warning:
+        icon = Icons.warning_amber_rounded;
+        iconColor = Colors.amber.shade700;
+        break;
+      case _RecSeverity.danger:
+        icon = Icons.warning_amber_rounded;
+        iconColor = Colors.red;
+        break;
+      case _RecSeverity.normal:
+        icon = Icons.arrow_right;
+        iconColor = Colors.grey;
+        break;
+    }
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.arrow_right, size: 16, color: Colors.grey),
+          Icon(icon, size: 16, color: iconColor),
           const SizedBox(width: 4),
           Expanded(
             child: Text(

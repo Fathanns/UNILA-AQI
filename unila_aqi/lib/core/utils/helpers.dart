@@ -160,17 +160,17 @@ class Helpers {
 
   // Temperature
   static String getTemperatureStatus(double value) {
-    if (value < 0) return 'ERROR';
-    if (value <= 20) return 'DINGIN';
-    if (value < 24) return 'IDEAL';
+    if (value <= 0) return 'ERROR';
+    if (value <= 24) return 'DINGIN';
+    if (value <= 27) return 'IDEAL';
     if (value <= 30) return 'HANGAT';
     return 'PANAS';
   }
 
   static Color getTemperatureColor(double value) {
     if (value < 0) return AppColors.aqiError;
-    if (value <= 20) return Colors.blue;
-    if (value < 24) return AppColors.success;
+    if (value <= 24) return Colors.blue;
+    if (value < 27) return AppColors.success;
     if (value <= 30) return AppColors.warning;
     return AppColors.error;
   }
@@ -472,63 +472,147 @@ class Helpers {
     return '#${color.value.toRadixString(16).padLeft(8, '0').substring(2)}';
   }
 
-  // ============================================================
-  // REKOMENDASI KESEHATAN
+    // ============================================================
+  // REKOMENDASI KESEHATAN — 1 baris per parameter (tanpa nilai/status)
+  //
+  // Basis acuan:
+  //  - AQI / PM2.5 / PM10 : PP No. 22 Tahun 2021 (ISPU)
+  //  - CO2                : ASHRAE 62.1 & Permenaker 5/2018
+  //  - Suhu / Kelembaban  : SNI 03-6572-2001 & Permenaker 5/2018
+  //
+  // Nilai & kategori TIDAK ditulis di teks — sudah ditampilkan
+  // sebagai chip warna di bagian atas kartu rekomendasi.
   // ============================================================
   static List<String> getDetailedRecommendations(Room room) {
     final recommendations = <String>[];
     final data = room.currentData;
     final aqi = room.currentAQI;
 
+    // 0. SENSOR ERROR
     if (aqi < 0) {
       recommendations.add('SENSOR RUANGAN MELAPORKAN ERROR');
-      recommendations.add('Nilai AQI yang ditampilkan adalah nilai valid terakhir sebelum sensor bermasalah');
-      recommendations.add('Hubungi admin untuk memeriksa perangkat sensor pada ruangan ini');
+      recommendations.add(
+          'Nilai AQI yang ditampilkan adalah nilai valid terakhir sebelum sensor bermasalah');
+      recommendations
+          .add('Hubungi admin untuk memeriksa perangkat sensor pada ruangan ini');
       return recommendations;
     }
 
-    if (aqi > 300) {
-      recommendations.add('KONDISI SANGAT BERBAHAYA - TIDAK ADA AKTIVITAS AKADEMIK TATAP MUKA');
-      recommendations.add('Tim manajemen gedung melakukan pemantauan AQI setiap jam');
-      recommendations.add('Nyalakan air purifier dengan kecepatan maksimum selama 24 jam non-stop untuk membersihkan ruangan');
-    } else if (aqi > 200) {
-      recommendations.add('Kualitas udara dalam kelas sangat berbahaya untuk perkuliahan tatap muka');
-      recommendations.add('Segera alihkan seluruh perkuliahan ke metode daring atau asynchronous');
-      recommendations.add('Nyalakan air purifier dengan kecepatan maksimum selama 24 jam non-stop untuk membersihkan ruangan');
-    } else if (aqi > 150) {
-      recommendations.add('Kualitas udara dalam kelas buruk dan berisiko bagi semua penghuni ruangan');
-      recommendations.add('Gunakan masker ketika berada di ruangan ini');
-      recommendations.add('Wajib menyalakan air purifier di setiap kelas yang digunakan');
-    } else if (aqi > 100) {
-      recommendations.add('Kualitas udara dalam kelas mulai berdampak pada kelompok sensitif');
-      recommendations.add('Kurangi aktivitas fisik berat');
-      recommendations.add('Jika tersedia, nyalakan air purifier di dalam kelas');
-    } else if (aqi > 50) {
-      recommendations.add('Kualitas udara masih dapat diterima untuk perkuliahan');
-      recommendations.add('Pastikan kelas dalam keadaan bersih, tidak ada debu berlebih di lantai, meja, atau AC');
+    // 1. AQI / ISPU — PP 22/2021
+    if (aqi <= 50) {
+      recommendations.add(
+          'AQI: Aman untuk perkuliahan normal dengan durasi berapa pun. Tidak perlu tindakan khusus.');
+    } else if (aqi <= 100) {
+      recommendations.add(
+          'AQI: Perkuliahan tatap muka tetap aman. Pastikan ruangan bebas debu berlebih di lantai, meja, dan filter AC. Kelompok sensitif (asma, ibu hamil, lansia) sebaiknya tidak duduk dekat jendela/sumber polusi.');
+    } else if (aqi <= 200) {
+      recommendations.add(
+          'AQI: Kurangi aktivitas fisik berat di ruangan. Nyalakan air purifier bila tersedia. Mahasiswa dengan riwayat pernapasan disarankan memakai masker. Pertimbangkan memindahkan kelas ke ruangan dengan ventilasi lebih baik.');
+    } else if (aqi <= 300) {
+      recommendations.add(
+          'AQI: Wajib memakai masker di dalam ruangan. Nyalakan air purifier kecepatan maksimum. Batasi durasi tatap muka. Pertimbangkan mengalihkan kelas ke daring/async atau pindah ke ruangan ber-AC terpusat dengan filtrasi HEPA.');
     } else {
-      recommendations.add('Kualitas udara sangat baik dan optimal untuk proses belajar mengajar');
-      recommendations.add('Aman untuk perkuliahan dengan durasi berapapun');
+      recommendations.add(
+          'AQI: Tidak ada aktivitas akademik tatap muka. Alihkan seluruhnya ke daring. Tim gedung pantau AQI setiap jam. Air purifier kecepatan maksimum 24 jam non-stop sampai AQI turun.');
     }
 
-    if (data.pm25 > 55 && data.pm25 >= 0) {
-      recommendations.add('PM2.5 melewati ambang "Baik" (ISPU > 50): Gunakan air purifier');
+    // 2. PM2.5 — PP 22/2021 ISPU
+    final pm25 = data.pm25;
+    if (pm25 >= 0) {
+      if (pm25 <= 55) {
+        recommendations.add(
+            'PM2.5: Aman untuk perkuliahan. Jaga kebersihan lantai dan meja.');
+      } else if (pm25 <= 150) {
+        recommendations.add(
+            'PM2.5: Nyalakan air purifier bila ada. Hindari aktivitas berdebu (menyapu kering, buka jendela saat lalu lintas padat).');
+      } else if (pm25 <= 250) {
+        recommendations.add(
+            'PM2.5: Wajib nyalakan air purifier. Masker disarankan. Tutup jendela. Bersihkan filter AC/purifier.');
+      } else if (pm25 <= 350) {
+        recommendations.add(
+            'PM2.5: Masker wajib (surgical/N95). Air purifier kecepatan maksimum. Pertimbangkan relokasi kelas atau daring.');
+      } else {
+        recommendations.add(
+            'PM2.5: Tidak ada aktivitas tatap muka. Evakuasi ruangan bila perlu. Air purifier 24 jam. Investigasi sumber polusi.');
+      }
     }
-    if (data.pm10 > 50 && data.pm10 >= 0) {
-      recommendations.add('PM10 melewati ambang "Baik" (ISPU > 50): Bersihkan kelas secara basah sebelum perkuliahan');
+
+    // 3. PM10 — PP 22/2021 ISPU
+    final pm10 = data.pm10;
+    if (pm10 >= 0) {
+      if (pm10 <= 50) {
+        recommendations.add(
+            'PM10: Aman. Jaga kebersihan lantai dan meja.');
+      } else if (pm10 <= 150) {
+        recommendations.add(
+            'PM10: Bersihkan kelas secara basah (pel basah) sebelum perkuliahan. Hindari menyapu kering. Pastikan filter AC bersih.');
+      } else if (pm10 <= 350) {
+        recommendations.add(
+            'PM10: Masker disarankan. Nyalakan air purifier. Tutup jendela. Pel basah lebih sering.');
+      } else if (pm10 <= 420) {
+        recommendations.add(
+            'PM10: Masker wajib. Air purifier kecepatan maksimum. Batasi aktivitas fisik. Pertimbangkan daring.');
+      } else {
+        recommendations.add(
+            'PM10: Tidak ada aktivitas tatap muka. Evakuasi. Investigasi sumber debu (renovasi/jalan raya/gudang).');
+      }
     }
-    if (data.co2 > 1000 && data.co2 >= 0) {
-      recommendations.add('CO₂ tinggi: Buka jendela untuk ventilasi');
+
+    // 4. CO2 — ASHRAE 62.1 & Permenaker 5/2018
+    final co2 = data.co2;
+    if (co2 >= 0) {
+      if (co2 <= 600) {
+        recommendations.add(
+            'CO₂: Ventilasi sangat baik. Aman untuk perkuliahan normal.');
+      } else if (co2 <= 1000) {
+        recommendations.add(
+            'CO₂: Pastikan ventilasi mekanis/AC fresh air berjalan. Bila memungkinkan buka pintu/jendela sesaat.');
+      } else if (co2 <= 1500) {
+        recommendations.add(
+            'CO₂: Buka jendela/pintu untuk ventilasi silang. Nyalakan exhaust fan. Kurangi kapasitas mahasiswa di ruangan.');
+      } else if (co2 <= 2000) {
+        recommendations.add(
+            'CO₂: Ventilasi darurat — buka semua akses udara, exhaust maksimum. Pertimbangkan mengosongkan ruangan sementara.');
+      } else {
+        recommendations.add(
+            'CO₂: Evakuasi ruangan. Investigasi segera (sistem HVAC, kebocoran, ruangan tertutup terlalu lama).');
+      }
     }
-    if (data.temperature > 28 && data.temperature >= 0) {
-      recommendations.add('Suhu panas: Nyalakan AC atau kipas');
-    } else if (data.temperature >= 0 && data.temperature < 22 && data.temperature > 0) {
-      recommendations.add('Suhu dingin: Gunakan pemanas ruangan');
+
+    // 5. Suhu — SNI 03-6572-2001 & Permenaker 5/2018
+    final temp = data.temperature;
+    if (temp >= 0) {
+      if (temp <= 24) {
+        recommendations.add(
+            'Suhu: Nyalakan pemanas ruangan bila tersedia. Pakai pakaian hangat. Hindari duduk dekat AC/ventilasi dingin.');
+      } else if (temp <= 27) {
+        recommendations.add(
+            'Suhu: Kondisi optimal untuk belajar. Tidak perlu tindakan.');
+      } else if (temp <= 30) {
+        recommendations.add(
+            'Suhu: Nyalakan AC atau kipas. Pastikan sirkulasi udara baik. Sediakan air minum.');
+      } else {
+        recommendations.add(
+            'Suhu: AC/kipas wajib. Buka ventilasi bila AC tidak tersedia. Sediakan air minum. Pertimbangkan relokasi ke ruangan ber-AC.');
+      }
     }
-    if (data.humidity > 70 && data.humidity >= 0) {
-      recommendations.add('Kelembaban tinggi: Gunakan dehumidifier');
-    } else if (data.humidity >= 0 && data.humidity < 40 && data.humidity > 0) {
-      recommendations.add('Kelembaban rendah: Gunakan humidifier');
+
+    // 6. Kelembaban — SNI 03-6572-2001 & Permenaker 5/2018
+    final humidity = data.humidity;
+    if (humidity >= 0) {
+      if (humidity < 40) {
+        recommendations.add(
+            'Kelembaban: Gunakan humidifier. Sediakan air minum. Hindari AC terlalu dingin yang mengeringkan udara.');
+      } else if (humidity <= 60) {
+        recommendations.add(
+            'Kelembaban: Kondisi optimal. Tidak perlu tindakan.');
+      } else if (humidity <= 70) {
+        recommendations.add(
+            'Kelembaban: Nyalakan dehumidifier atau AC mode dry. Pastikan ventilasi baik. Waspada jamur pada dinding/AC.');
+      } else {
+        recommendations.add(
+            'Kelembaban: Dehumidifier wajib. Tingkatkan ventilasi. Periksa kebocoran/kelembaban dinding. Risiko jamur & tungau meningkat.');
+      }
     }
 
     return recommendations;
