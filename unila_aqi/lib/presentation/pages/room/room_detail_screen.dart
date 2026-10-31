@@ -631,8 +631,8 @@ _RecSeverity _recommendationSeverity(String text) {
     // --- Suhu ---
     if (text.startsWith('Suhu:')) {
       final t = data.temperature;
-      if (t <= 24) return _RecSeverity.danger; // DINGIN → merah
-      if (t < 27) return _RecSeverity.normal; // IDEAL
+      if (t < 24) return _RecSeverity.danger; // DINGIN → merah
+      if (t <= 27) return _RecSeverity.normal; // IDEAL
       if (t <= 30) return _RecSeverity.warning; // HANGAT → kuning
       return _RecSeverity.danger; // PANAS → merah
     }
@@ -867,7 +867,7 @@ _RecSeverity _recommendationSeverity(String text) {
                 Expanded(
                   child: _buildParameterCard(
                     'PM2.5',
-                    _currentRoomData.currentData.pm25.toStringAsFixed(1),
+                    '${_currentRoomData.currentData.pm25.toStringAsFixed(1)}\nμg/m³', 
                     Helpers.getPM25Status(
                         _currentRoomData.currentData.pm25),
                     Helpers.getPM25Color(
@@ -878,7 +878,7 @@ _RecSeverity _recommendationSeverity(String text) {
                 Expanded(
                   child: _buildParameterCard(
                     'PM10',
-                    _currentRoomData.currentData.pm10.toStringAsFixed(1),
+                    '${_currentRoomData.currentData.pm25.toStringAsFixed(1)}\nμg/m³', 
                     Helpers.getPM10Status(
                         _currentRoomData.currentData.pm10),
                     Helpers.getPM10Color(
@@ -889,7 +889,7 @@ _RecSeverity _recommendationSeverity(String text) {
                 Expanded(
                   child: _buildParameterCard(
                     'CO₂',
-                    '${_currentRoomData.currentData.co2.round()}',
+                    '${_currentRoomData.currentData.co2.round()}\nppm',
                     Helpers.getCO2Status(
                         _currentRoomData.currentData.co2),
                     Helpers.getCO2Color(

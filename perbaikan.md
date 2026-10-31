@@ -1,19 +1,17 @@
 *QUESTIONABLE*
 
-- ~~bagaimana nantinya kita dapat melihat hasil tampilan pada aplikasi di semua kemungkinan data yang dapat dimunculkan~~
+- bagaimana nantinya kita dapat melihat hasil tampilan pada aplikasi di semua kemungkinan data yang dapat dimunculkan
 - bagaimana cara saya menentukan nilai partikel pada rentang waktu, dan mengapa saya memilih rentang waktu tersebut. apakah harus ada metode yang menentukan hal tersebut
 
 *SUGGESTION*
 
 - tambah rumus perhitungan aqi di laporan
 
-*FITUR*
+*PERBAIKAN*
 
-- perbaiki halmaman bantuan, perbaiki jadi lebih bagus
+- ~~perbaiki halmaman bantuan, perbaiki jadi lebih bagus~~
 
-======================================================================================================================
-
-perbaikan
+- Perbaiki tampilan dan ui pada halaman kelola gedung, ruangan, dan device iot menjadi seragam dengan halaman profil admin
 
 error
 - ~~error Ketika edit Gedung dan refresh di dashboard~~

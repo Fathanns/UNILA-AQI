@@ -111,15 +111,6 @@ class Helpers {
     return AppConstants.healthRecommendations['dangerous']!;
   }
 
-  static String getAQICategory(int aqi) {
-    if (aqi < 0) return 'error';
-    if (aqi <= 50) return 'baik';
-    if (aqi <= 100) return 'sedang';
-    if (aqi <= 200) return 'tidak_sehat';
-    if (aqi <= 300) return 'sangat_tidak_sehat';
-    return 'berbahaya';
-  }
-
   // PM2.5
   static String getPM25Status(double value) {
     if (value < 0) return 'ERROR';
@@ -160,8 +151,8 @@ class Helpers {
 
   // Temperature
   static String getTemperatureStatus(double value) {
-    if (value <= 0) return 'ERROR';
-    if (value <= 24) return 'DINGIN';
+    if (value < 0) return 'ERROR';
+    if (value < 24) return 'DINGIN';
     if (value <= 27) return 'IDEAL';
     if (value <= 30) return 'HANGAT';
     return 'PANAS';
@@ -169,8 +160,8 @@ class Helpers {
 
   static Color getTemperatureColor(double value) {
     if (value < 0) return AppColors.aqiError;
-    if (value <= 24) return Colors.blue;
-    if (value < 27) return AppColors.success;
+    if (value < 24) return Colors.blue;
+    if (value <= 27) return AppColors.success;
     if (value <= 30) return AppColors.warning;
     return AppColors.error;
   }
@@ -582,7 +573,7 @@ class Helpers {
     // 5. Suhu — SNI 03-6572-2001 & Permenaker 5/2018
     final temp = data.temperature;
     if (temp >= 0) {
-      if (temp <= 24) {
+      if (temp < 24) {
         recommendations.add(
             'Suhu: Nyalakan pemanas ruangan bila tersedia. Pakai pakaian hangat. Hindari duduk dekat AC/ventilasi dingin.');
       } else if (temp <= 27) {

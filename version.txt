@@ -11293,15 +11293,6 @@ class Helpers {
     return AppConstants.healthRecommendations['dangerous']!;
   }
 
-  static String getAQICategory(int aqi) {
-    if (aqi < 0) return 'error';
-    if (aqi <= 50) return 'baik';
-    if (aqi <= 100) return 'sedang';
-    if (aqi <= 200) return 'tidak_sehat';
-    if (aqi <= 300) return 'sangat_tidak_sehat';
-    return 'berbahaya';
-  }
-
   // PM2.5
   static String getPM25Status(double value) {
     if (value < 0) return 'ERROR';
@@ -11342,8 +11333,8 @@ class Helpers {
 
   // Temperature
   static String getTemperatureStatus(double value) {
-    if (value <= 0) return 'ERROR';
-    if (value <= 24) return 'DINGIN';
+    if (value < 0) return 'ERROR';
+    if (value < 24) return 'DINGIN';
     if (value <= 27) return 'IDEAL';
     if (value <= 30) return 'HANGAT';
     return 'PANAS';
@@ -11351,8 +11342,8 @@ class Helpers {
 
   static Color getTemperatureColor(double value) {
     if (value < 0) return AppColors.aqiError;
-    if (value <= 24) return Colors.blue;
-    if (value < 27) return AppColors.success;
+    if (value < 24) return Colors.blue;
+    if (value <= 27) return AppColors.success;
     if (value <= 30) return AppColors.warning;
     return AppColors.error;
   }
@@ -11764,7 +11755,7 @@ class Helpers {
     // 5. Suhu — SNI 03-6572-2001 & Permenaker 5/2018
     final temp = data.temperature;
     if (temp >= 0) {
-      if (temp <= 24) {
+      if (temp < 24) {
         recommendations.add(
             'Suhu: Nyalakan pemanas ruangan bila tersedia. Pakai pakaian hangat. Hindari duduk dekat AC/ventilasi dingin.');
       } else if (temp <= 27) {
@@ -18625,37 +18616,37 @@ class _AQIInfoScreenState extends State<AQIInfoScreen> {
         _ExpandableSection(
           emoji: '📊',
           title: 'Parameter yang Dimonitor',
-          color: Colors.teal,
+          color: AppColors.primary,
           child: _buildParameters(info),
         ),
         _ExpandableSection(
           emoji: '🎨',
           title: 'Kategori Kualitas Udara',
-          color: Colors.orange,
+          color: AppColors.primary,
           child: _buildCategories(info),
         ),
         _ExpandableSection(
           emoji: '📏',
           title: 'Penjelasan Satuan',
-          color: Colors.purple,
+          color: AppColors.primary,
           child: _buildUnits(info),
         ),
         _ExpandableSection(
           emoji: '🏥',
           title: 'Dampak Kesehatan & Rekomendasi',
-          color: Colors.red,
+          color: AppColors.primary,
           child: _buildHealth(info),
         ),
         _ExpandableSection(
           emoji: '🔄',
           title: 'Cara Membaca Data di Aplikasi',
-          color: Colors.indigo,
+          color: AppColors.primary,
           child: _buildHowToRead(),
         ),
         _ExpandableSection(
           emoji: '❓',
           title: 'FAQ / Troubleshooting',
-          color: Colors.blueGrey,
+          color: AppColors.primary,
           child: _buildFAQ(),
         ),
         _ExpandableSection(
@@ -18791,7 +18782,7 @@ class _AQIInfoScreenState extends State<AQIInfoScreen> {
         _codeBox(
           'ISPU = ((ISPU_high − ISPU_low) / (C_high − C_low)) × (C − C_low) + ISPU_low'
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 12),
         _paragraph(
           'Keterangan:',
         ),
@@ -18804,7 +18795,7 @@ class _AQIInfoScreenState extends State<AQIInfoScreen> {
         ]),
         const SizedBox(height: 16),
         _subheading('Contoh Perhitungan'),
-        const SizedBox(height: 8),
+        const SizedBox(height: 16),
         _paragraph(
           'Diketahui PM2.5 ruangan = 100 μg/m³. Nilai ini berada pada '
           'segmen kedua, yaitu:',
@@ -18817,32 +18808,31 @@ class _AQIInfoScreenState extends State<AQIInfoScreen> {
           'ISPU_low = 51',
           'ISPU_high = 100',
         ]),
-        const SizedBox(height: 8),
+        const SizedBox(height: 12),
         _codeBox(
           'ISPU = ((100 − 51) / (150 − 56)) × (100 − 56) + 51\n'
           '     = (49 / 94) × 44 + 51\n'
           '     = 22.94 + 51\n'
           '     ≈ 74',
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 12),
          _paragraph(
           'Diketahui PM10 ruangan = 30 μg/m³. Nilai ini berada pada '
           'segmen pertama, yaitu:',
         ),
-        const SizedBox(height: 8),
         _bulletList([
           'C_low = 0',
           'C_high = 50',
           'ISPU_low = 0',
           'ISPU_high = 50',
         ]),
-        const SizedBox(height: 8),
+        const SizedBox(height: 12),
         _codeBox(
           'ISPU = ((30 − 0) / (50 − 0)) × (50 − 0) + 0\n'
           '     = (30 / 50) × 50\n'
           '     = 30',
         ),
-        const SizedBox(height: 16), 
+        const SizedBox(height: 12), 
 
         _paragraph(
           'Nilai ISPU dalam ruangan diambil dari partikel yang lebih dominan, yaitu PM2.5 yang memiliki nilai lebih tinggi dari PM10.\n'
@@ -18856,7 +18846,6 @@ class _AQIInfoScreenState extends State<AQIInfoScreen> {
   // 2. PARAMETER YANG DIMONITOR (konteks dalam ruangan)
   // ============================================================
   Widget _buildParameters(AQIInfo info) {
-    // 🔧 Konten diganti khusus untuk konteks DALAM RUANGAN.
     final indoorParams = <AQIParameter>[
       AQIParameter(
         name: 'PM2.5',
@@ -19007,6 +18996,7 @@ class _AQIInfoScreenState extends State<AQIInfoScreen> {
           const SizedBox(height: 10),
           Text(
             p.description,
+            textAlign: TextAlign.justify,
             style: const TextStyle(
               fontSize: 13,
               height: 1.5,
@@ -19024,7 +19014,7 @@ class _AQIInfoScreenState extends State<AQIInfoScreen> {
   }
 
   // ============================================================
-  // 3. KATEGORI KUALITAS UDARA (dengan legenda warna tiap parameter)
+  // 3. KATEGORI KUALITAS UDARA
   // ============================================================
   Widget _buildCategories(AQIInfo info) {
     return Column(
@@ -19073,9 +19063,9 @@ class _AQIInfoScreenState extends State<AQIInfoScreen> {
         _parameterCategoryTable(
           title: 'Suhu (°C)',
           rows: const [
-            {'range': '≤ 24', 'label': 'Dingin', 'color': Colors.blue},
+            {'range': '< 24', 'label': 'Dingin', 'color': Colors.blue},
             {'range': '24 – 27', 'label': 'Ideal', 'color': AppColors.aqiGood},
-            {'range': '27 – 30', 'label': 'Hangat', 'color': AppColors.warning},
+            {'range': '28 – 30', 'label': 'Hangat', 'color': AppColors.warning},
             {'range': '> 30', 'label': 'Panas', 'color': AppColors.error},
           ],
         ),
@@ -19084,7 +19074,7 @@ class _AQIInfoScreenState extends State<AQIInfoScreen> {
           rows: const [
             {'range': '< 40', 'label': 'Kering', 'color': AppColors.aqiUnhealthySensitive},
             {'range': '40 – 60', 'label': 'Ideal', 'color': AppColors.aqiGood},
-            {'range': '60 – 70', 'label': 'Lembab', 'color': AppColors.aqiModerate},
+            {'range': '61 – 70', 'label': 'Lembab', 'color': AppColors.aqiModerate},
             {'range': '> 70', 'label': 'Tidak Nyaman', 'color': AppColors.aqiUnhealthy},
           ],
         ),
@@ -19284,7 +19274,7 @@ class _AQIInfoScreenState extends State<AQIInfoScreen> {
   }
 
   // ============================================================
-  // 5. DAMPAK KESEHATAN & REKOMENDASI (dalam ruangan, sesuai helpers.dart)
+  // 5. DAMPAK KESEHATAN & REKOMENDASI
   // ============================================================
   Widget _buildHealth(AQIInfo info) {
     return Column(
@@ -19347,7 +19337,7 @@ class _AQIInfoScreenState extends State<AQIInfoScreen> {
           ),
         ),
         const SizedBox(height: 16),
-        _subheading('Rekomendasi per Parameter (dalam ruangan)'),
+        _subheading('Rekomendasi per Parameter'),
         const SizedBox(height: 8),
         _buildParameterRecommendationCard(
           title: 'PM2.5 (μg/m³)',
@@ -19467,7 +19457,7 @@ class _AQIInfoScreenState extends State<AQIInfoScreen> {
           title: 'Suhu (°C)',
           rows: const [
             {
-              'range': '≤ 24',
+              'range': '< 24',
               'color': Colors.blue,
               'rec':
                   'Nyalakan pemanas ruangan bila tersedia. Pakai pakaian hangat. '
@@ -19479,7 +19469,7 @@ class _AQIInfoScreenState extends State<AQIInfoScreen> {
               'rec': 'Kondisi optimal untuk belajar. Tidak perlu tindakan.',
             },
             {
-              'range': '27 – 30',
+              'range': '28 – 30',
               'color': AppColors.warning,
               'rec':
                   'Nyalakan AC atau kipas. Pastikan sirkulasi udara baik. '
@@ -19511,7 +19501,7 @@ class _AQIInfoScreenState extends State<AQIInfoScreen> {
               'rec': 'Kondisi optimal. Tidak perlu tindakan.',
             },
             {
-              'range': '60 – 70',
+              'range': '61 – 70',
               'color': AppColors.aqiModerate,
               'rec':
                   'Nyalakan dehumidifier atau AC mode dry. Pastikan ventilasi '
@@ -19530,8 +19520,6 @@ class _AQIInfoScreenState extends State<AQIInfoScreen> {
     );
   }
 
-  /// Rekomendasi AQI sesuai konteks dalam ruangan (diselaraskan dengan
-  /// `Helpers.getDetailedRecommendations`).
   String _indoorAqiRecommendation(int min, int max) {
     if (max <= 50) {
       return 'Aman untuk perkuliahan normal dengan durasi berapa pun. '
@@ -19637,7 +19625,7 @@ class _AQIInfoScreenState extends State<AQIInfoScreen> {
   }
 
   // ============================================================
-  // 6. CARA MEMBACA DATA DI APLIKASI (tanpa bagian badge sumber data)
+  // 6. CARA MEMBACA DATA DI APLIKASI
   // ============================================================
   Widget _buildHowToRead() {
     return Column(
@@ -19648,12 +19636,28 @@ class _AQIInfoScreenState extends State<AQIInfoScreen> {
           'berikut panduan membaca tiap elemen UI.',
         ),
         const SizedBox(height: 16),
+        _miniHeading('Struktur Dashboard'),
+        const SizedBox(height: 6),
+        _paragraph(
+          'Halaman dashboard tersusun dari card ruangan yang disusun di dalam gedungnya masing-masing. '
+          'setiap card ruangan menampilkan informasi berupa indeks kualitas udara, parameter lingkungan, dan waktu update terakhir. '
+        ),
+         const SizedBox(height: 14),
+        _miniHeading('Filter, Pencarian & Urutan'),
+        const SizedBox(height: 6),
+        _paragraph(
+          'Di bagian atas pada halaman dashboard tersedia kotak pencarian, filter gedung, dan opsi '
+          'urutan (Terbaru, A-Z, AQI Terbaik, AQI Terburuk). Kombinasi filter '
+          'dapat dipakai bersamaan, jika hasil kosong, coba reset filter '
+          'dengan tombol "Reset Filter & Pencarian".',
+        ),
+        const SizedBox(height: 16),
         _miniHeading('Angka AQI & Warna'),
         const SizedBox(height: 6),
         _paragraph(
           'Angka besar di dalam kotak berwarna adalah nilai AQI. Warna kotak '
           'mengikuti kategori AQI (hijau = Baik, biru = Sedang, kuning = Tidak '
-          'Sehat, merah = Sangat Tidak Sehat, hitam = Berbahaya). Label di bawah '
+          'Sehat, merah = Sangat Tidak Sehat, hitam = Berbahaya). Label di bawah dan di atas '
           'angka memberi tahu kategori secara tertulis.',
         ),
         const SizedBox(height: 14),
@@ -19673,14 +19677,13 @@ class _AQIInfoScreenState extends State<AQIInfoScreen> {
           'Jika data lebih dari beberapa jam, ruangan mungkin tidak aktif atau '
           'perangkat sedang offline.',
         ),
-        const SizedBox(height: 14),
-        _miniHeading('Filter, Pencarian & Urutan'),
+         const SizedBox(height: 14),
+        _miniHeading('Rekomendasi & Dampak Kesehatan'),
         const SizedBox(height: 6),
         _paragraph(
-          'Di dashboard atas tersedia kotak pencarian, filter gedung, dan opsi '
-          'urutan (Terbaru, A-Z, AQI Terbaik, AQI Terburuk). Kombinasi filter '
-          'dapat dipakai bersamaan, jika hasil kosong, coba reset filter '
-          'dengan tombol "Reset Filter & Pencarian".',
+          'Pada halaman detail ruangan, terdapat kartu berisi rekomendasi dan dampak kesehatan berdasarkan kategori AQI. '
+          'setiap partikel juga memiliki rekomendasi tersendiri. Ketika nilai parameter berada di luar rentang aman '
+          'akan muncul warning berwarna kuning atau merah yang akan menyesuaikan dengan tingkat di luar rentang amannya.'
         ),
         const SizedBox(height: 14),
         _miniHeading('Grafik Historis'),
@@ -19695,7 +19698,7 @@ class _AQIInfoScreenState extends State<AQIInfoScreen> {
         _miniHeading('Indikator Server'),
         const SizedBox(height: 6),
         _paragraph(
-          'Di pojok kanan AppBar terdapat titik kecil berwarna hijau atau merah. '
+          'Di pojok kanan bilah status terdapat titik kecil berwarna hijau atau merah. '
           'Hijau berarti server dapat dihubungi, sedangkan merah berarti perangkat tidak memiliki data internet atau server sedang tidak tersedia. '
         ),
       ],
@@ -19703,12 +19706,7 @@ class _AQIInfoScreenState extends State<AQIInfoScreen> {
   }
 
   // ============================================================
-  // 7. SENSOR ERROR & SUMBER DATA
-  // ============================================================
-  
-
-  // ============================================================
-  // 8. FAQ / TROUBLESHOOTING (4 item dihapus sesuai permintaan)
+  // 8. FAQ / TROUBLESHOOTING
   // ============================================================
   Widget _buildFAQ() {
     final faqs = <Map<String, String>>[
@@ -19722,14 +19720,14 @@ class _AQIInfoScreenState extends State<AQIInfoScreen> {
         'q': 'Kenapa grafik kosong?',
         'a': 'Ada beberapa kemungkinan, (1) tanggal yang dipilih belum memiliki '
             'data historis, (2) server sedang offline, cek indikator titik di '
-            'pojok kanan AppBar, (3) cache lokal belum terisi, coba refresh atau '
+            'pojok kanan bilah status, (3) cache lokal belum terisi, coba refresh atau '
             'pilih tanggal hari ini.',
       },
       {
         'q': 'Kenapa muncul notifikasi "Server tidak dapat dihubungi"?',
         'a': 'Aplikasi gagal melakukan request ke backend. Periksa koneksi '
             'internet Anda, lalu cek indikator server (titik hijau/merah) di '
-            'AppBar. Jika merah, kemungkinan backend sedang mati atau tidak '
+            'bilah status. Jika merah, kemungkinan backend sedang mati atau tidak '
             'dapat dijangkau.',
       },
       {
@@ -19794,7 +19792,7 @@ class _AQIInfoScreenState extends State<AQIInfoScreen> {
   }
 
   // ============================================================
-  // 9. TENTANG APLIKASI (tanpa backend/simulator, email tanpa hint tap)
+  // 9. TENTANG APLIKASI
   // ============================================================
   Widget _buildAbout() {
     return Column(
@@ -19941,7 +19939,7 @@ class _AQIInfoScreenState extends State<AQIInfoScreen> {
    Widget _paragraph(String text) {
     return Text(
       text,
-      textAlign: TextAlign.justify, // ✅ Tambahan untuk rata kanan-kiri
+      textAlign: TextAlign.justify,
       style: const TextStyle(
         fontSize: 13.5,
         height: 1.6,
@@ -20065,8 +20063,20 @@ class _AQIInfoScreenState extends State<AQIInfoScreen> {
 
 // ============================================================
 // EXPANDABLE SECTION WIDGET
-// ✅ FIXED: AnimatedSize dihapus agar konten tidak "muncul dari center".
-// Konten langsung tampil/sembunyi saat section di-tap.
+//
+// ✅ FIXED: menambahkan `AutomaticKeepAliveClientMixin` + `wantKeepAlive`
+// sehingga state `_expanded` TETAP dipertahankan meskipun widget
+// scroll off-screen dan masuk kembali ke viewport.
+//
+// Sebelumnya: ketika user membuka section A, lalu scroll untuk membuka
+// section B (di atas A), section A yang keluar dari cache extent
+// ListView akan di-dispose. Saat user scroll balik, `_ExpandableSection`
+// di-rebuild dan `initState` mengeset `_expanded = false` lagi —
+// sehingga A tampak "tertutup sendiri".
+//
+// Dengan mixin ini, SliverChildListDelegate (default addAutomaticKeepAlives
+// = true) akan mempertahankan widget dan state-nya selama widget tersebut
+// menandai `wantKeepAlive = true`.
 // ============================================================
 class _ExpandableSection extends StatefulWidget {
   final String emoji;
@@ -20086,8 +20096,14 @@ class _ExpandableSection extends StatefulWidget {
   State<_ExpandableSection> createState() => _ExpandableSectionState();
 }
 
-class _ExpandableSectionState extends State<_ExpandableSection> {
+class _ExpandableSectionState extends State<_ExpandableSection>
+    with AutomaticKeepAliveClientMixin {
   late bool _expanded;
+
+  // ✅ FIXED: beri tahu parent (SliverChildListDelegate) agar widget ini
+  // tidak di-dispose saat scroll off-screen.
+  @override
+  bool get wantKeepAlive => true;
 
   @override
   void initState() {
@@ -20097,6 +20113,9 @@ class _ExpandableSectionState extends State<_ExpandableSection> {
 
   @override
   Widget build(BuildContext context) {
+    // ✅ WAJIB dipanggil agar mixin bekerja.
+    super.build(context);
+
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
@@ -20159,7 +20178,6 @@ class _ExpandableSectionState extends State<_ExpandableSection> {
               ),
             ),
           ),
-          // ✅ Konten langsung tampil tanpa animasi "grow from center".
           if (_expanded)
             Padding(
               padding: const EdgeInsets.fromLTRB(14, 0, 14, 16),
@@ -20207,6 +20225,9 @@ class RoomDetailScreen extends StatefulWidget {
 class _RoomDetailScreenState extends State<RoomDetailScreen> {
   final SocketService _socketService = SocketService();
   final RoomRepository _roomRepository = RoomRepository();
+
+  String? _lastNotificationMessage;
+  DateTime? _lastNotificationTime;
 
   // FIXED: auto-refresh 1 menit (sebelumnya live socket tiap 10 detik)
   static const Duration _autoRefreshInterval = Duration(minutes: 1);
@@ -20400,6 +20421,17 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
 
   void _showNotification(String message, String type) {
     if (!_isMounted) return;
+
+    // 1. Throttling: Cegah pesan yang sama muncul berulang dalam 10 detik
+    final now = DateTime.now();
+    if (_lastNotificationMessage == message &&
+        _lastNotificationTime != null &&
+        now.difference(_lastNotificationTime!).inSeconds < 10) {
+      return;
+    }
+    _lastNotificationMessage = message;
+    _lastNotificationTime = now;
+
     Color backgroundColor;
     IconData icon;
 
@@ -20421,7 +20453,12 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
         icon = Icons.info_rounded;
     }
 
-    ScaffoldMessenger.of(context).showSnackBar(
+    final messenger = ScaffoldMessenger.of(context);
+    
+    // 2. Hapus snackbar yang sedang tampil agar tidak menumpuk (queue)
+    messenger.hideCurrentSnackBar(); 
+    
+    messenger.showSnackBar(
       SnackBar(
         content: Row(
           children: [
@@ -20795,8 +20832,8 @@ _RecSeverity _recommendationSeverity(String text) {
     // --- Suhu ---
     if (text.startsWith('Suhu:')) {
       final t = data.temperature;
-      if (t <= 24) return _RecSeverity.danger; // DINGIN → merah
-      if (t < 27) return _RecSeverity.normal; // IDEAL
+      if (t < 24) return _RecSeverity.danger; // DINGIN → merah
+      if (t <= 27) return _RecSeverity.normal; // IDEAL
       if (t <= 30) return _RecSeverity.warning; // HANGAT → kuning
       return _RecSeverity.danger; // PANAS → merah
     }
@@ -21031,7 +21068,7 @@ _RecSeverity _recommendationSeverity(String text) {
                 Expanded(
                   child: _buildParameterCard(
                     'PM2.5',
-                    _currentRoomData.currentData.pm25.toStringAsFixed(1),
+                    '${_currentRoomData.currentData.pm25.toStringAsFixed(1)}\nμg/m³', 
                     Helpers.getPM25Status(
                         _currentRoomData.currentData.pm25),
                     Helpers.getPM25Color(
@@ -21042,7 +21079,7 @@ _RecSeverity _recommendationSeverity(String text) {
                 Expanded(
                   child: _buildParameterCard(
                     'PM10',
-                    _currentRoomData.currentData.pm10.toStringAsFixed(1),
+                    '${_currentRoomData.currentData.pm25.toStringAsFixed(1)}\nμg/m³', 
                     Helpers.getPM10Status(
                         _currentRoomData.currentData.pm10),
                     Helpers.getPM10Color(
@@ -21053,7 +21090,7 @@ _RecSeverity _recommendationSeverity(String text) {
                 Expanded(
                   child: _buildParameterCard(
                     'CO₂',
-                    '${_currentRoomData.currentData.co2.round()}',
+                    '${_currentRoomData.currentData.co2.round()}\nppm',
                     Helpers.getCO2Status(
                         _currentRoomData.currentData.co2),
                     Helpers.getCO2Color(
