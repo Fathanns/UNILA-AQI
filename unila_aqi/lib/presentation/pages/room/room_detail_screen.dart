@@ -25,6 +25,9 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
   final SocketService _socketService = SocketService();
   final RoomRepository _roomRepository = RoomRepository();
 
+  String? _lastNotificationMessage;
+  DateTime? _lastNotificationTime;
+
   // FIXED: auto-refresh 1 menit (sebelumnya live socket tiap 10 detik)
   static const Duration _autoRefreshInterval = Duration(minutes: 1);
 
@@ -217,6 +220,17 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
 
   void _showNotification(String message, String type) {
     if (!_isMounted) return;
+
+    // 1. Throttling: Cegah pesan yang sama muncul berulang dalam 10 detik
+    final now = DateTime.now();
+    if (_lastNotificationMessage == message &&
+        _lastNotificationTime != null &&
+        now.difference(_lastNotificationTime!).inSeconds < 10) {
+      return;
+    }
+    _lastNotificationMessage = message;
+    _lastNotificationTime = now;
+
     Color backgroundColor;
     IconData icon;
 
@@ -238,7 +252,12 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
         icon = Icons.info_rounded;
     }
 
-    ScaffoldMessenger.of(context).showSnackBar(
+    final messenger = ScaffoldMessenger.of(context);
+    
+    // 2. Hapus snackbar yang sedang tampil agar tidak menumpuk (queue)
+    messenger.hideCurrentSnackBar(); 
+    
+    messenger.showSnackBar(
       SnackBar(
         content: Row(
           children: [
