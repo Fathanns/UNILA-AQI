@@ -13,6 +13,8 @@
 
 - Perbaiki tampilan dan ui pada halaman kelola gedung, ruangan, dan device iot menjadi seragam dengan halaman profil admin
 
+- perbaiki catch ketika ada nama ruangan yang sama di gedung yang sama
+
 error
 - ~~error Ketika edit Gedung dan refresh di dashboard~~
 - ~~error Ketika hapus ruangan dan refresh di dashboard~~

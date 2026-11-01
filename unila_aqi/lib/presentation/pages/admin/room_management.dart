@@ -29,8 +29,6 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
   final TextEditingController _searchController = TextEditingController();
 
   static const String _cacheKey = 'cache_rooms';
-
-  // FIXED: auto-refresh 1 menit (sebelumnya live socket tiap 10 detik)
   static const Duration _autoRefreshInterval = Duration(minutes: 1);
 
   List<Room> _rooms = [];
@@ -68,21 +66,14 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
     _startAutoRefreshTimer();
   }
 
-  // ============================================================
-  // AUTO-REFRESH 1 MENIT
-  // ============================================================
   void _startAutoRefreshTimer() {
     _autoRefreshTimer?.cancel();
     _autoRefreshTimer = Timer.periodic(_autoRefreshInterval, (_) async {
       if (_isRefreshing || !mounted) return;
-      print('🔄 Room management auto-refresh (1 minute): fetching fresh data...');
       await _loadData();
     });
   }
 
-  // ============================================================
-  // SOCKET LISTENERS — hanya event STRUKTURAL
-  // ============================================================
   Map<String, dynamic>? _asMap(dynamic data) {
     if (data == null) return null;
     if (data is Map<String, dynamic>) return data;
@@ -97,18 +88,16 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
   }
 
   void _setupSocketListeners() {
-    // Pastikan socket terkoneksi.
     if (!_socketService.isConnected && !_socketService.isConnecting) {
       _socketService.connect();
     }
 
-    // FIXED: 'dashboard-update' (data AQI tiap 10s) TIDAK di-listen lagi.
-    // Data di-refresh via _autoRefreshTimer (60 detik) atau tombol manual.
-    // Hanya event struktural yang di-handle secara instan:
-    _socketService.on('dashboard-room-updated', _handleDashboardRoomUpdated);
+    _socketService.on(
+        'dashboard-room-updated', _handleDashboardRoomUpdated);
     _socketService.on('room-deleted', _handleRoomDeleted);
     _socketService.on('room-name-changed', _handleRoomNameChanged);
-    _socketService.on('room-building-changed', _handleRoomBuildingChanged);
+    _socketService.on(
+        'room-building-changed', _handleRoomBuildingChanged);
   }
 
   void _handleDashboardRoomUpdated(dynamic data) {
@@ -157,9 +146,6 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
     super.dispose();
   }
 
-  // ============================================================
-  // LOAD DATA
-  // ============================================================
   Future<void> _loadCacheThenFetch() async {
     Map<String, dynamic>? cached;
     try {
@@ -171,7 +157,8 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
     if (cached != null && cached['data'] is List) {
       try {
         final list = (cached['data'] as List)
-            .map((e) => Room.fromJson(Map<String, dynamic>.from(e as Map)))
+            .map((e) =>
+                Room.fromJson(Map<String, dynamic>.from(e as Map)))
             .toList();
         if (mounted) {
           setState(() {
@@ -196,7 +183,6 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
     }
 
     _filterRooms();
-
     await _loadData();
   }
 
@@ -254,23 +240,15 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
     }
   }
 
-  /// Refresh button handler:
-  /// 1) Picu health-check indikator server.
-  /// 2) Minta backend poll device/simulasi SEKARANG (force-refresh).
-  /// 3) Reload data dari server.
   Future<void> _handleManualRefresh() async {
     if (_isRefreshing) return;
     setState(() => _isRefreshing = true);
 
     try {
       ServerStatusIndicator.checkNow();
-
       try {
         await _apiService.forceRefresh();
-      } catch (_) {
-        // best-effort
-      }
-
+      } catch (_) {}
       await _loadData();
     } finally {
       if (mounted) setState(() => _isRefreshing = false);
@@ -278,75 +256,85 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
   }
 
   void _filterRooms() {
-    if (!_availableBuildings.contains(_selectedBuildingFilter)) {
-      _selectedBuildingFilter = 'Semua Gedung';
-    }
-
-    List<Room> filtered = _rooms;
-
-    if (_selectedBuildingFilter != 'Semua Gedung') {
-      filtered = filtered
-          .where((room) => room.buildingName == _selectedBuildingFilter)
-          .toList();
-    }
-
-    if (_searchController.text.isNotEmpty) {
-      final query = _searchController.text.toLowerCase();
-      filtered = filtered
-          .where((room) =>
-              room.name.toLowerCase().contains(query) ||
-              room.buildingName.toLowerCase().contains(query))
-          .toList();
-    }
-
-    if (mounted) {
-      setState(() => _filteredRooms = filtered);
-    } else {
-      _filteredRooms = filtered;
-    }
+  if (!_availableBuildings.contains(_selectedBuildingFilter)) {
+    _selectedBuildingFilter = 'Semua Gedung';
   }
 
-  Future<void> _deleteRoom(String roomId) async {
-  final confirmed = await showDialog<bool>(
-    context: context,
-    builder: (context) => AlertDialog(
-      title: const Text('Hapus Ruangan'),
-      content: const Text('Apakah Anda yakin ingin menghapus ruangan ini?'),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context, false),
-          child: const Text('Batal'),
-        ),
-        TextButton(
-          onPressed: () => Navigator.pop(context, true),
-          child: const Text('Hapus',
-              style: TextStyle(color: AppColors.error)),
-        ),
-      ],
-    ),
-  );
+  List<Room> filtered = _rooms;
 
-  if (confirmed != true) return;
+  if (_selectedBuildingFilter != 'Semua Gedung') {
+    filtered = filtered
+        .where((room) => room.buildingName == _selectedBuildingFilter)
+        .toList();
+  }
 
-  try {
-    await _roomRepository.deleteRoom(roomId);
-    await _loadData();
-    if (!mounted) return;
-    Helpers.showSnackBar(context, 'Ruangan berhasil dihapus');
-  } catch (e) {
-    if (!mounted) return;
-    if (Helpers.isNetworkError(e)) {
-      Helpers.showServerError(context);
-    } else {
-      // ✅ FIX: pesan user-friendly
-      final msg = Helpers.extractBackendMessage(
-        e,
-        fallback: 'Gagal menghapus ruangan. Silakan coba lagi.',
-      );
-      Helpers.showSnackBar(context, msg, isError: true);
-    }
+  if (_searchController.text.isNotEmpty) {
+    final query = _searchController.text.toLowerCase();
+    filtered = filtered
+        .where((room) =>
+            room.name.toLowerCase().contains(query) ||
+            room.buildingName.toLowerCase().contains(query))
+        .toList();
+  }
+
+  // ✅ URUTAN BARU: kelompokkan per gedung (alfabetis),
+  // lalu di dalam gedung yang sama urutkan berdasarkan nama ruangan (alfabetis).
+  filtered = List<Room>.from(filtered)
+    ..sort((a, b) {
+      final cmpBuilding =
+          a.buildingName.toLowerCase().compareTo(b.buildingName.toLowerCase());
+      if (cmpBuilding != 0) return cmpBuilding;
+      return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+    });
+
+  if (mounted) {
+    setState(() => _filteredRooms = filtered);
+  } else {
+    _filteredRooms = filtered;
   }
 }
+
+  Future<void> _deleteRoom(String roomId) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Hapus Ruangan'),
+        content: const Text(
+            'Apakah Anda yakin ingin menghapus ruangan ini?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Batal'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Hapus',
+                style: TextStyle(color: AppColors.error)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      await _roomRepository.deleteRoom(roomId);
+      await _loadData();
+      if (!mounted) return;
+      Helpers.showSnackBar(context, 'Ruangan berhasil dihapus');
+    } catch (e) {
+      if (!mounted) return;
+      if (Helpers.isNetworkError(e)) {
+        Helpers.showServerError(context);
+      } else {
+        final msg = Helpers.extractBackendMessage(
+          e,
+          fallback: 'Gagal menghapus ruangan. Silakan coba lagi.',
+        );
+        Helpers.showSnackBar(context, msg, isError: true);
+      }
+    }
+  }
 
   void _navigateToAddRoom() {
     Navigator.push(
@@ -378,10 +366,553 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
     final diff = DateTime.now().difference(lastUpdate);
 
     if (diff.inMinutes <= 5) return null;
-
     if (diff.inMinutes < 60) return '${diff.inMinutes} menit';
     if (diff.inHours < 24) return '${diff.inHours} jam';
     return '${diff.inDays} hari';
+  }
+
+  // ============================================================
+  // WIDGETS — selaras dengan Profil Admin
+  // ============================================================
+
+  Widget _buildHeaderCard() {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        gradient: AppColors.primaryGradient,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.primary.withOpacity(0.25),
+            blurRadius: 12,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Container(
+            width: 88,
+            height: 88,
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.25),
+              shape: BoxShape.circle,
+              border: Border.all(
+                  color: Colors.white.withOpacity(0.5), width: 3),
+            ),
+            child: const Icon(Icons.meeting_room,
+                size: 44, color: Colors.white),
+          ),
+          const SizedBox(height: 16),
+          const Text(
+            'Kelola Ruangan',
+            style: TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.w700,
+              color: Colors.white,
+              fontFamily: 'Inter',
+            ),
+          ),
+          const SizedBox(height: 6),
+          Container(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.25),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Text(
+              '${_rooms.length} RUANGAN TERDAFTAR',
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: Colors.white,
+                letterSpacing: 1,
+                fontFamily: 'Inter',
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: _navigateToAddRoom,
+              icon: const Icon(Icons.add, size: 18, color: Colors.white),
+              label: const Text(
+                'TAMBAH RUANGAN',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                  fontFamily: 'Inter',
+                ),
+              ),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.white,
+                side:
+                    const BorderSide(color: Colors.white, width: 1.5),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSearchCard() {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          TextField(
+            controller: _searchController,
+            decoration: InputDecoration(
+              hintText: 'Cari ruangan...',
+              prefixIcon: const Icon(Icons.search,
+                  size: 20, color: AppColors.textHint),
+              filled: true,
+              fillColor: AppColors.surface,
+              contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12, vertical: 12),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: BorderSide.none,
+              ),
+              suffixIcon: _searchController.text.isNotEmpty
+                  ? IconButton(
+                      icon: const Icon(Icons.clear, size: 18),
+                      onPressed: () {
+                        _searchController.clear();
+                        _filterRooms();
+                      },
+                    )
+                  : null,
+            ),
+            onChanged: (value) => _filterRooms(),
+          ),
+          const SizedBox(height: 10),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: AppColors.border),
+            ),
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<String>(
+                value: _selectedBuildingFilter,
+                isExpanded: true,
+                icon: const Icon(Icons.arrow_drop_down),
+                onChanged: (value) {
+                  setState(() {
+                    _selectedBuildingFilter = value!;
+                    _filterRooms();
+                  });
+                },
+                items: _availableBuildings.map((building) {
+                  return DropdownMenuItem(
+                    value: building,
+                    child: Row(
+                      children: [
+                        const Icon(Icons.filter_alt_outlined,
+                            size: 16, color: AppColors.textHint),
+                        const SizedBox(width: 8),
+                        Text(building),
+                      ],
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRoomCard(Room room) {
+    final aqiColor = Helpers.getAQIColor(room.currentAQI);
+    final aqiLabel = Helpers.getAQILabel(room.currentAQI);
+    final staleDuration = _getStaleDurationText(room);
+    final isIot = room.dataSource == 'iot';
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header row
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(
+                    Icons.meeting_room,
+                    size: 24,
+                    color: AppColors.primary,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        room.name,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.textPrimary,
+                          fontFamily: 'Inter',
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Row(
+                        children: [
+                          const Icon(Icons.location_on,
+                              size: 11, color: AppColors.textHint),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Text(
+                              room.buildingName,
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: AppColors.textHint,
+                                fontFamily: 'Inter',
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: aqiColor.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                    border:
+                        Border.all(color: aqiColor.withOpacity(0.4)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Text(
+                        '${room.currentAQI}',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w800,
+                          color: aqiColor,
+                          fontFamily: 'Inter',
+                        ),
+                      ),
+                      Text(
+                        aqiLabel,
+                        style: TextStyle(
+                          fontSize: 8,
+                          fontWeight: FontWeight.w700,
+                          color: aqiColor,
+                          fontFamily: 'Inter',
+                          letterSpacing: 0.3,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+
+            // Source badge
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: isIot
+                        ? Colors.blue.withOpacity(0.1)
+                        : Colors.purple.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        isIot
+                            ? Icons.sensors
+                            : Icons.auto_awesome,
+                        size: 11,
+                        color:
+                            isIot ? Colors.blue : Colors.purple,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        isIot ? 'Device IoT' : 'Simulasi',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                          color: isIot
+                              ? Colors.blue[700]
+                              : Colors.purple[700],
+                          fontFamily: 'Inter',
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+              ],
+            ),
+
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                const SizedBox(height: 10),
+            Row(
+              children: [
+                const Icon(Icons.calendar_today,
+                    size: 12, color: AppColors.textHint),
+                const SizedBox(width: 6),
+                Text(
+                  'Dibuat: ${Helpers.formatDateTime(room.createdAt.toLocal())}',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textHint,
+                    fontFamily: 'Inter',
+                  ),
+                ),
+              ],
+            ),
+              ],
+            ),
+
+            // Stale warning
+            if (staleDuration != null) ...[
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 10, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                      color: Colors.orange.withOpacity(0.5)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.warning_amber_rounded,
+                        color: Colors.orange, size: 18),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Data belum diperbarui selama $staleDuration',
+                        style: const TextStyle(
+                          fontSize: 11.5,
+                          color: Colors.orange,
+                          fontWeight: FontWeight.w600,
+                          fontFamily: 'Inter',
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+
+            const SizedBox(height: 12),
+            const Divider(height: 1),
+            Row(
+              children: [
+                Expanded(
+                  child: _buildCardAction(
+                    icon: Icons.edit_outlined,
+                    label: 'Edit',
+                    color: AppColors.primary,
+                    onTap: () => _navigateToEditRoom(room),
+                  ),
+                ),
+                Container(width: 1, height: 24, color: AppColors.border),
+                Expanded(
+                  child: _buildCardAction(
+                    icon: Icons.delete_outline,
+                    label: 'Hapus',
+                    color: AppColors.error,
+                    onTap: () => _deleteRoom(room.id),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCardAction({
+    required IconData icon,
+    required String label,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding:
+            const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 16, color: color),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: color,
+                fontFamily: 'Inter',
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildErrorState() {
+    final isNetwork = Helpers.isNetworkError(_errorMessage);
+
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(
+              Icons.cloud_off_rounded,
+              size: 72,
+              color: AppColors.textHint,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Tidak dapat memuat data',
+              style: Theme.of(context).textTheme.titleLarge,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              isNetwork
+                  ? 'Tidak dapat terhubung ke server.\nPeriksa koneksi internet Anda atau coba beberapa saat lagi.'
+                  : 'Terjadi kesalahan saat memuat data.\nSilakan coba lagi.',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 14,
+                color: AppColors.textSecondary,
+                height: 1.5,
+              ),
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton.icon(
+              onPressed: _loadData,
+              icon: const Icon(Icons.refresh, size: 18),
+              label: const Text('Coba Lagi'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    final hasSearch = _searchController.text.trim().isNotEmpty;
+    final hasFilter = _selectedBuildingFilter != 'Semua Gedung';
+
+    String message;
+    if (hasSearch && hasFilter) {
+      message =
+          'Tidak ada ruangan yang cocok dengan\n"${_searchController.text.trim()}"\ndi $_selectedBuildingFilter';
+    } else if (hasSearch) {
+      message =
+          'Tidak ada ruangan yang cocok dengan\n"${_searchController.text.trim()}"';
+    } else if (hasFilter) {
+      message = 'Tidak ada ruangan di\n"$_selectedBuildingFilter"';
+    } else {
+      message = 'Belum ada ruangan terdaftar';
+    }
+
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              hasSearch
+                  ? Icons.search_off
+                  : (hasFilter
+                      ? Icons.filter_alt_off_outlined
+                      : Icons.meeting_room_outlined),
+              size: 64,
+              color: AppColors.textHint,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 15,
+                color: AppColors.textSecondary,
+                height: 1.5,
+                fontFamily: 'Inter',
+              ),
+            ),
+            if (hasSearch || hasFilter) ...[
+              const SizedBox(height: 12),
+              TextButton.icon(
+                onPressed: () {
+                  _searchController.clear();
+                  _selectedBuildingFilter = 'Semua Gedung';
+                  _filterRooms();
+                },
+                icon: const Icon(Icons.refresh, size: 18),
+                label: const Text('Reset Filter & Pencarian'),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -412,285 +943,46 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
           ),
         ],
       ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              children: [
-                TextField(
-                  controller: _searchController,
-                  decoration: InputDecoration(
-                    hintText: '🔍 Cari ruangan...',
-                    filled: true,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide.none,
-                    ),
-                    suffixIcon: _searchController.text.isNotEmpty
-                        ? IconButton(
-                            icon: const Icon(Icons.clear),
-                            onPressed: () {
-                              _searchController.clear();
-                              _filterRooms();
-                            },
-                          )
-                        : null,
-                  ),
-                  onChanged: (value) => _filterRooms(),
-                ),
-                const SizedBox(height: 12),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: AppColors.border),
-                  ),
-                  child: DropdownButtonHideUnderline(
-                    child: DropdownButton<String>(
-                      value: _selectedBuildingFilter,
-                      isExpanded: true,
-                      icon: const Icon(Icons.arrow_drop_down),
-                      onChanged: (value) {
-                        setState(() {
-                          _selectedBuildingFilter = value!;
-                          _filterRooms();
-                        });
-                      },
-                      items: _availableBuildings.map((building) {
-                        return DropdownMenuItem(
-                          value: building,
-                          child: Text(building),
-                        );
-                      }).toList(),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: _navigateToAddRoom,
-                icon: const Icon(Icons.add),
-                label: const Text('TAMBAH RUANGAN'),
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          if (_isLoading && _rooms.isEmpty)
-            const Expanded(
-              child: Center(child: CircularProgressIndicator()),
-            )
-          else if (_hasError && _rooms.isEmpty)
-            Expanded(
-              child: Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(
-                        Icons.cloud_off_rounded,
-                        size: 72,
-                        color: AppColors.textHint,
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        'Tidak dapat memuat data',
-                        style: Theme.of(context).textTheme.titleLarge,
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        _errorMessage,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          fontSize: 14,
-                          color: AppColors.textSecondary,
-                          height: 1.5,
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-                      ElevatedButton.icon(
-                        onPressed: _loadData,
-                        icon: const Icon(Icons.refresh, size: 18),
-                        label: const Text('Coba Lagi'),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            )
-          else if (_filteredRooms.isEmpty)
-            Expanded(
-              child: Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.meeting_room_outlined,
-                        size: 64, color: Colors.grey),
-                    const SizedBox(height: 16),
-                    const Text(
-                      'Tidak ada ruangan ditemukan',
-                      style: TextStyle(fontSize: 16, color: Colors.grey),
-                    ),
-                    const SizedBox(height: 8),
-                    if (_searchController.text.isNotEmpty ||
-                        _selectedBuildingFilter != 'Semua Gedung')
-                      TextButton(
-                        onPressed: () {
-                          _searchController.clear();
-                          _selectedBuildingFilter = 'Semua Gedung';
-                          _filterRooms();
-                        },
-                        child: const Text('Reset Filter'),
-                      ),
-                  ],
-                ),
-              ),
-            )
-          else
-            Expanded(
-              child: ListView.builder(
-                padding: const EdgeInsets.all(16),
-                itemCount: _filteredRooms.length,
-                itemBuilder: (context, index) {
-                  final room = _filteredRooms[index];
-                  return _buildRoomCard(room);
-                },
-              ),
-            ),
-
-          Container(
-            padding: const EdgeInsets.all(16),
-            child: Text(
-              'Total: ${_filteredRooms.length} ruangan',
-              style: const TextStyle(fontSize: 14, color: Colors.grey),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildRoomCard(Room room) {
-    final aqiColor = Helpers.getAQIColor(room.currentAQI);
-    final staleDuration = _getStaleDurationText(room);
-
-    return Card(
-      margin: const EdgeInsets.only(bottom: 16),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+      body: RefreshIndicator(
+        onRefresh: _handleManualRefresh,
+        color: AppColors.primary,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
           children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '${room.name} - ${room.buildingName}',
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Sumber: ${room.dataSource == 'iot' ? 'Device IoT' : 'Simulasi'}',
-                        style: const TextStyle(
-                            fontSize: 12, color: Colors.grey),
-                      ),
-                    ],
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: aqiColor.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: aqiColor),
-                  ),
-                  child: Text(
-                    'AQI: ${room.currentAQI}',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: aqiColor,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            if (staleDuration != null) ...[
-              const SizedBox(height: 12),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                decoration: BoxDecoration(
-                  color: Colors.orange.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(10),
-                  border:
-                      Border.all(color: Colors.orange.withOpacity(0.6)),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.warning_amber_rounded,
-                        color: Colors.orange, size: 22),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        'Ruangan ini belum memperbarui data selama $staleDuration',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: Colors.orange,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  ],
+            _buildHeaderCard(),
+            _buildSearchCard(),
+            if (_isLoading && _rooms.isEmpty)
+              const Padding(
+                padding: EdgeInsets.all(48),
+                child: Center(child: CircularProgressIndicator()),
+              )
+            else if (_hasError && _rooms.isEmpty)
+              _buildErrorState()
+            else if (_filteredRooms.isEmpty)
+              _buildEmptyState()
+            else
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                child: Column(
+                  children:
+                      _filteredRooms.map(_buildRoomCard).toList(),
                 ),
               ),
-            ],
+            if (_filteredRooms.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Center(
+                  child: Text(
+                    'Total: ${_filteredRooms.length} ruangan',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AppColors.textHint,
+                      fontFamily: 'Inter',
+                    ),
+                  ),
+                ),
+              ),
             const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () => _navigateToEditRoom(room),
-                    icon: const Icon(Icons.edit, size: 16),
-                    label: const Text('Edit'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AppColors.primary,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () => _deleteRoom(room.id),
-                    icon: const Icon(Icons.delete, size: 16),
-                    label: const Text('Hapus'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AppColors.error,
-                      side: const BorderSide(color: AppColors.error),
-                    ),
-                  ),
-                ),
-              ],
-            ),
           ],
         ),
       ),
@@ -699,7 +991,7 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
 }
 
 // ============================================================
-// ADD / EDIT ROOM SCREEN (tidak berubah)
+// ADD / EDIT ROOM SCREEN (TIDAK BERUBAH)
 // ============================================================
 class AddEditRoomScreen extends StatefulWidget {
   final Room? room;
@@ -743,7 +1035,9 @@ class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
           widget.buildings.any((b) => b.id == room.buildingId);
       _selectedBuildingId = buildingExists
           ? room.buildingId
-          : (widget.buildings.isNotEmpty ? widget.buildings.first.id : null);
+          : (widget.buildings.isNotEmpty
+              ? widget.buildings.first.id
+              : null);
 
       _selectedDataSource = room.dataSource;
       _selectedIotDeviceId = room.iotDeviceId;
@@ -779,7 +1073,8 @@ class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
     }
 
     if (_selectedDataSource == 'iot' && _selectedIotDeviceId == null) {
-      Helpers.showSnackBar(context, 'Pilih device IoT terlebih dahulu',
+      Helpers.showSnackBar(
+          context, 'Pilih device IoT terlebih dahulu',
           isError: true);
       return;
     }
@@ -788,8 +1083,8 @@ class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
 
     try {
       if (widget.isEditing) {
-        final dataSourceChanged =
-            _selectedDataSource != (widget.room?.dataSource ?? 'simulation');
+        final dataSourceChanged = _selectedDataSource !=
+            (widget.room?.dataSource ?? 'simulation');
         final deviceChanged =
             _selectedIotDeviceId != widget.room?.iotDeviceId;
 
@@ -835,7 +1130,6 @@ class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
       if (Helpers.isNetworkError(e)) {
         Helpers.showServerError(context);
       } else {
-        // ✅ FIX: pesan user-friendly
         final msg = Helpers.extractBackendMessage(
           e,
           fallback: 'Gagal menyimpan ruangan. Silakan coba lagi.',
@@ -851,7 +1145,8 @@ class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.isEditing ? 'Edit Ruangan' : 'Tambah Ruangan'),
+        title:
+            Text(widget.isEditing ? 'Edit Ruangan' : 'Tambah Ruangan'),
         actions: [
           if (_isLoading)
             const Padding(
@@ -872,8 +1167,8 @@ class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text('Nama Ruangan*',
-                  style:
-                      TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
+                  style: TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.w500)),
               const SizedBox(height: 8),
               TextFormField(
                 controller: _nameController,
@@ -890,8 +1185,8 @@ class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
               ),
               const SizedBox(height: 16),
               const Text('Gedung*',
-                  style:
-                      TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
+                  style: TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.w500)),
               const SizedBox(height: 8),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -920,8 +1215,8 @@ class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
               ),
               const SizedBox(height: 16),
               const Text('Sumber Data',
-                  style:
-                      TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
+                  style: TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.w500)),
               const SizedBox(height: 8),
               Column(
                 children: [
@@ -963,23 +1258,24 @@ class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
                                   fontWeight: FontWeight.w500)),
                           const SizedBox(height: 8),
                           Container(
-                            padding:
-                                const EdgeInsets.symmetric(horizontal: 12),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12),
                             decoration: BoxDecoration(
                               color: Colors.white,
                               borderRadius: BorderRadius.circular(8),
-                              border:
-                                  Border.all(color: Colors.grey.shade300),
+                              border: Border.all(
+                                  color: Colors.grey.shade300),
                             ),
                             child: DropdownButtonHideUnderline(
                               child: DropdownButton<String>(
                                 value: _selectedIotDeviceId,
                                 isExpanded: true,
-                                icon: const Icon(Icons.arrow_drop_down),
+                                icon:
+                                    const Icon(Icons.arrow_drop_down),
                                 hint: const Text('Pilih Device IoT'),
                                 onChanged: (value) {
-                                  setState(
-                                      () => _selectedIotDeviceId = value);
+                                  setState(() =>
+                                      _selectedIotDeviceId = value);
                                 },
                                 items: _iotDevices.map((device) {
                                   return DropdownMenuItem(

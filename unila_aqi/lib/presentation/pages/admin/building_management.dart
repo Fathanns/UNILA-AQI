@@ -116,17 +116,38 @@ class _BuildingManagementScreenState extends State<BuildingManagementScreen> {
     }
   }
 
-  void _filterBuildings(String query) {
-    if (query.isEmpty) {
-      setState(() => _filteredBuildings = _buildings);
-    } else {
-      final filtered = _buildings.where((building) {
+      void _filterBuildings(String query) {
+    List<Building> filtered = _buildings;
+
+    if (query.isNotEmpty) {
+      final search = query.toLowerCase();
+      filtered = filtered.where((building) {
         final name = building.name.toLowerCase();
         final code = building.code?.toLowerCase() ?? '';
-        final search = query.toLowerCase();
         return name.contains(search) || code.contains(search);
       }).toList();
+    }
+
+    // ✅ URUTAN: waktu dibuat ASCENDING (terlama di atas).
+    // Jika createdAt sama (mis. di-seed dalam milidetik yang sama),
+    // fallback ke nama gedung (alfabetis), lalu _id sebagai tie-breaker
+    // terakhir agar urutan benar-benar deterministik.
+    filtered = List<Building>.from(filtered)
+      ..sort((a, b) {
+        final cmpTime = a.createdAt.compareTo(b.createdAt);
+        if (cmpTime != 0) return cmpTime;
+
+        final cmpName =
+            a.name.toLowerCase().compareTo(b.name.toLowerCase());
+        if (cmpName != 0) return cmpName;
+
+        return a.id.compareTo(b.id);
+      });
+
+    if (mounted) {
       setState(() => _filteredBuildings = filtered);
+    } else {
+      _filteredBuildings = filtered;
     }
   }
 
@@ -163,7 +184,6 @@ class _BuildingManagementScreenState extends State<BuildingManagementScreen> {
       if (Helpers.isNetworkError(e)) {
         Helpers.showServerError(context);
       } else {
-        // ✅ FIX: pesan user-friendly
         final msg = Helpers.extractBackendMessage(
           e,
           fallback: 'Gagal menghapus gedung. Silakan coba lagi.',
@@ -191,6 +211,401 @@ class _BuildingManagementScreenState extends State<BuildingManagementScreen> {
         builder: (context) => AddEditBuildingScreen(
           building: building,
           onBuildingSaved: _loadBuildings,
+        ),
+      ),
+    );
+  }
+
+  // ============================================================
+  // WIDGETS — selaras dengan Profil Admin
+  // ============================================================
+
+  Widget _buildHeaderCard() {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        gradient: AppColors.primaryGradient,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.primary.withOpacity(0.25),
+            blurRadius: 12,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Container(
+            width: 88,
+            height: 88,
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.25),
+              shape: BoxShape.circle,
+              border: Border.all(
+                  color: Colors.white.withOpacity(0.5), width: 3),
+            ),
+            child: const Icon(Icons.location_city,
+                size: 44, color: Colors.white),
+          ),
+          const SizedBox(height: 16),
+          const Text(
+            'Kelola Gedung',
+            style: TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.w700,
+              color: Colors.white,
+              fontFamily: 'Inter',
+            ),
+          ),
+          const SizedBox(height: 6),
+          Container(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.25),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Text(
+              '${_buildings.length} GEDUNG TERDAFTAR',
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: Colors.white,
+                letterSpacing: 1,
+                fontFamily: 'Inter',
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: _navigateToAddBuilding,
+              icon: const Icon(Icons.add, size: 18, color: Colors.white),
+              label: const Text(
+                'TAMBAH GEDUNG',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                  fontFamily: 'Inter',
+                ),
+              ),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.white,
+                side:
+                    const BorderSide(color: Colors.white, width: 1.5),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+
+  Widget _buildSearchCard() {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: TextField(
+        controller: _searchController,
+        decoration: InputDecoration(
+          hintText: 'Cari gedung...',
+          prefixIcon: const Icon(Icons.search,
+              size: 20, color: AppColors.textHint),
+          filled: true,
+          fillColor: AppColors.surface,
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: BorderSide.none,
+          ),
+          suffixIcon: _searchController.text.isNotEmpty
+              ? IconButton(
+                  icon: const Icon(Icons.clear, size: 18),
+                  onPressed: () {
+                    _searchController.clear();
+                    _filterBuildings('');
+                  },
+                )
+              : null,
+        ),
+        onChanged: _filterBuildings,
+      ),
+    );
+  }
+
+  Widget _buildBuildingCard(Building building) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(
+                    Icons.location_city,
+                    size: 24,
+                    color: AppColors.primary,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        building.name,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.textPrimary,
+                          fontFamily: 'Inter',
+                        ),
+                      ),
+                      if (building.code != null) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          'Kode: ${building.code}',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: AppColors.textHint,
+                            fontFamily: 'Inter',
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.meeting_room,
+                          size: 12, color: AppColors.primary),
+                      const SizedBox(width: 4),
+                      Text(
+                        '${building.roomCount}',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.primary,
+                          fontFamily: 'Inter',
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            if (building.description != null &&
+                building.description!.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Text(
+                building.description!,
+                style: const TextStyle(
+                  fontSize: 13,
+                  color: AppColors.textSecondary,
+                  height: 1.4,
+                  fontFamily: 'Inter',
+                ),
+              ),
+            ],
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                const Icon(Icons.calendar_today,
+                    size: 12, color: AppColors.textHint),
+                const SizedBox(width: 6),
+                 Text(
+                  'Dibuat: ${Helpers.formatDateTime(building.createdAt.toLocal())}',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textHint,
+                    fontFamily: 'Inter',
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            const Divider(height: 1),
+            Row(
+              children: [
+                Expanded(
+                  child: _buildCardAction(
+                    icon: Icons.edit_outlined,
+                    label: 'Edit',
+                    color: AppColors.primary,
+                    onTap: () => _navigateToEditBuilding(building),
+                  ),
+                ),
+                Container(width: 1, height: 24, color: AppColors.border),
+                Expanded(
+                  child: _buildCardAction(
+                    icon: Icons.delete_outline,
+                    label: 'Hapus',
+                    color: AppColors.error,
+                    onTap: () => _deleteBuilding(building.id),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCardAction({
+    required IconData icon,
+    required String label,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding:
+            const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 16, color: color),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: color,
+                fontFamily: 'Inter',
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildErrorState() {
+    final isNetwork = Helpers.isNetworkError(_errorMessage);
+
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(
+              Icons.cloud_off_rounded,
+              size: 72,
+              color: AppColors.textHint,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Tidak dapat memuat data',
+              style: Theme.of(context).textTheme.titleLarge,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              isNetwork
+                  ? 'Tidak dapat terhubung ke server.\nPeriksa koneksi internet Anda atau coba beberapa saat lagi.'
+                  : 'Terjadi kesalahan saat memuat data.\nSilakan coba lagi.',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 14,
+                color: AppColors.textSecondary,
+                height: 1.5,
+              ),
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton.icon(
+              onPressed: _loadBuildings,
+              icon: const Icon(Icons.refresh, size: 18),
+              label: const Text('Coba Lagi'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    final hasSearch = _searchController.text.trim().isNotEmpty;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              hasSearch ? Icons.search_off : Icons.location_city_outlined,
+              size: 64,
+              color: AppColors.textHint,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              hasSearch
+                  ? 'Tidak ada gedung yang cocok dengan\n"${_searchController.text.trim()}"'
+                  : 'Belum ada gedung terdaftar',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 15,
+                color: AppColors.textSecondary,
+                height: 1.5,
+                fontFamily: 'Inter',
+              ),
+            ),
+            if (hasSearch) ...[
+              const SizedBox(height: 12),
+              TextButton.icon(
+                onPressed: () {
+                  _searchController.clear();
+                  _filterBuildings('');
+                },
+                icon: const Icon(Icons.refresh, size: 18),
+                label: const Text('Reset Pencarian'),
+              ),
+            ],
+          ],
         ),
       ),
     );
@@ -227,254 +642,42 @@ class _BuildingManagementScreenState extends State<BuildingManagementScreen> {
           ),
         ],
       ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: TextField(
-              controller: _searchController,
-              decoration: InputDecoration(
-                hintText: '🔍 Cari gedung...',
-                filled: true,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
-                ),
-                suffixIcon: _searchController.text.isNotEmpty
-                    ? IconButton(
-                        icon: const Icon(Icons.clear),
-                        onPressed: () {
-                          _searchController.clear();
-                          _filterBuildings('');
-                        },
-                      )
-                    : null,
-              ),
-              onChanged: _filterBuildings,
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: _navigateToAddBuilding,
-                icon: const Icon(Icons.add),
-                label: const Text('TAMBAH GEDUNG'),
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          if (_isLoading && _filteredBuildings.isEmpty)
-            const Expanded(
-              child: Center(child: CircularProgressIndicator()),
-            )
-          else if (_hasError && _filteredBuildings.isEmpty)
-            Expanded(
-              child: Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(
-                        Icons.cloud_off_rounded,
-                        size: 72,
-                        color: AppColors.textHint,
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        'Tidak dapat memuat data',
-                        style: Theme.of(context).textTheme.titleLarge,
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        _errorMessage,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          fontSize: 14,
-                          color: AppColors.textSecondary,
-                          height: 1.5,
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-                      ElevatedButton.icon(
-                        onPressed: _loadBuildings,
-                        icon: const Icon(Icons.refresh, size: 18),
-                        label: const Text('Coba Lagi'),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            )
-          else if (_filteredBuildings.isEmpty)
-            Expanded(
-              child: Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.location_city_outlined,
-                        size: 64, color: Colors.grey),
-                    const SizedBox(height: 16),
-                    const Text(
-                      'Tidak ada gedung ditemukan',
-                      style: TextStyle(fontSize: 16, color: Colors.grey),
-                    ),
-                    const SizedBox(height: 8),
-                    if (_searchController.text.isNotEmpty)
-                      TextButton(
-                        onPressed: () {
-                          _searchController.clear();
-                          _filterBuildings('');
-                        },
-                        child: const Text('Reset Pencarian'),
-                      ),
-                  ],
-                ),
-              ),
-            )
-          else
-            Expanded(
-              child: ListView.builder(
-                padding: const EdgeInsets.all(16),
-                itemCount: _filteredBuildings.length,
-                itemBuilder: (context, index) {
-                  final building = _filteredBuildings[index];
-                  return _buildBuildingCard(building);
-                },
-              ),
-            ),
-
-          Container(
-            padding: const EdgeInsets.all(16),
-            child: Text(
-              'Total: ${_filteredBuildings.length} gedung',
-              style: const TextStyle(fontSize: 14, color: Colors.grey),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildBuildingCard(Building building) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 16),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+      body: RefreshIndicator(
+        onRefresh: _handleManualRefresh,
+        color: AppColors.primary,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
           children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        building.name,
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      if (building.code != null)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 4),
-                          child: Text(
-                            'Kode: ${building.code}',
-                            style: const TextStyle(
-                              fontSize: 14,
-                              color: Colors.grey,
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: AppColors.primary.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    '${building.roomCount} ruangan',
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: AppColors.primary,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            if (building.description != null &&
-                building.description!.isNotEmpty)
+            _buildHeaderCard(),
+            _buildSearchCard(),
+            if (_isLoading && _filteredBuildings.isEmpty)
+              const Padding(
+                padding: EdgeInsets.all(48),
+                child: Center(child: CircularProgressIndicator()),
+              )
+            else if (_hasError && _filteredBuildings.isEmpty)
+              _buildErrorState()
+            else if (_filteredBuildings.isEmpty)
+              _buildEmptyState()
+            else
               Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Text(
-                  building.description!,
-                  style: const TextStyle(
-                      fontSize: 14, color: Colors.grey),
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                child: Column(
+                  children: _filteredBuildings
+                      .map(_buildBuildingCard)
+                      .toList(),
                 ),
               ),
-            Padding(
-              padding: const EdgeInsets.only(top: 12),
-              child: Row(
-                children: [
-                  const Icon(Icons.calendar_today,
-                      size: 14, color: Colors.grey),
-                  const SizedBox(width: 4),
-                  Text(
-                    'Dibuat: ${Helpers.formatDateTime(building.createdAt)}',
-                    style: const TextStyle(
-                        fontSize: 12, color: Colors.grey),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () => _navigateToEditBuilding(building),
-                    icon: const Icon(Icons.edit, size: 16),
-                    label: const Text('Edit'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AppColors.primary,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () => _deleteBuilding(building.id),
-                    icon: const Icon(Icons.delete, size: 16),
-                    label: const Text('Hapus'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AppColors.error,
-                      side: const BorderSide(color: AppColors.error),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ],
+            ],
         ),
       ),
     );
   }
 }
 
+// ============================================================
+// ADD / EDIT BUILDING SCREEN (TIDAK BERUBAH)
+// ============================================================
 class AddEditBuildingScreen extends StatefulWidget {
   final Building? building;
   final VoidCallback onBuildingSaved;
@@ -563,7 +766,6 @@ class _AddEditBuildingScreenState extends State<AddEditBuildingScreen> {
       if (Helpers.isNetworkError(e)) {
         Helpers.showServerError(context);
       } else {
-        // ✅ FIX: pesan user-friendly
         final msg = Helpers.extractBackendMessage(
           e,
           fallback: 'Gagal menyimpan gedung. Silakan coba lagi.',
@@ -657,13 +859,6 @@ class _AddEditBuildingScreenState extends State<AddEditBuildingScreen> {
                   ),
                 ),
               ),
-              const SizedBox(height: 16),
-              if (widget.isEditing)
-                Text(
-                  '*Wajib diisi',
-                  style: TextStyle(
-                      fontSize: 12, color: Colors.grey[600]),
-                ),
             ],
           ),
         ),

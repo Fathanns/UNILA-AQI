@@ -155,7 +155,6 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
       if (Helpers.isNetworkError(e)) {
         Helpers.showServerError(context);
       } else {
-        // ✅ FIX: pesan user-friendly
         final msg = Helpers.extractBackendMessage(
           e,
           fallback: 'Gagal menghapus perangkat. Silakan coba lagi.',
@@ -183,6 +182,515 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
         builder: (context) => AddEditIoTDeviceScreen(
           device: device,
           onDeviceSaved: _loadData,
+        ),
+      ),
+    );
+  }
+
+  // ============================================================
+  // WIDGETS — selaras dengan Profil Admin
+  // ============================================================
+
+  Widget _buildHeaderCard() {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        gradient: AppColors.primaryGradient,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.primary.withOpacity(0.25),
+            blurRadius: 12,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Container(
+            width: 88,
+            height: 88,
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.25),
+              shape: BoxShape.circle,
+              border: Border.all(
+                  color: Colors.white.withOpacity(0.5), width: 3),
+            ),
+            child: const Icon(Icons.sensors,
+                size: 44, color: Colors.white),
+          ),
+          const SizedBox(height: 16),
+          const Text(
+            'Kelola Device IoT',
+            style: TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.w700,
+              color: Colors.white,
+              fontFamily: 'Inter',
+            ),
+          ),
+          const SizedBox(height: 6),
+          Container(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.25),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Text(
+              '${_devices.length} DEVICE TERDAFTAR',
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: Colors.white,
+                letterSpacing: 1,
+                fontFamily: 'Inter',
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: _navigateToAddDevice,
+              icon: const Icon(Icons.add, size: 18, color: Colors.white),
+              label: const Text(
+                'TAMBAH DEVICE',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                  fontFamily: 'Inter',
+                ),
+              ),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.white,
+                side:
+                    const BorderSide(color: Colors.white, width: 1.5),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSummarySection() {
+    final onlineCount = _devices.where((d) => d.isOnline).length;
+    final offlineCount = _devices.length - onlineCount;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+      child: Row(
+        children: [
+          Expanded(
+            child: _buildStatCard(
+              icon: Icons.sensors,
+              label: 'Total',
+              value: '${_devices.length}',
+              color: AppColors.primary,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: _buildStatCard(
+              icon: Icons.cloud_done,
+              label: 'Online',
+              value: '$onlineCount',
+              color: AppColors.success,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: _buildStatCard(
+              icon: Icons.cloud_off,
+              label: 'Offline',
+              value: '$offlineCount',
+              color: AppColors.error,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatCard({
+    required IconData icon,
+    required String label,
+    required String value,
+    required Color color,
+  }) {
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon, color: color, size: 22),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              value,
+              style: TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.w800,
+                color: color,
+                fontFamily: 'Inter',
+              ),
+            ),
+            Text(
+              label,
+              style: const TextStyle(
+                fontSize: 11,
+                color: AppColors.textSecondary,
+                fontWeight: FontWeight.w500,
+                fontFamily: 'Inter',
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSearchCard() {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: TextField(
+        controller: _searchController,
+        decoration: InputDecoration(
+          hintText: 'Cari device...',
+          prefixIcon: const Icon(Icons.search,
+              size: 20, color: AppColors.textHint),
+          filled: true,
+          fillColor: AppColors.surface,
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: BorderSide.none,
+          ),
+          suffixIcon: _searchController.text.isNotEmpty
+              ? IconButton(
+                  icon: const Icon(Icons.clear, size: 18),
+                  onPressed: () {
+                    _searchController.clear();
+                    _filterDevices('');
+                  },
+                )
+              : null,
+        ),
+        onChanged: _filterDevices,
+      ),
+    );
+  }
+
+  Widget _buildDeviceCard(IoTDevice device) {
+    final isOnline = device.isOnline;
+    final statusColor = isOnline ? AppColors.success : AppColors.error;
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(
+                    Icons.sensors,
+                    size: 24,
+                    color: AppColors.primary,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        device.name,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.textPrimary,
+                          fontFamily: 'Inter',
+                        ),
+                      ),
+                      if (device.description != null &&
+                          device.description!.isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          device.description!,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: AppColors.textHint,
+                            fontFamily: 'Inter',
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: statusColor.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                        color: statusColor.withOpacity(0.4)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 6,
+                        height: 6,
+                        decoration: BoxDecoration(
+                          color: statusColor,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        isOnline ? 'Online' : 'Offline',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: statusColor,
+                          fontFamily: 'Inter',
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: AppColors.border),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.link,
+                      size: 14, color: AppColors.textHint),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      device.apiEndpoint,
+                      style: const TextStyle(
+                        fontSize: 11.5,
+                        color: AppColors.textSecondary,
+                        fontFamily: 'monospace',
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (device.lastUpdate != null) ...[
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  const Icon(Icons.update,
+                      size: 12, color: AppColors.textHint),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Update terakhir: ${Helpers.formatLastUpdateWithDate(device.lastUpdate!)}',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AppColors.textHint,
+                      fontFamily: 'Inter',
+                    ),
+                  ),
+                ],
+              ),
+            ],
+            const SizedBox(height: 12),
+            const Divider(height: 1),
+            Row(
+              children: [
+                Expanded(
+                  child: _buildCardAction(
+                    icon: Icons.edit_outlined,
+                    label: 'Edit',
+                    color: AppColors.primary,
+                    onTap: () => _navigateToEditDevice(device),
+                  ),
+                ),
+                Container(width: 1, height: 24, color: AppColors.border),
+                Expanded(
+                  child: _buildCardAction(
+                    icon: Icons.delete_outline,
+                    label: 'Hapus',
+                    color: AppColors.error,
+                    onTap: () => _deleteDevice(device.id),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCardAction({
+    required IconData icon,
+    required String label,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding:
+            const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 16, color: color),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: color,
+                fontFamily: 'Inter',
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildErrorState() {
+    final isNetwork = Helpers.isNetworkError(_errorMessage);
+
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(
+              Icons.cloud_off_rounded,
+              size: 72,
+              color: AppColors.textHint,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Tidak dapat memuat data',
+              style: Theme.of(context).textTheme.titleLarge,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              isNetwork
+                  ? 'Tidak dapat terhubung ke server.\nPeriksa koneksi internet Anda atau coba beberapa saat lagi.'
+                  : 'Terjadi kesalahan saat memuat data.\nSilakan coba lagi.',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 14,
+                color: AppColors.textSecondary,
+                height: 1.5,
+              ),
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton.icon(
+              onPressed: _loadData,
+              icon: const Icon(Icons.refresh, size: 18),
+              label: const Text('Coba Lagi'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    final hasSearch = _searchController.text.trim().isNotEmpty;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              hasSearch ? Icons.search_off : Icons.sensors_off,
+              size: 64,
+              color: AppColors.textHint,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              hasSearch
+                  ? 'Tidak ada device yang cocok dengan\n"${_searchController.text.trim()}"'
+                  : 'Belum ada device terdaftar',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 15,
+                color: AppColors.textSecondary,
+                height: 1.5,
+                fontFamily: 'Inter',
+              ),
+            ),
+            if (hasSearch) ...[
+              const SizedBox(height: 12),
+              TextButton.icon(
+                onPressed: () {
+                  _searchController.clear();
+                  _filterDevices('');
+                },
+                icon: const Icon(Icons.refresh, size: 18),
+                label: const Text('Reset Pencarian'),
+              ),
+            ],
+          ],
         ),
       ),
     );
@@ -219,205 +727,48 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
           ),
         ],
       ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: TextField(
-              controller: _searchController,
-              decoration: InputDecoration(
-                hintText: '🔍 Cari device...',
-                filled: true,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
-                ),
-                suffixIcon: _searchController.text.isNotEmpty
-                    ? IconButton(
-                        icon: const Icon(Icons.clear),
-                        onPressed: () {
-                          _searchController.clear();
-                          _filterDevices('');
-                        },
-                      )
-                    : null,
-              ),
-              onChanged: _filterDevices,
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: _navigateToAddDevice,
-                icon: const Icon(Icons.add),
-                label: const Text('TAMBAH DEVICE'),
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          if (_isLoading && _filteredDevices.isEmpty)
-            const Expanded(
-              child: Center(child: CircularProgressIndicator()),
-            )
-          else if (_hasError && _filteredDevices.isEmpty)
-            Expanded(
-              child: Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(
-                        Icons.cloud_off_rounded,
-                        size: 72,
-                        color: AppColors.textHint,
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        'Tidak dapat memuat data',
-                        style: Theme.of(context).textTheme.titleLarge,
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        _errorMessage,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          fontSize: 14,
-                          color: AppColors.textSecondary,
-                          height: 1.5,
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-                      ElevatedButton.icon(
-                        onPressed: _loadData,
-                        icon: const Icon(Icons.refresh, size: 18),
-                        label: const Text('Coba Lagi'),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            )
-          else if (_filteredDevices.isEmpty)
-            Expanded(
-              child: Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.sensors_off,
-                        size: 64, color: Colors.grey),
-                    const SizedBox(height: 16),
-                    const Text('Tidak ada device ditemukan',
-                        style: TextStyle(
-                            fontSize: 16, color: Colors.grey)),
-                    const SizedBox(height: 8),
-                    if (_searchController.text.isNotEmpty)
-                      TextButton(
-                        onPressed: () {
-                          _searchController.clear();
-                          _filterDevices('');
-                        },
-                        child: const Text('Reset Pencarian'),
-                      ),
-                  ],
-                ),
-              ),
-            )
-          else
-            Expanded(
-              child: ListView.builder(
-                padding: const EdgeInsets.all(16),
-                itemCount: _filteredDevices.length,
-                itemBuilder: (context, index) {
-                  final device = _filteredDevices[index];
-                  return _buildDeviceCard(device);
-                },
-              ),
-            ),
-
-          Container(
-            padding: const EdgeInsets.all(16),
-            child: Text(
-              'Total: ${_filteredDevices.length} device',
-              style: const TextStyle(fontSize: 14, color: Colors.grey),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildDeviceCard(IoTDevice device) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 16),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+      body: RefreshIndicator(
+        onRefresh: _handleManualRefresh,
+        color: AppColors.primary,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
           children: [
-            Text(
-              device.name,
-              style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            if (device.description != null &&
-                device.description!.isNotEmpty)
+            _buildHeaderCard(),
+            _buildSummarySection(),
+            _buildSearchCard(),
+            if (_isLoading && _filteredDevices.isEmpty)
+              const Padding(
+                padding: EdgeInsets.all(48),
+                child: Center(child: CircularProgressIndicator()),
+              )
+            else if (_hasError && _filteredDevices.isEmpty)
+              _buildErrorState()
+            else if (_filteredDevices.isEmpty)
+              _buildEmptyState()
+            else
               Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Text(
-                  device.description!,
-                  style: const TextStyle(
-                      fontSize: 14, color: Colors.grey),
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                child: Column(
+                  children: _filteredDevices
+                      .map(_buildDeviceCard)
+                      .toList(),
                 ),
               ),
-            Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: Text(
-                'Endpoint: ${device.apiEndpoint}',
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: Colors.blue,
-                  fontFamily: 'monospace',
+            if (_filteredDevices.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Center(
+                  child: Text(
+                    'Total: ${_filteredDevices.length} device',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AppColors.textHint,
+                      fontFamily: 'Inter',
+                    ),
+                  ),
                 ),
-                overflow: TextOverflow.ellipsis,
               ),
-            ),
             const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () => _navigateToEditDevice(device),
-                    icon: const Icon(Icons.edit, size: 16),
-                    label: const Text('Edit'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AppColors.primary,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () => _deleteDevice(device.id),
-                    icon: const Icon(Icons.delete, size: 16),
-                    label: const Text('Hapus'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AppColors.error,
-                      side: const BorderSide(color: AppColors.error),
-                    ),
-                  ),
-                ),
-              ],
-            ),
           ],
         ),
       ),
@@ -425,6 +776,9 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
   }
 }
 
+// ============================================================
+// ADD / EDIT IOT DEVICE SCREEN (TIDAK BERUBAH)
+// ============================================================
 class AddEditIoTDeviceScreen extends StatefulWidget {
   final IoTDevice? device;
   final VoidCallback onDeviceSaved;
@@ -510,7 +864,6 @@ class _AddEditIoTDeviceScreenState extends State<AddEditIoTDeviceScreen> {
       if (Helpers.isNetworkError(e)) {
         Helpers.showServerError(context);
       } else {
-        // ✅ FIX: pesan user-friendly
         final msg = Helpers.extractBackendMessage(
           e,
           fallback: 'Gagal menyimpan perangkat. Silakan coba lagi.',
