@@ -6,7 +6,7 @@ class SensorData {
   final int aqi;
   final double pm25;
   final double pm10;
-  final double co2;
+  final double co;
   final double temperature;
   final double humidity;
   final String category;
@@ -22,7 +22,7 @@ class SensorData {
     required this.aqi,
     required this.pm25,
     required this.pm10,
-    required this.co2,
+    required this.co,
     required this.temperature,
     required this.humidity,
     required this.category,
@@ -40,7 +40,7 @@ class SensorData {
       aqi: (json['aqi'] ?? 0).toInt(),
       pm25: (json['pm25'] ?? 0).toDouble(),
       pm10: (json['pm10'] ?? 0).toDouble(),
-      co2: (json['co2'] ?? 0).toDouble(),
+      co: (json['co'] ?? 0).toDouble(),
       temperature: (json['temperature'] ?? 0).toDouble(),
       humidity: (json['humidity'] ?? 0).toDouble(),
       category: json['category']?.toString() ?? 'baik',
@@ -61,7 +61,7 @@ class SensorData {
       'aqi': aqi,
       'pm25': pm25,
       'pm10': pm10,
-      'co2': co2,
+      'co': co,
       'temperature': temperature,
       'humidity': humidity,
       'category': category,

@@ -64,7 +64,7 @@ class Room {
 class RoomData {
   final double pm25;
   final double pm10;
-  final double co2;
+  final double co;
   final double temperature;
   final double humidity;
   final DateTime updatedAt;
@@ -72,7 +72,7 @@ class RoomData {
   RoomData({
     required this.pm25,
     required this.pm10,
-    required this.co2,
+    required this.co,
     required this.temperature,
     required this.humidity,
     required this.updatedAt,
@@ -82,7 +82,7 @@ class RoomData {
     return RoomData(
       pm25: (json['pm25'] ?? 0).toDouble(),
       pm10: (json['pm10'] ?? 0).toDouble(),
-      co2: (json['co2'] ?? 0).toDouble(),
+      co: (json['co'] ?? 0).toDouble(),
       temperature: (json['temperature'] ?? 0).toDouble(),
       humidity: (json['humidity'] ?? 0).toDouble(),
       updatedAt: json['updatedAt'] != null
@@ -95,7 +95,7 @@ class RoomData {
     return {
       'pm25': pm25,
       'pm10': pm10,
-      'co2': co2,
+      'co': co,
       'temperature': temperature,
       'humidity': humidity,
       'updatedAt': updatedAt.toIso8601String(),

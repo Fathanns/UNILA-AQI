@@ -153,13 +153,13 @@ class RoomCard extends StatelessWidget {
                     color: Helpers.getPM10Color(room.currentData.pm10),
                   ),
 
-                  // CO2
+                  // CO
                   _buildParameterCell(
-                    label: 'CO₂',
-                    value: room.currentData.co2.round().toString(),
-                    unit: 'ppm',
-                    status: Helpers.getCO2Status(room.currentData.co2),
-                    color: Helpers.getCO2Color(room.currentData.co2),
+                    label: 'CO', 
+                    value: room.currentData.co.round().toString(), 
+                    unit: 'µg/m³', 
+                    status: Helpers.getCOStatus(room.currentData.co), 
+                    color: Helpers.getCOColor(room.currentData.co), 
                   ),
 
                   // Temperature

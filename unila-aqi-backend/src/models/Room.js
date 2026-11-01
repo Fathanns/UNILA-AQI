@@ -31,7 +31,7 @@ const roomSchema = new mongoose.Schema({
   currentData: {
     pm25: { type: Number, default: 0 },
     pm10: { type: Number, default: 0 },
-    co2: { type: Number, default: 0 },
+    co: { type: Number, default: 0 },
     temperature: { type: Number, default: 0 },
     humidity: { type: Number, default: 0 },
     updatedAt: { type: Date }

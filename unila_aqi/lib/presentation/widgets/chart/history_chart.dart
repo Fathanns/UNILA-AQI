@@ -39,7 +39,7 @@ class _HistoryChartState extends State<HistoryChart> {
     'aqi',
     'pm25',
     'pm10',
-    'co2',
+    'co',
     'temperature',
     'humidity'
   ];
@@ -47,7 +47,7 @@ class _HistoryChartState extends State<HistoryChart> {
     'aqi': 'AQI',
     'pm25': 'PM2.5',
     'pm10': 'PM10',
-    'co2': 'CO₂',
+    'co': 'CO',
     'temperature': 'Suhu',
     'humidity': 'Kelembaban',
   };
@@ -57,7 +57,7 @@ class _HistoryChartState extends State<HistoryChart> {
     'aqi': Colors.blue,
     'pm25': Colors.red,
     'pm10': Colors.orange,
-    'co2': Colors.green,
+    'co': Colors.green,
     'temperature': Colors.purple,
     'humidity': Colors.teal,
   };
@@ -207,8 +207,8 @@ class _HistoryChartState extends State<HistoryChart> {
         case 'pm10':
           y = data.pm10;
           break;
-        case 'co2':
-          y = data.co2;
+        case 'co':
+          y = data.co;
           break;
         case 'temperature':
           y = data.temperature;
@@ -471,7 +471,7 @@ class _HistoryChartState extends State<HistoryChart> {
                                   '${data.pm25.toStringAsFixed(1)} μg/m³',
                               'PM10':
                                   '${data.pm10.toStringAsFixed(1)} μg/m³',
-                              'CO₂': '${data.co2.round()} ppm',
+                               'CO': '${data.co.round()} μg/m³',
                               'Suhu':
                                   '${data.temperature.toStringAsFixed(1)}°C',
                               'Kelembaban': '${data.humidity.round()}%',
@@ -523,8 +523,8 @@ class _HistoryChartState extends State<HistoryChart> {
         case 'pm10':
           value = data.pm10;
           break;
-        case 'co2':
-          value = data.co2;
+        case 'co':
+          value = data.co;
           break;
         case 'temperature':
           value = data.temperature;
@@ -557,8 +557,8 @@ class _HistoryChartState extends State<HistoryChart> {
         case 'pm10':
           value = data.pm10;
           break;
-        case 'co2':
-          value = data.co2;
+        case 'co':
+          value = data.co;
           break;
         case 'temperature':
           value = data.temperature;

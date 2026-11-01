@@ -123,13 +123,13 @@ router.post('/demo-cycle', authMiddleware, adminMiddleware, async (req, res) => 
 
       const pm25 = aqiToPm25(target.aqi);
       const pm10 = Math.round(pm25 * 1.5);
-      const co2 = target.aqi > 200 ? 2000 : (target.aqi > 100 ? 1500 : 800);
+      const co = target.aqi > 200 ? 20000 : (target.aqi > 100 ? 12000 : 2000);
       const temperature = target.aqi > 200 ? 33 : (target.aqi > 100 ? 30 : 26);
       const humidity = target.aqi > 200 ? 80 : (target.aqi > 100 ? 70 : 55);
 
       room.demoMode = true;
       room.currentAQI = target.aqi;
-      room.currentData = { pm25, pm10, co2, temperature, humidity, updatedAt: new Date() };
+      room.currentData = { pm25, pm10, co, temperature, humidity, updatedAt: new Date() };
       room.updatedAt = new Date();
       await room.save();
 
@@ -138,7 +138,7 @@ router.post('/demo-cycle', authMiddleware, adminMiddleware, async (req, res) => 
         roomName: room.name,
         buildingName: room.buildingName,
         aqi: target.aqi,
-        pm25, pm10, co2, temperature, humidity,
+        pm25, pm10, co, temperature, humidity,
         category: getAQICategory(target.aqi).category,
         timestamp: new Date(),
       }).save();
@@ -194,14 +194,14 @@ router.post('/:id/demo-aqi', authMiddleware, adminMiddleware, async (req, res) =
 
     const pm25 = aqiToPm25(target);
     const pm10 = Math.round(pm25 * 1.5);
-    const co2 = target > 200 ? 2000 : (target > 100 ? 1500 : 800);
+     const co = target > 200 ? 20000 : (target > 100 ? 12000 : 2000);
     const temperature = target > 200 ? 33 : (target > 100 ? 30 : 26);
     const humidity = target > 200 ? 80 : (target > 100 ? 70 : 55);
 
     room.demoMode = true;
     room.currentAQI = target;
     room.currentData = {
-      pm25, pm10, co2, temperature, humidity,
+      pm25, pm10, co, temperature, humidity,
       updatedAt: new Date()
     };
     room.updatedAt = new Date();
@@ -212,7 +212,7 @@ router.post('/:id/demo-aqi', authMiddleware, adminMiddleware, async (req, res) =
       roomName: room.name,
       buildingName: room.buildingName,
       aqi: target,
-      pm25, pm10, co2, temperature, humidity,
+      pm25, pm10, co, temperature, humidity,
       category: getAQICategory(target).category,
       timestamp: new Date(),
     }).save();
@@ -236,7 +236,7 @@ router.post('/:id/demo-aqi', authMiddleware, adminMiddleware, async (req, res) =
         roomName: room.name,
         aqi: target,
         category: getAQICategory(target).category,
-        pm25, pm10, co2, temperature, humidity
+        pm25, pm10, co, temperature, humidity
       }
     });
   } catch (error) {
@@ -347,7 +347,7 @@ router.post('/', authMiddleware, adminMiddleware, async (req, res) => {
       iotDeviceId: dataSource === 'iot' ? iotDeviceId : null,
       currentAQI: 0,
       currentData: {
-        pm25: 0, pm10: 0, co2: 0, temperature: 0, humidity: 0,
+        pm25: 0, pm10: 0, co: 0, temperature: 0, humidity: 0,
         updatedAt: new Date()
       },
       createdAt: new Date(),
@@ -476,7 +476,7 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
     if (deviceChanged) {
       room.currentAQI = 0;
       room.currentData = {
-        pm25: 0, pm10: 0, co2: 0, temperature: 0, humidity: 0,
+        pm25: 0, pm10: 0, co: 0, temperature: 0, humidity: 0,
         updatedAt: new Date()
       };
       console.log(

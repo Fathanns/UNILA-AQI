@@ -40,14 +40,14 @@ class AQIInfoRepository {
         icon: '🏗️',
       ),
       AQIParameter(
-        name: 'Karbon Dioksida',
-        abbreviation: 'CO₂',
-        description: 'Gas tidak berbau dan tidak berwarna yang dihasilkan dari pembakaran bahan bakar. '
-            'Indikator utama ventilasi ruangan.',
-        unit: 'ppm',
-        impact: 'Sakit kepala, kelelahan, sulit konsentrasi, penurunan produktivitas',
-        source: 'Pernafasan manusia, peralatan elektronik, mesin pembakaran',
-        safeRange: '350 - 600 ppm',
+        name: 'Karbon Monoksida',
+        abbreviation: 'CO',
+        description: 'Gas tidak berbau dan tidak berwarna yang dihasilkan dari pembakaran bahan bakar yang tidak sempurna. '
+            'Indikator utama kualitas udara dalam ruangan.',
+        unit: 'µg/m³',
+        impact: 'Sakit kepala, pusing, mual, gangguan kardiovaskular, penurunan kesadaran pada kadar tinggi.',
+        source: 'Asap kendaraan, kompor gas, pemanas, mesin pembakaran.',
+        safeRange: '0 - 4000 µg/m³ (ISPU ≤ 50)',
         icon: '☁️',
       ),
       AQIParameter(
@@ -138,13 +138,6 @@ class AQIInfoRepository {
         description: 'Mengukur konsentrasi partikel dalam udara. '
             '1 μg/m³ = 0.000001 gram partikel dalam 1 meter kubik udara.',
         example: 'PM2.5: 15 μg/m³ berarti ada 15 mikrogram partikel halus dalam 1 m³ udara',
-      ),
-      UnitInfo(
-        symbol: 'ppm',
-        name: 'Parts Per Million',
-        description: 'Mengukur jumlah molekul gas dalam 1 juta molekul udara. '
-            'Menggambarkan konsentrasi gas yang sangat kecil.',
-        example: 'CO₂: 400 ppm berarti ada 400 molekul CO₂ dalam 1 juta molekul udara',
       ),
       UnitInfo(
         symbol: '°C',

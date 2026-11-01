@@ -37,47 +37,48 @@ const calculateISPUFromPM10 = (pm10) => calculateISPU(pm10, PM10_BREAKPOINTS);
 
 // ============================================================
 // Time-based ranges
+// Nilai CO disesuaikan dengan skala ISPU (µg/m³) 
 // ============================================================
 const TIME_RANGES = {
   '06-08': {
     pm25:        { min: 8,  max: 20, mean: 14  },
     pm10:        { min: 15, max: 40, mean: 25  },
-    co2:         { min: 420, max: 650,  mean: 520  },
+    co:          { min: 500, max: 2000, mean: 1000 }, // Diubah dari co2
     temperature: { min: 22, max: 26, mean: 24  },
     humidity:    { min: 65, max: 85, mean: 75  },
   },
   '08-12': {
     pm25:        { min: 15, max: 40, mean: 27  },
     pm10:        { min: 25, max: 80, mean: 50  },
-    co2:         { min: 600, max: 1400, mean: 1000 },
+    co:          { min: 1000, max: 4000, mean: 2500 }, // Diubah dari co2
     temperature: { min: 24, max: 29, mean: 26  },
     humidity:    { min: 55, max: 75, mean: 65  },
   },
   '12-16': {
     pm25:        { min: 18, max: 45, mean: 30  },
     pm10:        { min: 30, max: 90, mean: 55  },
-    co2:         { min: 700, max: 1600, mean: 1100 },
+    co:          { min: 1500, max: 6000, mean: 3500 }, // Diubah dari co2
     temperature: { min: 26, max: 32, mean: 29  },
     humidity:    { min: 50, max: 70, mean: 60  },
   },
   '16-18': {
     pm25:        { min: 12, max: 32, mean: 22  },
     pm10:        { min: 20, max: 65, mean: 40  },
-    co2:         { min: 550, max: 1100, mean: 800  },
+    co:          { min: 1000, max: 4500, mean: 2500 }, // Diubah dari co2
     temperature: { min: 25, max: 30, mean: 27  },
     humidity:    { min: 55, max: 75, mean: 65  },
   },
   '18-20': {
     pm25:        { min: 10, max: 25, mean: 17  },
     pm10:        { min: 18, max: 50, mean: 32  },
-    co2:         { min: 500, max: 1000, mean: 700  },
+    co:          { min: 600, max: 2500, mean: 1200 }, // Diubah dari co2
     temperature: { min: 24, max: 28, mean: 26  },
     humidity:    { min: 60, max: 80, mean: 70  },
   },
   '20-06': {
     pm25:        { min: 5,  max: 15, mean: 9   },
     pm10:        { min: 10, max: 30, mean: 18  },
-    co2:         { min: 420, max: 550, mean: 450 },
+    co:          { min: 300, max: 1500, mean: 800 }, // Diubah dari co2
     temperature: { min: 22, max: 26, mean: 24  },
     humidity:    { min: 70, max: 90, mean: 80  },
   },
@@ -109,7 +110,7 @@ const secondDataCache = new Map();
 // Anomaly simulation (SAMA dengan backend dataGenerator)
 // 92% normal / 5% spike (8-17x) / 3% error
 // ============================================================
-function applyAnomaly(pm25, pm10, co2, temperature, humidity) {
+function applyAnomaly(pm25, pm10, co, temperature, humidity) {
   const roll = Math.random();
 
   if (roll < 0.05) {
@@ -128,7 +129,7 @@ function applyAnomaly(pm25, pm10, co2, temperature, humidity) {
       anomalyType: 'spike',
       pm25: pm25 * multiplier,
       pm10: pm10 * multiplier,
-      co2: co2 * (1.5 + Math.random()),
+      co: co * (1.5 + Math.random()), // Spike CO 1.5x - 2.5x dari nilai normal
       temperature,
       humidity,
     };
@@ -138,14 +139,14 @@ function applyAnomaly(pm25, pm10, co2, temperature, humidity) {
     return {
       isAnomaly: true,
       anomalyType: 'error',
-      pm25: -1, pm10: -1, co2: -1, temperature: -1, humidity: -1,
+      pm25: -1, pm10: -1, co: -1, temperature: -1, humidity: -1,
     };
   }
 
   return {
     isAnomaly: false,
     anomalyType: null,
-    pm25, pm10, co2, temperature, humidity,
+    pm25, pm10, co, temperature, humidity,
   };
 }
 
@@ -187,29 +188,27 @@ function generate10SecondBasedData(deviceId) {
 
   const rawPm25 = randomInRange(r.pm25.min, r.pm25.max, r.pm25.mean);
   const rawPm10 = randomInRange(r.pm10.min, r.pm10.max, r.pm10.mean);
-  const rawCo2  = randomInRange(r.co2.min,  r.co2.max,  r.co2.mean);
+  const rawCo   = randomInRange(r.co.min,  r.co.max,  r.co.mean); // Diubah dari rawCo2
   const rawTemp = randomInRange(r.temperature.min, r.temperature.max, r.temperature.mean);
   const rawRh   = randomInRange(r.humidity.min,    r.humidity.max,    r.humidity.mean);
 
   const alpha = 0.4;
   const prev = state.prevValues || {
-    pm25: rawPm25, pm10: rawPm10, co2: rawCo2,
+    pm25: rawPm25, pm10: rawPm10, co: rawCo, // Diubah dari co2
     temperature: rawTemp, humidity: rawRh,
   };
   const pm25 = prev.pm25 * (1 - alpha) + rawPm25 * alpha;
   const pm10 = prev.pm10 * (1 - alpha) + rawPm10 * alpha;
-  const co2  = prev.co2  * (1 - alpha) + rawCo2  * alpha;
+  const co   = prev.co  * (1 - alpha) + rawCo  * alpha; // Diubah dari co2
   const temperature = prev.temperature * (1 - alpha) + rawTemp * alpha;
   const humidity    = prev.humidity    * (1 - alpha) + rawRh   * alpha;
 
   // Update state (JANGAN feed anomali ke state — supaya spike transien 1 tick)
-  state.prevValues = { pm25, pm10, co2, temperature, humidity };
+  state.prevValues = { pm25, pm10, co, temperature, humidity }; // Diubah dari co2
   state.updateCounter++;
   state.last10SecondBlock = current10SecondBlock;
 
-  // FIXED: apply anomaly — hasilnya TIDAK mengubah state.prevValues,
-  // sehingga spike hanya muncul 1 tick dan hilang pada tick berikutnya.
-  const anomalous = applyAnomaly(pm25, pm10, co2, temperature, humidity);
+  const anomalous = applyAnomaly(pm25, pm10, co, temperature, humidity); // Diubah dari co2
 
   // Hitung AQI
   let finalAQI, finalCategory;
@@ -237,7 +236,7 @@ function generate10SecondBasedData(deviceId) {
     aqi: finalAQI,
     pm25: parseFloat(anomalous.pm25.toFixed(1)),
     pm10: parseFloat(anomalous.pm10.toFixed(1)),
-    co2: Math.round(anomalous.co2),
+    co: Math.round(anomalous.co), // Diubah dari co2
     temperature: parseFloat(anomalous.temperature.toFixed(1)),
     humidity: Math.round(anomalous.humidity),
     category: finalCategory,
@@ -260,7 +259,7 @@ function generate10SecondBasedData(deviceId) {
     );
   } else {
     console.log(
-      `🔄 ${deviceId} [${slot}] AQI=${finalAQI}, PM2.5=${sensorData.pm25}, PM10=${sensorData.pm10}`
+      `🔄 ${deviceId} [${slot}] AQI=${finalAQI}, PM2.5=${sensorData.pm25}, PM10=${sensorData.pm10}, CO=${sensorData.co}`
     );
   }
 
@@ -433,7 +432,7 @@ const server = http.createServer((req, res) => {
             units: {
               pm25: 'μg/m³',
               pm10: 'μg/m³',
-              co2: 'ppm',
+              co: 'μg/m³', // Diubah dari co2: 'ppm'
               temperature: '°C',
               humidity: '%'
             }
@@ -514,7 +513,7 @@ const server = http.createServer((req, res) => {
 
       if (pathname.startsWith('/set-base/') && method === 'POST') {
         const deviceId = pathname.split('/')[2];
-        const { pm25, pm10, co2, temperature, humidity, roomType } = requestData;
+        const { pm25, pm10, co, temperature, humidity, roomType } = requestData; // Diubah dari co2
 
         if (!deviceId) {
           return sendJson(res, 400, { success: false, message: 'Device ID is required' });
@@ -522,9 +521,9 @@ const server = http.createServer((req, res) => {
 
         if (!deviceStates.has(deviceId)) {
           deviceStates.set(deviceId, {
-            basePM25: 20, basePM10: 40, baseCO2: 550,
+            basePM25: 20, basePM10: 40, baseCO: 1500, // Diubah dari baseCO2
             baseTemp: 23, baseHumidity: 50, roomType: 0,
-            trendPM25: 0, trendCO2: 0, last10SecondBlock: -1, updateCounter: 0
+            trendPM25: 0, trendCO: 0, last10SecondBlock: -1, updateCounter: 0
           });
         }
 
@@ -532,7 +531,7 @@ const server = http.createServer((req, res) => {
 
         if (pm25 !== undefined) state.basePM25 = pm25;
         if (pm10 !== undefined) state.basePM10 = pm10;
-        if (co2 !== undefined) state.baseCO2 = co2;
+        if (co !== undefined) state.baseCO = co; // Diubah dari baseCO2
         if (temperature !== undefined) state.baseTemp = temperature;
         if (humidity !== undefined) state.baseHumidity = humidity;
         if (roomType !== undefined) {
@@ -551,7 +550,7 @@ const server = http.createServer((req, res) => {
           values: {
             basePM25: state.basePM25,
             basePM10: state.basePM10,
-            baseCO2: state.baseCO2,
+            baseCO: state.baseCO, // Diubah dari baseCO2
             baseTemp: state.baseTemp,
             baseHumidity: state.baseHumidity,
             roomType: ['Kelas', 'Laboratorium', 'Perpustakaan', 'Aula'][state.roomType]
@@ -589,7 +588,7 @@ const server = http.createServer((req, res) => {
 
             const pm25 = state.basePM25 * timeFactor * (1 + Math.sin(updateOffset * 0.2) * 0.2);
             const pm10 = pm25 * 2;
-            const co2 = state.baseCO2 * timeFactor;
+            const co = state.baseCO * timeFactor; // Diubah dari baseCO2
 
             let aqi;
             if (pm25 <= 12.0) aqi = Math.round((pm25 / 12.0) * 50);
@@ -602,7 +601,7 @@ const server = http.createServer((req, res) => {
               aqi: Math.min(500, aqi),
               pm25: parseFloat(pm25.toFixed(1)),
               pm10: parseFloat(pm10.toFixed(1)),
-              co2: Math.round(co2),
+              co: Math.round(co), // Diubah dari co2
               temperature: state.baseTemp + Math.sin(hour * 0.2618 + minute * 0.00436) * 3,
               humidity: state.baseHumidity + Math.cos(hour * 0.2618 + minute * 0.00436) * 10
             });

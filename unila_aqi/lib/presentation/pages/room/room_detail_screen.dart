@@ -558,7 +558,7 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
         _buildStatusChip('PM10: ${data.pm10.toStringAsFixed(1)}',
             Helpers.getPM10Color(data.pm10)),
         _buildStatusChip(
-            'CO₂: ${data.co2.round()}', Helpers.getCO2Color(data.co2)),
+            'CO: ${data.co.round()}', Helpers.getCOColor(data.co)),
         _buildStatusChip(
             'Suhu: ${data.temperature.toStringAsFixed(1)}°C',
             Helpers.getTemperatureColor(data.temperature)),
@@ -621,10 +621,10 @@ _RecSeverity _recommendationSeverity(String text) {
       return _RecSeverity.danger;
     }
 
-    // --- CO₂ ---
-    if (text.startsWith('CO₂:') || text.startsWith('CO2:')) {
-      if (data.co2 <= 600) return _RecSeverity.normal;
-      if (data.co2 <= 1000) return _RecSeverity.warning;
+    // --- CO ---
+    if (text.startsWith('CO:')) { 
+      if (data.co <= 4000) return _RecSeverity.normal; 
+      if (data.co <= 8000) return _RecSeverity.warning; 
       return _RecSeverity.danger;
     }
 
@@ -878,7 +878,7 @@ _RecSeverity _recommendationSeverity(String text) {
                 Expanded(
                   child: _buildParameterCard(
                     'PM10',
-                    '${_currentRoomData.currentData.pm25.toStringAsFixed(1)}\nμg/m³', 
+                    '${_currentRoomData.currentData.pm10.toStringAsFixed(1)}\nμg/m³', 
                     Helpers.getPM10Status(
                         _currentRoomData.currentData.pm10),
                     Helpers.getPM10Color(
@@ -888,12 +888,12 @@ _RecSeverity _recommendationSeverity(String text) {
                 const SizedBox(width: 12),
                 Expanded(
                   child: _buildParameterCard(
-                    'CO₂',
-                    '${_currentRoomData.currentData.co2.round()}\nppm',
-                    Helpers.getCO2Status(
-                        _currentRoomData.currentData.co2),
-                    Helpers.getCO2Color(
-                        _currentRoomData.currentData.co2),
+                    'CO', 
+                    '${_currentRoomData.currentData.co.round()}\nµg/m³', 
+                    Helpers.getCOStatus(
+                        _currentRoomData.currentData.co), 
+                    Helpers.getCOColor(
+                        _currentRoomData.currentData.co), 
                   ),
                 ),
               ],

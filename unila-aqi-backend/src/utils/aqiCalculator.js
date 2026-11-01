@@ -1,6 +1,8 @@
 /**
  * ISPU (Indeks Standar Pencemar Udara) Calculator
  * Berdasarkan PP No. 22 Tahun 2021 (Indonesia)
+ *
+ * Nilai AQI = MAX dari ISPU setiap parameter (PM2.5, PM10, CO).
  */
 
 const PM25_BREAKPOINTS = [
@@ -17,6 +19,16 @@ const PM10_BREAKPOINTS = [
   { ispuLow: 101, ispuHigh: 200, concLow: 151, concHigh: 350 },
   { ispuLow: 201, ispuHigh: 300, concLow: 351, concHigh: 420 },
   { ispuLow: 301, ispuHigh: 500, concLow: 421, concHigh: 500 },
+];
+
+// ⚠️ CO breakpoints — sesuaikan dengan tabel yang Anda pegang.
+// Untuk range ISPU > 300, batas atas konsentrasi CO umumnya 45.000.
+const CO_BREAKPOINTS = [
+  { ispuLow: 0,   ispuHigh: 50,  concLow: 0,     concHigh: 4000  },
+  { ispuLow: 51,  ispuHigh: 100, concLow: 4001,  concHigh: 8000  },
+  { ispuLow: 101, ispuHigh: 200, concLow: 8001,  concHigh: 15000 },
+  { ispuLow: 201, ispuHigh: 300, concLow: 15001, concHigh: 30000 },
+  { ispuLow: 301, ispuHigh: 500, concLow: 30001, concHigh: 45000 },
 ];
 
 function calculateISPUFromConcentration(concentration, breakpoints) {
@@ -49,11 +61,25 @@ function calculateISPUFromPM10(pm10) {
   return calculateISPUFromConcentration(pm10, PM10_BREAKPOINTS);
 }
 
-function calculateAQI(pm25, pm10) {
+function calculateISPUFromCO(co) {
+  return calculateISPUFromConcentration(co, CO_BREAKPOINTS);
+}
+
+/**
+ * AQI = MAX dari ISPU PM2.5, PM10, dan CO.
+ * `dominant` berisi nama parameter dengan ISPU tertinggi.
+ */
+function calculateAQI(pm25, pm10, co = 0) {
   const ispuPM25 = calculateISPUFromPM25(pm25);
   const ispuPM10 = calculateISPUFromPM10(pm10);
-  const aqi = Math.max(ispuPM25, ispuPM10);
-  const dominant = ispuPM25 >= ispuPM10 ? 'pm25' : 'pm10';
+  const ispuCO   = calculateISPUFromCO(co);
+
+  const aqi = Math.max(ispuPM25, ispuPM10, ispuCO);
+
+  let dominant;
+  if (aqi === ispuCO)        dominant = 'co';
+  else if (aqi === ispuPM25) dominant = 'pm25';
+  else                       dominant = 'pm10';
 
   const cat = getAQICategory(aqi);
 
@@ -61,6 +87,7 @@ function calculateAQI(pm25, pm10) {
     aqi,
     ispuPM25,
     ispuPM10,
+    ispuCO,
     dominant,
     category: cat.category,
     color: cat.color,
@@ -76,12 +103,6 @@ function getAQICategory(aqi) {
   return { category: 'berbahaya', color: '#000000', label: 'Berbahaya' };
 }
 
-/**
- * Konversi nilai AQI/ISPU target → konsentrasi PM2.5 (approx).
- * Inverse interpolation dari breakpoint PP 22/2021.
- * Dipakai untuk DEMO MODE: set nilai AQI spesifik agar dosen bisa
- * melihat semua kategori tanpa menunggu random.
- */
 function aqiToPm25(aqi) {
   if (aqi == null || isNaN(aqi) || aqi <= 0) return 0;
   const target = Math.min(500, aqi);
@@ -110,13 +131,11 @@ const evaluateParameter = (type, value) => {
       const cat = getAQICategory(ispu);
       return { status: cat.category, color: cat.color, ispu };
     }
-    case 'co2':
-      if (value <= 600)  return { status: 'baik',               color: '#00E400' };
-      if (value <= 1000) return { status: 'sedang',             color: '#0000FF' };
-      if (value <= 1500) return { status: 'tidak_sehat',        color: '#FFFF00' };
-      if (value <= 2000) return { status: 'sangat_tidak_sehat', color: '#FF0000' };
-      return { status: 'berbahaya', color: '#000000' };
-
+    case 'co': {
+      const ispu = calculateISPUFromCO(value);
+      const cat = getAQICategory(ispu);
+      return { status: cat.category, color: cat.color, ispu };
+    }
     case 'temperature':
       if (value >= 24 && value <= 26) return { status: 'ideal', color: '#0066CC' };
       if (value >= 20 && value <= 28) return { status: 'normal', color: '#00E400' };
@@ -137,6 +156,7 @@ const evaluateParameter = (type, value) => {
 module.exports = {
   calculateISPUFromPM25,
   calculateISPUFromPM10,
+  calculateISPUFromCO,
   calculateAQI,
   getAQICategory,
   evaluateParameter,

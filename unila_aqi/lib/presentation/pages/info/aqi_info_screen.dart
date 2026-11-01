@@ -362,22 +362,17 @@ class _AQIInfoScreenState extends State<AQIInfoScreen> {
         icon: '🏗️',
       ),
       AQIParameter(
-        name: 'Karbon Dioksida',
-        abbreviation: 'CO₂',
+        name: 'Karbon Monoksida',
+        abbreviation: 'CO',
         description:
-            'Gas tidak berbau dan tidak berwarna hasil respirasi manusia dan '
-            'peralatan elektronik di ruangan. CO₂ menjadi indikator utama '
-            'tingkat ventilasi: semakin banyak orang di ruangan tanpa ventilasi '
-            'memadai, semakin tinggi kadar CO₂ dan semakin menurun kualitas '
-            'udara ruangan.',
-        unit: 'ppm',
+            'Gas tidak berbau dan tidak berwarna hasil pembakaran tidak sempurna. ' // Teks diubah
+            'Di dalam ruangan, gas ini bisa berasal dari kompor, pemanas, atau masuknya asap kendaraan dari luar.',
+        unit: 'µg/m³',
         impact:
-            'Sakit kepala, kelelahan, sulit konsentrasi, penurunan '
-            'produktivitas belajar/bekerja, rasa kantuk.',
+            'Sakit kepala, pusing, mual, memperburuk kondisi jantung.',
         source:
-            'Respirasi manusia, peralatan elektronik, pembakaran dalam '
-            'ruangan (kompor, lilin, genset).',
-        safeRange: '0 – 600 ppm',
+            'Kompor gas, asap kendaraan masuk, sistem ventilasi yang buruk.',
+        safeRange: '0 – 4.000 µg/m³ (ISPU ≤ 50)',
         icon: '☁️',
       ),
       AQIParameter(
@@ -420,7 +415,7 @@ class _AQIInfoScreenState extends State<AQIInfoScreen> {
         _paragraph(
           'Aplikasi memantau 5 parameter lingkungan di dalam ruangan. '
           'Dua parameter partikel (PM2.5 & PM10) menentukan AQI dan '
-          'tiga parameter lainnya (CO₂, suhu, kelembaban) memberi konteks '
+          'tiga parameter lainnya (CO, suhu, kelembaban) memberi konteks '
           'kenyamanan & ventilasi ruangan.',
         ),
         const SizedBox(height: 16),
@@ -528,13 +523,13 @@ class _AQIInfoScreenState extends State<AQIInfoScreen> {
           ],
         ),
         _parameterCategoryTable(
-          title: 'CO₂ (ppm)',
+          title: 'CO (µg/m³)', 
           rows: const [
-            {'range': '0 – 600', 'label': 'Baik', 'color': AppColors.aqiGood},
-            {'range': '601 – 1.000', 'label': 'Sedang', 'color': AppColors.aqiModerate},
-            {'range': '1.001 – 1.500', 'label': 'Tidak Sehat', 'color': AppColors.aqiUnhealthySensitive},
-            {'range': '1.501 – 2.000', 'label': 'Sangat Tidak Sehat', 'color': AppColors.aqiUnhealthy},
-            {'range': '> 2.000', 'label': 'Berbahaya', 'color': AppColors.aqiHazardous},
+            {'range': '0 – 4.000', 'label': 'Baik', 'color': AppColors.aqiGood},
+            {'range': '4.001 – 8.000', 'label': 'Sedang', 'color': AppColors.aqiModerate},
+            {'range': '8.001 – 15.000', 'label': 'Tidak Sehat', 'color': AppColors.aqiUnhealthySensitive},
+            {'range': '15.001 – 30.000', 'label': 'Sangat Tidak Sehat', 'color': AppColors.aqiUnhealthy},
+            {'range': '> 30.000', 'label': 'Berbahaya', 'color': AppColors.aqiHazardous},
           ],
         ),
         _parameterCategoryTable(
@@ -893,36 +888,36 @@ class _AQIInfoScreenState extends State<AQIInfoScreen> {
           ],
         ),
         _buildParameterRecommendationCard(
-          title: 'CO₂ (ppm)',
+          title: 'CO (µg/m³)', 
           rows: const [
             {
-              'range': '0 – 600',
+              'range': '0 – 4.000',
               'color': AppColors.aqiGood,
               'rec': 'Ventilasi sangat baik. Aman untuk perkuliahan normal.',
             },
             {
-              'range': '601 – 1.000',
+              'range': '4.001 – 8.000',
               'color': AppColors.aqiModerate,
               'rec':
                   'Pastikan ventilasi mekanis/AC fresh air berjalan. Bila '
                       'memungkinkan buka pintu/jendela sesaat.',
             },
             {
-              'range': '1.001 – 1.500',
+              'range': '8.001 – 15.000',
               'color': AppColors.aqiUnhealthySensitive,
               'rec':
                   'Buka jendela/pintu untuk ventilasi silang. Nyalakan exhaust '
                       'fan. Kurangi kapasitas mahasiswa di ruangan.',
             },
             {
-              'range': '1.501 – 2.000',
+              'range': '15.001 – 30.000',
               'color': AppColors.aqiUnhealthy,
               'rec':
                   'Ventilasi darurat — buka semua akses udara, exhaust maksimum. '
                       'Pertimbangkan mengosongkan ruangan sementara.',
             },
             {
-              'range': '> 2.000',
+              'range': '> 30.000',
               'color': AppColors.aqiHazardous,
               'rec':
                   'Evakuasi ruangan. Investigasi segera (sistem HVAC, '
@@ -1141,7 +1136,7 @@ class _AQIInfoScreenState extends State<AQIInfoScreen> {
         _miniHeading('Kartu Parameter'),
         const SizedBox(height: 6),
         _paragraph(
-          'Kartu PM2.5, PM10, CO₂, Suhu, dan Kelembaban menampilkan nilai '
+          'Kartu PM2.5, PM10, CO, Suhu, dan Kelembaban menampilkan nilai '
           'terkini beserta warna kategori masing-masing parameter. Angka di '
           'kartu ini adalah nilai mentah dari sensor, bukan AQI.',
         ),

@@ -183,22 +183,22 @@ class Helpers {
     return AppColors.aqiUnhealthy;
   }
 
-  // CO2
-  static String getCO2Status(double value) {
+   // CO
+  static String getCOStatus(double value) { 
     if (value < 0) return 'ERROR';
-    if (value <= 600) return 'BAIK';
-    if (value <= 1000) return 'SEDANG';
-    if (value <= 1500) return 'TIDAK SEHAT';
-    if (value <= 2000) return 'SANGAT TIDAK SEHAT';
+    if (value <= 4000) return 'BAIK';
+    if (value <= 8000) return 'SEDANG';
+    if (value <= 15000) return 'TIDAK SEHAT';
+    if (value <= 30000) return 'SANGAT TIDAK SEHAT';
     return 'BERBAHAYA';
   }
 
-  static Color getCO2Color(double value) {
+   static Color getCOColor(double value) { 
     if (value < 0) return AppColors.aqiError;
-    if (value <= 600) return AppColors.aqiGood;
-    if (value <= 1000) return AppColors.aqiModerate;
-    if (value <= 1500) return AppColors.aqiUnhealthySensitive;
-    if (value <= 2000) return AppColors.aqiUnhealthy;
+    if (value <= 4000) return AppColors.aqiGood;
+    if (value <= 8000) return AppColors.aqiModerate;
+    if (value <= 15000) return AppColors.aqiUnhealthySensitive;
+    if (value <= 30000) return AppColors.aqiUnhealthy;
     return AppColors.aqiHazardous;
   }
 
@@ -463,17 +463,6 @@ class Helpers {
     return '#${color.value.toRadixString(16).padLeft(8, '0').substring(2)}';
   }
 
-    // ============================================================
-  // REKOMENDASI KESEHATAN — 1 baris per parameter (tanpa nilai/status)
-  //
-  // Basis acuan:
-  //  - AQI / PM2.5 / PM10 : PP No. 22 Tahun 2021 (ISPU)
-  //  - CO2                : ASHRAE 62.1 & Permenaker 5/2018
-  //  - Suhu / Kelembaban  : SNI 03-6572-2001 & Permenaker 5/2018
-  //
-  // Nilai & kategori TIDAK ditulis di teks — sudah ditampilkan
-  // sebagai chip warna di bagian atas kartu rekomendasi.
-  // ============================================================
   static List<String> getDetailedRecommendations(Room room) {
     final recommendations = <String>[];
     final data = room.currentData;
@@ -549,24 +538,24 @@ class Helpers {
       }
     }
 
-    // 4. CO2 — ASHRAE 62.1 & Permenaker 5/2018
-    final co2 = data.co2;
-    if (co2 >= 0) {
-      if (co2 <= 600) {
+    // 4. CO
+    final co = data.co; 
+    if (co >= 0) {
+      if (co <= 4000) {
         recommendations.add(
-            'CO₂: Ventilasi sangat baik. Aman untuk perkuliahan normal.');
-      } else if (co2 <= 1000) {
+            'CO: Aman untuk perkuliahan normal.');
+      } else if (co <= 8000) {
         recommendations.add(
-            'CO₂: Pastikan ventilasi mekanis/AC fresh air berjalan. Bila memungkinkan buka pintu/jendela sesaat.');
-      } else if (co2 <= 1500) {
+            'CO: Pastikan ventilasi mekanis/AC fresh air berjalan. Bila memungkinkan buka pintu/jendela sesaat.');
+      } else if (co <= 15000) {
         recommendations.add(
-            'CO₂: Buka jendela/pintu untuk ventilasi silang. Nyalakan exhaust fan. Kurangi kapasitas mahasiswa di ruangan.');
-      } else if (co2 <= 2000) {
+            'CO: Buka jendela/pintu untuk ventilasi silang. Nyalakan exhaust fan. Kurangi kapasitas mahasiswa di ruangan.');
+      } else if (co <= 30000) {
         recommendations.add(
-            'CO₂: Ventilasi darurat — buka semua akses udara, exhaust maksimum. Pertimbangkan mengosongkan ruangan sementara.');
+            'CO: Ventilasi darurat — buka semua akses udara, exhaust maksimum. Pertimbangkan mengosongkan ruangan sementara.');
       } else {
         recommendations.add(
-            'CO₂: Evakuasi ruangan. Investigasi segera (sistem HVAC, kebocoran, ruangan tertutup terlalu lama).');
+            'CO: Evakuasi ruangan. Investigasi segera (sistem HVAC, kebocoran, ruangan tertutup terlalu lama).');
       }
     }
 

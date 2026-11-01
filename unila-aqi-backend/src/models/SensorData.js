@@ -26,7 +26,7 @@ const sensorDataSchema = new mongoose.Schema({
     type: Number,
     required: true
   },
-  co2: {
+  co: {
     type: Number,
     required: true
   },

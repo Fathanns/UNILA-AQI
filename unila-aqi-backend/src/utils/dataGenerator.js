@@ -4,42 +4,42 @@ const TIME_RANGES = {
   '06-08': {
     pm25:        { min: 8,  max: 20, mean: 14  },
     pm10:        { min: 15, max: 40, mean: 25  },
-    co2:         { min: 420, max: 650,  mean: 520  },
+    co:          { min: 500, max: 2000, mean: 1000 },
     temperature: { min: 22, max: 26, mean: 24  },
     humidity:    { min: 65, max: 85, mean: 75  },
   },
   '08-12': {
     pm25:        { min: 15, max: 40, mean: 27  },
     pm10:        { min: 25, max: 80, mean: 50  },
-    co2:         { min: 600, max: 1400, mean: 1000 },
+    co:          { min: 1000, max: 4000, mean: 2500 },
     temperature: { min: 24, max: 29, mean: 26  },
     humidity:    { min: 55, max: 75, mean: 65  },
   },
   '12-16': {
     pm25:        { min: 18, max: 45, mean: 30  },
     pm10:        { min: 30, max: 90, mean: 55  },
-    co2:         { min: 700, max: 1600, mean: 1100 },
+    co:          { min: 1500, max: 6000, mean: 3500 },
     temperature: { min: 26, max: 32, mean: 29  },
     humidity:    { min: 50, max: 70, mean: 60  },
   },
   '16-18': {
     pm25:        { min: 12, max: 32, mean: 22  },
     pm10:        { min: 20, max: 65, mean: 40  },
-    co2:         { min: 550, max: 1100, mean: 800  },
+    co:          { min: 1000, max: 4500, mean: 2500 },
     temperature: { min: 25, max: 30, mean: 27  },
     humidity:    { min: 55, max: 75, mean: 65  },
   },
   '18-20': {
     pm25:        { min: 10, max: 25, mean: 17  },
     pm10:        { min: 18, max: 50, mean: 32  },
-    co2:         { min: 500, max: 1000, mean: 700  },
+    co:          { min: 600, max: 2500, mean: 1200 },
     temperature: { min: 24, max: 28, mean: 26  },
     humidity:    { min: 60, max: 80, mean: 70  },
   },
   '20-06': {
     pm25:        { min: 5,  max: 15, mean: 9   },
     pm10:        { min: 10, max: 30, mean: 18  },
-    co2:         { min: 420, max: 550, mean: 450 },
+    co:          { min: 300, max: 1500, mean: 800 },
     temperature: { min: 22, max: 26, mean: 24  },
     humidity:    { min: 70, max: 90, mean: 80  },
   },
@@ -67,6 +67,7 @@ function randomInRange(min, max, mean) {
 
 /**
  * Generate data sensor normal berdasarkan slot waktu saat ini.
+ * AQI dihitung dari MAX(PM2.5, PM10, CO) — sinkron dengan aqiCalculator.js
  */
 const generateSensorData = (roomType = 'normal') => {
   const now = new Date();
@@ -75,16 +76,17 @@ const generateSensorData = (roomType = 'normal') => {
 
   const pm25 = randomInRange(r.pm25.min, r.pm25.max, r.pm25.mean);
   const pm10 = randomInRange(r.pm10.min, r.pm10.max, r.pm10.mean);
-  const co2  = randomInRange(r.co2.min,  r.co2.max,  r.co2.mean);
+  const co   = randomInRange(r.co.min,   r.co.max,   r.co.mean);
   const temperature = randomInRange(r.temperature.min, r.temperature.max, r.temperature.mean);
   const humidity    = randomInRange(r.humidity.min,    r.humidity.max,    r.humidity.mean);
 
-  const aqiResult = calculateAQI(pm25, pm10);
+  // ✅ AQI = MAX dari PM2.5, PM10, dan CO
+  const aqiResult = calculateAQI(pm25, pm10, co);
 
   return {
     pm25: parseFloat(pm25.toFixed(1)),
     pm10: parseFloat(pm10.toFixed(1)),
-    co2: Math.round(co2),
+    co: Math.round(co),
     temperature: parseFloat(temperature.toFixed(1)),
     humidity: Math.round(humidity),
     aqi: aqiResult.aqi,
@@ -92,6 +94,7 @@ const generateSensorData = (roomType = 'normal') => {
     dominant: aqiResult.dominant,
     ispuPM25: aqiResult.ispuPM25,
     ispuPM10: aqiResult.ispuPM10,
+    ispuCO: aqiResult.ispuCO,
     timeSlot: slot,
     timestamp: now,
     isAnomaly: false,
@@ -100,15 +103,10 @@ const generateSensorData = (roomType = 'normal') => {
 };
 
 /**
- * FIXED: simulateAnomaly dengan multiplier dinaikkan drastis.
- *
- * Distribusi:
- *   - 92% normal → data dari generateSensorData
- *   -  5% spike  → multiplier 8-17x lipat → AQI 100-500 (SEMUA kategori)
- *        ├─ 60% dalam 8-10x  → AQI ~100-200 (Tidak Sehat)
- *        ├─ 30% dalam 10-13x → AQI ~200-300 (Sangat Tidak Sehat)
- *        └─ 10% dalam 13-17x → AQI ~300-500 (Berbahaya)
- *   -  3% error  → aqi=-1 (sensor mati), ditangani terpisah oleh service
+ * simulateAnomaly:
+ *   - 92% normal  → data dari generateSensorData
+ *   -  5% spike   → PM naik 8-17x, CO naik 1.5-2.5x, AQI dihitung ulang
+ *   -  3% error   → semua nilai -1 (sensor mati)
  */
 const simulateAnomaly = (normalData) => {
   const roll = Math.random();
@@ -119,27 +117,31 @@ const simulateAnomaly = (normalData) => {
     let multiplier;
 
     if (subRoll < 0.60) {
-      multiplier = 8 + Math.random() * 2;       // 8-10x → Tidak Sehat
+      multiplier = 8 + Math.random() * 2;       // 8-10x
     } else if (subRoll < 0.90) {
-      multiplier = 10 + Math.random() * 3;      // 10-13x → Sangat Tidak Sehat
+      multiplier = 10 + Math.random() * 3;      // 10-13x
     } else {
-      multiplier = 13 + Math.random() * 4;      // 13-17x → Berbahaya
+      multiplier = 13 + Math.random() * 4;      // 13-17x
     }
 
     const pm25 = normalData.pm25 * multiplier;
     const pm10 = normalData.pm10 * multiplier;
-    const aqiResult = calculateAQI(pm25, pm10);
+    const co   = normalData.co * (1.5 + Math.random());   // CO spike 1.5x-2.5x
+
+    // ✅ AQI dihitung ulang setelah spike (termasuk CO)
+    const aqiResult = calculateAQI(pm25, pm10, co);
 
     return {
       ...normalData,
       pm25: parseFloat(pm25.toFixed(1)),
       pm10: parseFloat(pm10.toFixed(1)),
-      co2: Math.round(normalData.co2 * (1.5 + Math.random())),
+      co: Math.round(co),
       aqi: aqiResult.aqi,
       category: aqiResult.category,
       dominant: aqiResult.dominant,
       ispuPM25: aqiResult.ispuPM25,
       ispuPM10: aqiResult.ispuPM10,
+      ispuCO: aqiResult.ispuCO,
       isAnomaly: true,
       anomalyType: 'spike',
     };
@@ -151,7 +153,7 @@ const simulateAnomaly = (normalData) => {
       ...normalData,
       pm25: -1,
       pm10: -1,
-      co2: -1,
+      co: -1,
       temperature: -1,
       humidity: -1,
       aqi: -1,

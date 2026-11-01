@@ -883,7 +883,7 @@ const roomSchema = new mongoose.Schema({
   currentData: {
     pm25: { type: Number, default: 0 },
     pm10: { type: Number, default: 0 },
-    co2: { type: Number, default: 0 },
+    co: { type: Number, default: 0 },
     temperature: { type: Number, default: 0 },
     humidity: { type: Number, default: 0 },
     updatedAt: { type: Date }
@@ -938,7 +938,7 @@ const sensorDataSchema = new mongoose.Schema({
     type: Number,
     required: true
   },
-  co2: {
+  co: {
     type: Number,
     required: true
   },
@@ -1736,13 +1736,13 @@ router.post('/demo-cycle', authMiddleware, adminMiddleware, async (req, res) => 
 
       const pm25 = aqiToPm25(target.aqi);
       const pm10 = Math.round(pm25 * 1.5);
-      const co2 = target.aqi > 200 ? 2000 : (target.aqi > 100 ? 1500 : 800);
+      const co = target.aqi > 200 ? 20000 : (target.aqi > 100 ? 12000 : 2000);
       const temperature = target.aqi > 200 ? 33 : (target.aqi > 100 ? 30 : 26);
       const humidity = target.aqi > 200 ? 80 : (target.aqi > 100 ? 70 : 55);
 
       room.demoMode = true;
       room.currentAQI = target.aqi;
-      room.currentData = { pm25, pm10, co2, temperature, humidity, updatedAt: new Date() };
+      room.currentData = { pm25, pm10, co, temperature, humidity, updatedAt: new Date() };
       room.updatedAt = new Date();
       await room.save();
 
@@ -1751,7 +1751,7 @@ router.post('/demo-cycle', authMiddleware, adminMiddleware, async (req, res) => 
         roomName: room.name,
         buildingName: room.buildingName,
         aqi: target.aqi,
-        pm25, pm10, co2, temperature, humidity,
+        pm25, pm10, co, temperature, humidity,
         category: getAQICategory(target.aqi).category,
         timestamp: new Date(),
       }).save();
@@ -1807,14 +1807,14 @@ router.post('/:id/demo-aqi', authMiddleware, adminMiddleware, async (req, res) =
 
     const pm25 = aqiToPm25(target);
     const pm10 = Math.round(pm25 * 1.5);
-    const co2 = target > 200 ? 2000 : (target > 100 ? 1500 : 800);
+     const co = target > 200 ? 20000 : (target > 100 ? 12000 : 2000);
     const temperature = target > 200 ? 33 : (target > 100 ? 30 : 26);
     const humidity = target > 200 ? 80 : (target > 100 ? 70 : 55);
 
     room.demoMode = true;
     room.currentAQI = target;
     room.currentData = {
-      pm25, pm10, co2, temperature, humidity,
+      pm25, pm10, co, temperature, humidity,
       updatedAt: new Date()
     };
     room.updatedAt = new Date();
@@ -1825,7 +1825,7 @@ router.post('/:id/demo-aqi', authMiddleware, adminMiddleware, async (req, res) =
       roomName: room.name,
       buildingName: room.buildingName,
       aqi: target,
-      pm25, pm10, co2, temperature, humidity,
+      pm25, pm10, co, temperature, humidity,
       category: getAQICategory(target).category,
       timestamp: new Date(),
     }).save();
@@ -1849,7 +1849,7 @@ router.post('/:id/demo-aqi', authMiddleware, adminMiddleware, async (req, res) =
         roomName: room.name,
         aqi: target,
         category: getAQICategory(target).category,
-        pm25, pm10, co2, temperature, humidity
+        pm25, pm10, co, temperature, humidity
       }
     });
   } catch (error) {
@@ -1960,7 +1960,7 @@ router.post('/', authMiddleware, adminMiddleware, async (req, res) => {
       iotDeviceId: dataSource === 'iot' ? iotDeviceId : null,
       currentAQI: 0,
       currentData: {
-        pm25: 0, pm10: 0, co2: 0, temperature: 0, humidity: 0,
+        pm25: 0, pm10: 0, co: 0, temperature: 0, humidity: 0,
         updatedAt: new Date()
       },
       createdAt: new Date(),
@@ -2089,7 +2089,7 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
     if (deviceChanged) {
       room.currentAQI = 0;
       room.currentData = {
-        pm25: 0, pm10: 0, co2: 0, temperature: 0, humidity: 0,
+        pm25: 0, pm10: 0, co: 0, temperature: 0, humidity: 0,
         updatedAt: new Date()
       };
       console.log(
@@ -2374,7 +2374,7 @@ router.post('/:id/sync-building', authMiddleware, adminMiddleware, async (req, r
 module.exports = router;
 
 ---------------------------------------------------------------------------------------------------------------------------------------
-seedRoutes.js
+C:\develop\UNILA-AQI\unila-aqi-backend\src\routes\seedRoutes.js
 
 const express = require('express');
 const router = express.Router();
@@ -2857,7 +2857,7 @@ class IoTService {
            typeof data.aqi === 'number' &&
            typeof data.pm25 === 'number' &&
            typeof data.pm10 === 'number' &&
-           typeof data.co2 === 'number' &&
+           typeof data.co === 'number' &&
            typeof data.temperature === 'number' &&
            typeof data.humidity === 'number';
   }
@@ -2866,14 +2866,14 @@ class IoTService {
     if (!oldData || !newData) return true;
 
     const thresholds = {
-      aqi: 0, pm25: 0, pm10: 0, co2: 0, temperature: 0, humidity: 0
+      aqi: 0, pm25: 0, pm10: 0, co: 0, temperature: 0, humidity: 0
     };
 
     return (
       Math.abs(newData.aqi - (oldData.aqi || 0)) > thresholds.aqi ||
       Math.abs(newData.pm25 - (oldData.pm25 || 0)) > thresholds.pm25 ||
       Math.abs(newData.pm10 - (oldData.pm10 || 0)) > thresholds.pm10 ||
-      Math.abs(newData.co2 - (oldData.co2 || 0)) > thresholds.co2 ||
+      Math.abs(newData.co - (oldData.co || 0)) > thresholds.co ||
       Math.abs(newData.temperature - (oldData.temperature || 0)) > thresholds.temperature ||
       Math.abs(newData.humidity - (oldData.humidity || 0)) > thresholds.humidity
     );
@@ -2893,12 +2893,12 @@ class IoTService {
         return;
       }
 
-      const aqiResult = calculateAQI(iotData.pm25, iotData.pm10);
+      const aqiResult = calculateAQI(iotData.pm25, iotData.pm10, iotData.co);
 
       const normalizedData = {
         pm25: iotData.pm25,
         pm10: iotData.pm10,
-        co2: iotData.co2,
+        co: iotData.co,
         temperature: iotData.temperature,
         humidity: iotData.humidity,
         aqi: aqiResult.aqi,
@@ -2912,7 +2912,7 @@ class IoTService {
           aqi: room.currentAQI,
           pm25: currentData.pm25,
           pm10: currentData.pm10,
-          co2: currentData.co2,
+          co: currentData.co,
           temperature: currentData.temperature,
           humidity: currentData.humidity,
         },
@@ -2928,7 +2928,7 @@ class IoTService {
       room.currentData = {
         pm25: normalizedData.pm25,
         pm10: normalizedData.pm10,
-        co2: normalizedData.co2,
+        co: normalizedData.co,
         temperature: normalizedData.temperature,
         humidity: normalizedData.humidity,
         updatedAt: new Date(),
@@ -2943,7 +2943,7 @@ class IoTService {
         aqi: normalizedData.aqi,
         pm25: normalizedData.pm25,
         pm10: normalizedData.pm10,
-        co2: normalizedData.co2,
+        co: normalizedData.co,
         temperature: normalizedData.temperature,
         humidity: normalizedData.humidity,
         category: aqiResult.category,
@@ -2981,13 +2981,13 @@ class IoTService {
         return;
       }
 
-      const aqiResult = calculateAQI(iotData.pm25, iotData.pm10);
+     const aqiResult = calculateAQI(iotData.pm25, iotData.pm10, iotData.co);
 
       room.currentAQI = aqiResult.aqi;
       room.currentData = {
         pm25: iotData.pm25,
         pm10: iotData.pm10,
-        co2: iotData.co2,
+        co: iotData.co,
         temperature: iotData.temperature,
         humidity: iotData.humidity,
         updatedAt: new Date(),
@@ -3002,7 +3002,7 @@ class IoTService {
         aqi: aqiResult.aqi,
         pm25: iotData.pm25,
         pm10: iotData.pm10,
-        co2: iotData.co2,
+        co: iotData.co,
         temperature: iotData.temperature,
         humidity: iotData.humidity,
         category: aqiResult.category,
@@ -3036,7 +3036,7 @@ class IoTService {
         aqi: -1,
         pm25: -1,
         pm10: -1,
-        co2: -1,
+        co: -1,
         temperature: -1,
         humidity: -1,
         category: 'error',
@@ -3206,7 +3206,7 @@ src/services/simulationService.js:
 const cron = require('node-cron');
 const Room = require('../models/Room');
 const SensorData = require('../models/SensorData');
-const { getAQICategory } = require('../utils/aqiCalculator');
+const { getAQICategory, calculateAQI } = require('../utils/aqiCalculator');
 const {
   generateSensorData,
   simulateAnomaly,
@@ -3248,7 +3248,6 @@ class SimulationService {
 
   async updateAllRooms() {
     try {
-      // FIXED: skip room yang sedang dalam demoMode
       const rooms = await Room.find({
         dataSource: 'simulation',
         demoMode: { $ne: true }
@@ -3275,15 +3274,28 @@ class SimulationService {
     try {
       const roomType = this.getRoomType(room.name);
 
-      // FIXED: 1) generate normal, 2) post-process dengan anomaly
       const normalData = generateSensorData(roomType);
       const sensorData = simulateAnomaly(normalData);
 
-      // FIXED: error sensor ditangani terpisah — TIDAK overwrite room
       if (sensorData.isAnomaly && sensorData.anomalyType === 'error') {
         await this.handleSensorError(room, sensorData);
         return;
       }
+
+      // ✅ AQI dihitung dari PM2.5, PM10, dan CO — ambil yang dominan
+      const aqiResult = calculateAQI(
+        sensorData.pm25,
+        sensorData.pm10,
+        sensorData.co
+      );
+
+      // Sinkronkan aqiResult ke sensorData supaya konsisten saat disimpan & di-broadcast
+      sensorData.aqi = aqiResult.aqi;
+      sensorData.category = aqiResult.category;
+      sensorData.dominant = aqiResult.dominant;
+      sensorData.ispuPM25 = aqiResult.ispuPM25;
+      sensorData.ispuPM10 = aqiResult.ispuPM10;
+      sensorData.ispuCO = aqiResult.ispuCO;
 
       const hasChanged = this._hasDataChanged(room, sensorData);
 
@@ -3296,7 +3308,7 @@ class SimulationService {
       room.currentData = {
         pm25: sensorData.pm25,
         pm10: sensorData.pm10,
-        co2: sensorData.co2,
+        co: sensorData.co,
         temperature: sensorData.temperature,
         humidity: sensorData.humidity,
         updatedAt: new Date()
@@ -3312,7 +3324,7 @@ class SimulationService {
         aqi: sensorData.aqi,
         pm25: sensorData.pm25,
         pm10: sensorData.pm10,
-        co2: sensorData.co2,
+        co: sensorData.co,
         temperature: sensorData.temperature,
         humidity: sensorData.humidity,
         category: sensorData.category,
@@ -3323,9 +3335,20 @@ class SimulationService {
 
       this.broadcastRoomUpdate(room, sensorData);
 
+            // Log untuk setiap parameter dominan (normal maupun anomali)
+      const dominantLabel = {
+        pm25: `PM2.5 (ISPU=${sensorData.ispuPM25})`,
+        pm10: `PM10 (ISPU=${sensorData.ispuPM10})`,
+        co:   `CO (ISPU=${sensorData.ispuCO})`,
+      }[sensorData.dominant] || sensorData.dominant;
+
       if (sensorData.isAnomaly) {
         console.log(
-          `🚨 ANOMALY in ${room.name}: AQI ${sensorData.aqi} (${sensorData.category}) — type: ${sensorData.anomalyType}`
+          `🚨 ANOMALY in ${room.name}: AQI ${sensorData.aqi} (${sensorData.category}) — dominant: ${dominantLabel} — type: ${sensorData.anomalyType}`
+        );
+      } else {
+        console.log(
+          `⚠️  DOMINAN ${sensorData.dominant.toUpperCase()} in ${room.name}: AQI ${sensorData.aqi} (${dominantLabel})`
         );
       }
     } catch (error) {
@@ -3333,13 +3356,6 @@ class SimulationService {
     }
   }
 
-  /**
-   * FIXED: saat sensor error (aqi=-1):
-   *  - Catat ke SensorData (untuk grafik history)
-   *  - JANGAN overwrite room.currentAQI agar dashboard tetap menampilkan
-   *    nilai valid terakhir (tidak menipu pengguna dengan -1)
-   *  - Broadcast notification
-   */
   async handleSensorError(room, sensorData) {
     try {
       await new SensorData({
@@ -3349,7 +3365,7 @@ class SimulationService {
         aqi: -1,
         pm25: -1,
         pm10: -1,
-        co2: -1,
+        co: -1,
         temperature: -1,
         humidity: -1,
         category: 'error',
@@ -3377,7 +3393,7 @@ class SimulationService {
       aqi: 0,
       pm25: 0,
       pm10: 0,
-      co2: 0,
+      co: 0,
       temperature: 0,
       humidity: 0
     };
@@ -3386,7 +3402,7 @@ class SimulationService {
       Math.abs(newData.aqi - room.currentAQI) > thresholds.aqi ||
       Math.abs(newData.pm25 - (currentData.pm25 || 0)) > thresholds.pm25 ||
       Math.abs(newData.pm10 - (currentData.pm10 || 0)) > thresholds.pm10 ||
-      Math.abs(newData.co2 - (currentData.co2 || 0)) > thresholds.co2 ||
+      Math.abs(newData.co - (currentData.co || 0)) > thresholds.co ||
       Math.abs(newData.temperature - (currentData.temperature || 0)) > thresholds.temperature ||
       Math.abs(newData.humidity - (currentData.humidity || 0)) > thresholds.humidity
     );
@@ -3645,6 +3661,8 @@ src/utils/aqiCalculator.js:
 /**
  * ISPU (Indeks Standar Pencemar Udara) Calculator
  * Berdasarkan PP No. 22 Tahun 2021 (Indonesia)
+ *
+ * Nilai AQI = MAX dari ISPU setiap parameter (PM2.5, PM10, CO).
  */
 
 const PM25_BREAKPOINTS = [
@@ -3661,6 +3679,16 @@ const PM10_BREAKPOINTS = [
   { ispuLow: 101, ispuHigh: 200, concLow: 151, concHigh: 350 },
   { ispuLow: 201, ispuHigh: 300, concLow: 351, concHigh: 420 },
   { ispuLow: 301, ispuHigh: 500, concLow: 421, concHigh: 500 },
+];
+
+// ⚠️ CO breakpoints — sesuaikan dengan tabel yang Anda pegang.
+// Untuk range ISPU > 300, batas atas konsentrasi CO umumnya 45.000.
+const CO_BREAKPOINTS = [
+  { ispuLow: 0,   ispuHigh: 50,  concLow: 0,     concHigh: 4000  },
+  { ispuLow: 51,  ispuHigh: 100, concLow: 4001,  concHigh: 8000  },
+  { ispuLow: 101, ispuHigh: 200, concLow: 8001,  concHigh: 15000 },
+  { ispuLow: 201, ispuHigh: 300, concLow: 15001, concHigh: 30000 },
+  { ispuLow: 301, ispuHigh: 500, concLow: 30001, concHigh: 45000 },
 ];
 
 function calculateISPUFromConcentration(concentration, breakpoints) {
@@ -3693,11 +3721,25 @@ function calculateISPUFromPM10(pm10) {
   return calculateISPUFromConcentration(pm10, PM10_BREAKPOINTS);
 }
 
-function calculateAQI(pm25, pm10) {
+function calculateISPUFromCO(co) {
+  return calculateISPUFromConcentration(co, CO_BREAKPOINTS);
+}
+
+/**
+ * AQI = MAX dari ISPU PM2.5, PM10, dan CO.
+ * `dominant` berisi nama parameter dengan ISPU tertinggi.
+ */
+function calculateAQI(pm25, pm10, co = 0) {
   const ispuPM25 = calculateISPUFromPM25(pm25);
   const ispuPM10 = calculateISPUFromPM10(pm10);
-  const aqi = Math.max(ispuPM25, ispuPM10);
-  const dominant = ispuPM25 >= ispuPM10 ? 'pm25' : 'pm10';
+  const ispuCO   = calculateISPUFromCO(co);
+
+  const aqi = Math.max(ispuPM25, ispuPM10, ispuCO);
+
+  let dominant;
+  if (aqi === ispuCO)        dominant = 'co';
+  else if (aqi === ispuPM25) dominant = 'pm25';
+  else                       dominant = 'pm10';
 
   const cat = getAQICategory(aqi);
 
@@ -3705,6 +3747,7 @@ function calculateAQI(pm25, pm10) {
     aqi,
     ispuPM25,
     ispuPM10,
+    ispuCO,
     dominant,
     category: cat.category,
     color: cat.color,
@@ -3720,12 +3763,6 @@ function getAQICategory(aqi) {
   return { category: 'berbahaya', color: '#000000', label: 'Berbahaya' };
 }
 
-/**
- * Konversi nilai AQI/ISPU target → konsentrasi PM2.5 (approx).
- * Inverse interpolation dari breakpoint PP 22/2021.
- * Dipakai untuk DEMO MODE: set nilai AQI spesifik agar dosen bisa
- * melihat semua kategori tanpa menunggu random.
- */
 function aqiToPm25(aqi) {
   if (aqi == null || isNaN(aqi) || aqi <= 0) return 0;
   const target = Math.min(500, aqi);
@@ -3754,13 +3791,11 @@ const evaluateParameter = (type, value) => {
       const cat = getAQICategory(ispu);
       return { status: cat.category, color: cat.color, ispu };
     }
-    case 'co2':
-      if (value <= 600)  return { status: 'baik',               color: '#00E400' };
-      if (value <= 1000) return { status: 'sedang',             color: '#0000FF' };
-      if (value <= 1500) return { status: 'tidak_sehat',        color: '#FFFF00' };
-      if (value <= 2000) return { status: 'sangat_tidak_sehat', color: '#FF0000' };
-      return { status: 'berbahaya', color: '#000000' };
-
+    case 'co': {
+      const ispu = calculateISPUFromCO(value);
+      const cat = getAQICategory(ispu);
+      return { status: cat.category, color: cat.color, ispu };
+    }
     case 'temperature':
       if (value >= 24 && value <= 26) return { status: 'ideal', color: '#0066CC' };
       if (value >= 20 && value <= 28) return { status: 'normal', color: '#00E400' };
@@ -3781,6 +3816,7 @@ const evaluateParameter = (type, value) => {
 module.exports = {
   calculateISPUFromPM25,
   calculateISPUFromPM10,
+  calculateISPUFromCO,
   calculateAQI,
   getAQICategory,
   evaluateParameter,
@@ -3837,7 +3873,181 @@ module.exports = {
 ---------------------------------------------------------------------------------------------------------------------------------------
 src/utils/dataGenerator.js:
 
+const { calculateAQI } = require('./aqiCalculator');
 
+const TIME_RANGES = {
+  '06-08': {
+    pm25:        { min: 8,  max: 20, mean: 14  },
+    pm10:        { min: 15, max: 40, mean: 25  },
+    co:          { min: 500, max: 2000, mean: 1000 },
+    temperature: { min: 22, max: 26, mean: 24  },
+    humidity:    { min: 65, max: 85, mean: 75  },
+  },
+  '08-12': {
+    pm25:        { min: 15, max: 40, mean: 27  },
+    pm10:        { min: 25, max: 80, mean: 50  },
+    co:          { min: 1000, max: 4000, mean: 2500 },
+    temperature: { min: 24, max: 29, mean: 26  },
+    humidity:    { min: 55, max: 75, mean: 65  },
+  },
+  '12-16': {
+    pm25:        { min: 18, max: 45, mean: 30  },
+    pm10:        { min: 30, max: 90, mean: 55  },
+    co:          { min: 1500, max: 6000, mean: 3500 },
+    temperature: { min: 26, max: 32, mean: 29  },
+    humidity:    { min: 50, max: 70, mean: 60  },
+  },
+  '16-18': {
+    pm25:        { min: 12, max: 32, mean: 22  },
+    pm10:        { min: 20, max: 65, mean: 40  },
+    co:          { min: 1000, max: 4500, mean: 2500 },
+    temperature: { min: 25, max: 30, mean: 27  },
+    humidity:    { min: 55, max: 75, mean: 65  },
+  },
+  '18-20': {
+    pm25:        { min: 10, max: 25, mean: 17  },
+    pm10:        { min: 18, max: 50, mean: 32  },
+    co:          { min: 600, max: 2500, mean: 1200 },
+    temperature: { min: 24, max: 28, mean: 26  },
+    humidity:    { min: 60, max: 80, mean: 70  },
+  },
+  '20-06': {
+    pm25:        { min: 5,  max: 15, mean: 9   },
+    pm10:        { min: 10, max: 30, mean: 18  },
+    co:          { min: 300, max: 1500, mean: 800 },
+    temperature: { min: 22, max: 26, mean: 24  },
+    humidity:    { min: 70, max: 90, mean: 80  },
+  },
+};
+
+function getTimeSlot(hour) {
+  if (hour >= 6  && hour < 8)  return '06-08';
+  if (hour >= 8  && hour < 12) return '08-12';
+  if (hour >= 12 && hour < 16) return '12-16';
+  if (hour >= 16 && hour < 18) return '16-18';
+  if (hour >= 18 && hour < 20) return '18-20';
+  return '20-06';
+}
+
+function randomInRange(min, max, mean) {
+  const mode = Math.max(min, Math.min(max, mean ?? (min + max) / 2));
+  const u = Math.random();
+  const f = (mode - min) / (max - min);
+
+  if (u < f) {
+    return min + Math.sqrt(u * (max - min) * (mode - min));
+  }
+  return max - Math.sqrt((1 - u) * (max - min) * (max - mode));
+}
+
+/**
+ * Generate data sensor normal berdasarkan slot waktu saat ini.
+ * AQI dihitung dari MAX(PM2.5, PM10, CO) — sinkron dengan aqiCalculator.js
+ */
+const generateSensorData = (roomType = 'normal') => {
+  const now = new Date();
+  const slot = getTimeSlot(now.getHours());
+  const r = TIME_RANGES[slot];
+
+  const pm25 = randomInRange(r.pm25.min, r.pm25.max, r.pm25.mean);
+  const pm10 = randomInRange(r.pm10.min, r.pm10.max, r.pm10.mean);
+  const co   = randomInRange(r.co.min,   r.co.max,   r.co.mean);
+  const temperature = randomInRange(r.temperature.min, r.temperature.max, r.temperature.mean);
+  const humidity    = randomInRange(r.humidity.min,    r.humidity.max,    r.humidity.mean);
+
+  // ✅ AQI = MAX dari PM2.5, PM10, dan CO
+  const aqiResult = calculateAQI(pm25, pm10, co);
+
+  return {
+    pm25: parseFloat(pm25.toFixed(1)),
+    pm10: parseFloat(pm10.toFixed(1)),
+    co: Math.round(co),
+    temperature: parseFloat(temperature.toFixed(1)),
+    humidity: Math.round(humidity),
+    aqi: aqiResult.aqi,
+    category: aqiResult.category,
+    dominant: aqiResult.dominant,
+    ispuPM25: aqiResult.ispuPM25,
+    ispuPM10: aqiResult.ispuPM10,
+    ispuCO: aqiResult.ispuCO,
+    timeSlot: slot,
+    timestamp: now,
+    isAnomaly: false,
+    anomalyType: null,
+  };
+};
+
+/**
+ * simulateAnomaly:
+ *   - 92% normal  → data dari generateSensorData
+ *   -  5% spike   → PM naik 8-17x, CO naik 1.5-2.5x, AQI dihitung ulang
+ *   -  3% error   → semua nilai -1 (sensor mati)
+ */
+const simulateAnomaly = (normalData) => {
+  const roll = Math.random();
+
+  // ── 5% SPIKE ──
+  if (roll < 0.05) {
+    const subRoll = Math.random();
+    let multiplier;
+
+    if (subRoll < 0.60) {
+      multiplier = 8 + Math.random() * 2;       // 8-10x
+    } else if (subRoll < 0.90) {
+      multiplier = 10 + Math.random() * 3;      // 10-13x
+    } else {
+      multiplier = 13 + Math.random() * 4;      // 13-17x
+    }
+
+    const pm25 = normalData.pm25 * multiplier;
+    const pm10 = normalData.pm10 * multiplier;
+    const co   = normalData.co * (1.5 + Math.random());   // CO spike 1.5x-2.5x
+
+    // ✅ AQI dihitung ulang setelah spike (termasuk CO)
+    const aqiResult = calculateAQI(pm25, pm10, co);
+
+    return {
+      ...normalData,
+      pm25: parseFloat(pm25.toFixed(1)),
+      pm10: parseFloat(pm10.toFixed(1)),
+      co: Math.round(co),
+      aqi: aqiResult.aqi,
+      category: aqiResult.category,
+      dominant: aqiResult.dominant,
+      ispuPM25: aqiResult.ispuPM25,
+      ispuPM10: aqiResult.ispuPM10,
+      ispuCO: aqiResult.ispuCO,
+      isAnomaly: true,
+      anomalyType: 'spike',
+    };
+  }
+
+  // ── 3% SENSOR ERROR ──
+  if (roll < 0.08) {
+    return {
+      ...normalData,
+      pm25: -1,
+      pm10: -1,
+      co: -1,
+      temperature: -1,
+      humidity: -1,
+      aqi: -1,
+      category: 'error',
+      isAnomaly: true,
+      anomalyType: 'error',
+    };
+  }
+
+  // ── 92% NORMAL ──
+  return normalData;
+};
+
+module.exports = {
+  generateSensorData,
+  simulateAnomaly,
+  getTimeSlot,
+  TIME_RANGES,
+};
 
 ---------------------------------------------------------------------------------------------------------------------------------------
 
@@ -11365,22 +11575,22 @@ class Helpers {
     return AppColors.aqiUnhealthy;
   }
 
-  // CO2
-  static String getCO2Status(double value) {
+   // CO
+  static String getCOStatus(double value) { 
     if (value < 0) return 'ERROR';
-    if (value <= 600) return 'BAIK';
-    if (value <= 1000) return 'SEDANG';
-    if (value <= 1500) return 'TIDAK SEHAT';
-    if (value <= 2000) return 'SANGAT TIDAK SEHAT';
+    if (value <= 4000) return 'BAIK';
+    if (value <= 8000) return 'SEDANG';
+    if (value <= 15000) return 'TIDAK SEHAT';
+    if (value <= 30000) return 'SANGAT TIDAK SEHAT';
     return 'BERBAHAYA';
   }
 
-  static Color getCO2Color(double value) {
+   static Color getCOColor(double value) { 
     if (value < 0) return AppColors.aqiError;
-    if (value <= 600) return AppColors.aqiGood;
-    if (value <= 1000) return AppColors.aqiModerate;
-    if (value <= 1500) return AppColors.aqiUnhealthySensitive;
-    if (value <= 2000) return AppColors.aqiUnhealthy;
+    if (value <= 4000) return AppColors.aqiGood;
+    if (value <= 8000) return AppColors.aqiModerate;
+    if (value <= 15000) return AppColors.aqiUnhealthySensitive;
+    if (value <= 30000) return AppColors.aqiUnhealthy;
     return AppColors.aqiHazardous;
   }
 
@@ -11645,17 +11855,6 @@ class Helpers {
     return '#${color.value.toRadixString(16).padLeft(8, '0').substring(2)}';
   }
 
-    // ============================================================
-  // REKOMENDASI KESEHATAN — 1 baris per parameter (tanpa nilai/status)
-  //
-  // Basis acuan:
-  //  - AQI / PM2.5 / PM10 : PP No. 22 Tahun 2021 (ISPU)
-  //  - CO2                : ASHRAE 62.1 & Permenaker 5/2018
-  //  - Suhu / Kelembaban  : SNI 03-6572-2001 & Permenaker 5/2018
-  //
-  // Nilai & kategori TIDAK ditulis di teks — sudah ditampilkan
-  // sebagai chip warna di bagian atas kartu rekomendasi.
-  // ============================================================
   static List<String> getDetailedRecommendations(Room room) {
     final recommendations = <String>[];
     final data = room.currentData;
@@ -11731,24 +11930,24 @@ class Helpers {
       }
     }
 
-    // 4. CO2 — ASHRAE 62.1 & Permenaker 5/2018
-    final co2 = data.co2;
-    if (co2 >= 0) {
-      if (co2 <= 600) {
+    // 4. CO
+    final co = data.co; 
+    if (co >= 0) {
+      if (co <= 4000) {
         recommendations.add(
-            'CO₂: Ventilasi sangat baik. Aman untuk perkuliahan normal.');
-      } else if (co2 <= 1000) {
+            'CO: Aman untuk perkuliahan normal.');
+      } else if (co <= 8000) {
         recommendations.add(
-            'CO₂: Pastikan ventilasi mekanis/AC fresh air berjalan. Bila memungkinkan buka pintu/jendela sesaat.');
-      } else if (co2 <= 1500) {
+            'CO: Pastikan ventilasi mekanis/AC fresh air berjalan. Bila memungkinkan buka pintu/jendela sesaat.');
+      } else if (co <= 15000) {
         recommendations.add(
-            'CO₂: Buka jendela/pintu untuk ventilasi silang. Nyalakan exhaust fan. Kurangi kapasitas mahasiswa di ruangan.');
-      } else if (co2 <= 2000) {
+            'CO: Buka jendela/pintu untuk ventilasi silang. Nyalakan exhaust fan. Kurangi kapasitas mahasiswa di ruangan.');
+      } else if (co <= 30000) {
         recommendations.add(
-            'CO₂: Ventilasi darurat — buka semua akses udara, exhaust maksimum. Pertimbangkan mengosongkan ruangan sementara.');
+            'CO: Ventilasi darurat — buka semua akses udara, exhaust maksimum. Pertimbangkan mengosongkan ruangan sementara.');
       } else {
         recommendations.add(
-            'CO₂: Evakuasi ruangan. Investigasi segera (sistem HVAC, kebocoran, ruangan tertutup terlalu lama).');
+            'CO: Evakuasi ruangan. Investigasi segera (sistem HVAC, kebocoran, ruangan tertutup terlalu lama).');
       }
     }
 
@@ -12149,7 +12348,7 @@ class Room {
 class RoomData {
   final double pm25;
   final double pm10;
-  final double co2;
+  final double co;
   final double temperature;
   final double humidity;
   final DateTime updatedAt;
@@ -12157,7 +12356,7 @@ class RoomData {
   RoomData({
     required this.pm25,
     required this.pm10,
-    required this.co2,
+    required this.co,
     required this.temperature,
     required this.humidity,
     required this.updatedAt,
@@ -12167,7 +12366,7 @@ class RoomData {
     return RoomData(
       pm25: (json['pm25'] ?? 0).toDouble(),
       pm10: (json['pm10'] ?? 0).toDouble(),
-      co2: (json['co2'] ?? 0).toDouble(),
+      co: (json['co'] ?? 0).toDouble(),
       temperature: (json['temperature'] ?? 0).toDouble(),
       humidity: (json['humidity'] ?? 0).toDouble(),
       updatedAt: json['updatedAt'] != null
@@ -12180,7 +12379,7 @@ class RoomData {
     return {
       'pm25': pm25,
       'pm10': pm10,
-      'co2': co2,
+      'co': co,
       'temperature': temperature,
       'humidity': humidity,
       'updatedAt': updatedAt.toIso8601String(),
@@ -12199,7 +12398,7 @@ class SensorData {
   final int aqi;
   final double pm25;
   final double pm10;
-  final double co2;
+  final double co;
   final double temperature;
   final double humidity;
   final String category;
@@ -12215,7 +12414,7 @@ class SensorData {
     required this.aqi,
     required this.pm25,
     required this.pm10,
-    required this.co2,
+    required this.co,
     required this.temperature,
     required this.humidity,
     required this.category,
@@ -12233,7 +12432,7 @@ class SensorData {
       aqi: (json['aqi'] ?? 0).toInt(),
       pm25: (json['pm25'] ?? 0).toDouble(),
       pm10: (json['pm10'] ?? 0).toDouble(),
-      co2: (json['co2'] ?? 0).toDouble(),
+      co: (json['co'] ?? 0).toDouble(),
       temperature: (json['temperature'] ?? 0).toDouble(),
       humidity: (json['humidity'] ?? 0).toDouble(),
       category: json['category']?.toString() ?? 'baik',
@@ -12254,7 +12453,7 @@ class SensorData {
       'aqi': aqi,
       'pm25': pm25,
       'pm10': pm10,
-      'co2': co2,
+      'co': co,
       'temperature': temperature,
       'humidity': humidity,
       'category': category,
@@ -12264,8 +12463,6 @@ class SensorData {
     };
   }
 }
-
-
 
 ---------------------------------------------------------------------------------------------------------------------------------------
 lib/data/models/user.dart:
@@ -12361,14 +12558,14 @@ class AQIInfoRepository {
         icon: '🏗️',
       ),
       AQIParameter(
-        name: 'Karbon Dioksida',
-        abbreviation: 'CO₂',
-        description: 'Gas tidak berbau dan tidak berwarna yang dihasilkan dari pembakaran bahan bakar. '
-            'Indikator utama ventilasi ruangan.',
-        unit: 'ppm',
-        impact: 'Sakit kepala, kelelahan, sulit konsentrasi, penurunan produktivitas',
-        source: 'Pernafasan manusia, peralatan elektronik, mesin pembakaran',
-        safeRange: '350 - 600 ppm',
+        name: 'Karbon Monoksida',
+        abbreviation: 'CO',
+        description: 'Gas tidak berbau dan tidak berwarna yang dihasilkan dari pembakaran bahan bakar yang tidak sempurna. '
+            'Indikator utama kualitas udara dalam ruangan.',
+        unit: 'µg/m³',
+        impact: 'Sakit kepala, pusing, mual, gangguan kardiovaskular, penurunan kesadaran pada kadar tinggi.',
+        source: 'Asap kendaraan, kompor gas, pemanas, mesin pembakaran.',
+        safeRange: '0 - 4000 µg/m³ (ISPU ≤ 50)',
         icon: '☁️',
       ),
       AQIParameter(
@@ -12459,13 +12656,6 @@ class AQIInfoRepository {
         description: 'Mengukur konsentrasi partikel dalam udara. '
             '1 μg/m³ = 0.000001 gram partikel dalam 1 meter kubik udara.',
         example: 'PM2.5: 15 μg/m³ berarti ada 15 mikrogram partikel halus dalam 1 m³ udara',
-      ),
-      UnitInfo(
-        symbol: 'ppm',
-        name: 'Parts Per Million',
-        description: 'Mengukur jumlah molekul gas dalam 1 juta molekul udara. '
-            'Menggambarkan konsentrasi gas yang sangat kecil.',
-        example: 'CO₂: 400 ppm berarti ada 400 molekul CO₂ dalam 1 juta molekul udara',
       ),
       UnitInfo(
         symbol: '°C',
@@ -19729,22 +19919,17 @@ class _AQIInfoScreenState extends State<AQIInfoScreen> {
         icon: '🏗️',
       ),
       AQIParameter(
-        name: 'Karbon Dioksida',
-        abbreviation: 'CO₂',
+        name: 'Karbon Monoksida',
+        abbreviation: 'CO',
         description:
-            'Gas tidak berbau dan tidak berwarna hasil respirasi manusia dan '
-            'peralatan elektronik di ruangan. CO₂ menjadi indikator utama '
-            'tingkat ventilasi: semakin banyak orang di ruangan tanpa ventilasi '
-            'memadai, semakin tinggi kadar CO₂ dan semakin menurun kualitas '
-            'udara ruangan.',
-        unit: 'ppm',
+            'Gas tidak berbau dan tidak berwarna hasil pembakaran tidak sempurna. ' // Teks diubah
+            'Di dalam ruangan, gas ini bisa berasal dari kompor, pemanas, atau masuknya asap kendaraan dari luar.',
+        unit: 'µg/m³',
         impact:
-            'Sakit kepala, kelelahan, sulit konsentrasi, penurunan '
-            'produktivitas belajar/bekerja, rasa kantuk.',
+            'Sakit kepala, pusing, mual, memperburuk kondisi jantung.',
         source:
-            'Respirasi manusia, peralatan elektronik, pembakaran dalam '
-            'ruangan (kompor, lilin, genset).',
-        safeRange: '0 – 600 ppm',
+            'Kompor gas, asap kendaraan masuk, sistem ventilasi yang buruk.',
+        safeRange: '0 – 4.000 µg/m³ (ISPU ≤ 50)',
         icon: '☁️',
       ),
       AQIParameter(
@@ -19787,7 +19972,7 @@ class _AQIInfoScreenState extends State<AQIInfoScreen> {
         _paragraph(
           'Aplikasi memantau 5 parameter lingkungan di dalam ruangan. '
           'Dua parameter partikel (PM2.5 & PM10) menentukan AQI dan '
-          'tiga parameter lainnya (CO₂, suhu, kelembaban) memberi konteks '
+          'tiga parameter lainnya (CO, suhu, kelembaban) memberi konteks '
           'kenyamanan & ventilasi ruangan.',
         ),
         const SizedBox(height: 16),
@@ -19895,13 +20080,13 @@ class _AQIInfoScreenState extends State<AQIInfoScreen> {
           ],
         ),
         _parameterCategoryTable(
-          title: 'CO₂ (ppm)',
+          title: 'CO (µg/m³)', 
           rows: const [
-            {'range': '0 – 600', 'label': 'Baik', 'color': AppColors.aqiGood},
-            {'range': '601 – 1.000', 'label': 'Sedang', 'color': AppColors.aqiModerate},
-            {'range': '1.001 – 1.500', 'label': 'Tidak Sehat', 'color': AppColors.aqiUnhealthySensitive},
-            {'range': '1.501 – 2.000', 'label': 'Sangat Tidak Sehat', 'color': AppColors.aqiUnhealthy},
-            {'range': '> 2.000', 'label': 'Berbahaya', 'color': AppColors.aqiHazardous},
+            {'range': '0 – 4.000', 'label': 'Baik', 'color': AppColors.aqiGood},
+            {'range': '4.001 – 8.000', 'label': 'Sedang', 'color': AppColors.aqiModerate},
+            {'range': '8.001 – 15.000', 'label': 'Tidak Sehat', 'color': AppColors.aqiUnhealthySensitive},
+            {'range': '15.001 – 30.000', 'label': 'Sangat Tidak Sehat', 'color': AppColors.aqiUnhealthy},
+            {'range': '> 30.000', 'label': 'Berbahaya', 'color': AppColors.aqiHazardous},
           ],
         ),
         _parameterCategoryTable(
@@ -20260,36 +20445,36 @@ class _AQIInfoScreenState extends State<AQIInfoScreen> {
           ],
         ),
         _buildParameterRecommendationCard(
-          title: 'CO₂ (ppm)',
+          title: 'CO (µg/m³)', 
           rows: const [
             {
-              'range': '0 – 600',
+              'range': '0 – 4.000',
               'color': AppColors.aqiGood,
               'rec': 'Ventilasi sangat baik. Aman untuk perkuliahan normal.',
             },
             {
-              'range': '601 – 1.000',
+              'range': '4.001 – 8.000',
               'color': AppColors.aqiModerate,
               'rec':
                   'Pastikan ventilasi mekanis/AC fresh air berjalan. Bila '
                       'memungkinkan buka pintu/jendela sesaat.',
             },
             {
-              'range': '1.001 – 1.500',
+              'range': '8.001 – 15.000',
               'color': AppColors.aqiUnhealthySensitive,
               'rec':
                   'Buka jendela/pintu untuk ventilasi silang. Nyalakan exhaust '
                       'fan. Kurangi kapasitas mahasiswa di ruangan.',
             },
             {
-              'range': '1.501 – 2.000',
+              'range': '15.001 – 30.000',
               'color': AppColors.aqiUnhealthy,
               'rec':
                   'Ventilasi darurat — buka semua akses udara, exhaust maksimum. '
                       'Pertimbangkan mengosongkan ruangan sementara.',
             },
             {
-              'range': '> 2.000',
+              'range': '> 30.000',
               'color': AppColors.aqiHazardous,
               'rec':
                   'Evakuasi ruangan. Investigasi segera (sistem HVAC, '
@@ -20508,7 +20693,7 @@ class _AQIInfoScreenState extends State<AQIInfoScreen> {
         _miniHeading('Kartu Parameter'),
         const SizedBox(height: 6),
         _paragraph(
-          'Kartu PM2.5, PM10, CO₂, Suhu, dan Kelembaban menampilkan nilai '
+          'Kartu PM2.5, PM10, CO, Suhu, dan Kelembaban menampilkan nilai '
           'terkini beserta warna kategori masing-masing parameter. Angka di '
           'kartu ini adalah nilai mentah dari sensor, bukan AQI.',
         ),
@@ -21603,7 +21788,7 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
         _buildStatusChip('PM10: ${data.pm10.toStringAsFixed(1)}',
             Helpers.getPM10Color(data.pm10)),
         _buildStatusChip(
-            'CO₂: ${data.co2.round()}', Helpers.getCO2Color(data.co2)),
+            'CO: ${data.co.round()}', Helpers.getCOColor(data.co)),
         _buildStatusChip(
             'Suhu: ${data.temperature.toStringAsFixed(1)}°C',
             Helpers.getTemperatureColor(data.temperature)),
@@ -21666,10 +21851,10 @@ _RecSeverity _recommendationSeverity(String text) {
       return _RecSeverity.danger;
     }
 
-    // --- CO₂ ---
-    if (text.startsWith('CO₂:') || text.startsWith('CO2:')) {
-      if (data.co2 <= 600) return _RecSeverity.normal;
-      if (data.co2 <= 1000) return _RecSeverity.warning;
+    // --- CO ---
+    if (text.startsWith('CO:')) { 
+      if (data.co <= 4000) return _RecSeverity.normal; 
+      if (data.co <= 8000) return _RecSeverity.warning; 
       return _RecSeverity.danger;
     }
 
@@ -21923,7 +22108,7 @@ _RecSeverity _recommendationSeverity(String text) {
                 Expanded(
                   child: _buildParameterCard(
                     'PM10',
-                    '${_currentRoomData.currentData.pm25.toStringAsFixed(1)}\nμg/m³', 
+                    '${_currentRoomData.currentData.pm10.toStringAsFixed(1)}\nμg/m³', 
                     Helpers.getPM10Status(
                         _currentRoomData.currentData.pm10),
                     Helpers.getPM10Color(
@@ -21933,12 +22118,12 @@ _RecSeverity _recommendationSeverity(String text) {
                 const SizedBox(width: 12),
                 Expanded(
                   child: _buildParameterCard(
-                    'CO₂',
-                    '${_currentRoomData.currentData.co2.round()}\nppm',
-                    Helpers.getCO2Status(
-                        _currentRoomData.currentData.co2),
-                    Helpers.getCO2Color(
-                        _currentRoomData.currentData.co2),
+                    'CO', 
+                    '${_currentRoomData.currentData.co.round()}\nµg/m³', 
+                    Helpers.getCOStatus(
+                        _currentRoomData.currentData.co), 
+                    Helpers.getCOColor(
+                        _currentRoomData.currentData.co), 
                   ),
                 ),
               ],
@@ -22783,7 +22968,7 @@ class _HistoryChartState extends State<HistoryChart> {
     'aqi',
     'pm25',
     'pm10',
-    'co2',
+    'co',
     'temperature',
     'humidity'
   ];
@@ -22791,7 +22976,7 @@ class _HistoryChartState extends State<HistoryChart> {
     'aqi': 'AQI',
     'pm25': 'PM2.5',
     'pm10': 'PM10',
-    'co2': 'CO₂',
+    'co': 'CO',
     'temperature': 'Suhu',
     'humidity': 'Kelembaban',
   };
@@ -22801,7 +22986,7 @@ class _HistoryChartState extends State<HistoryChart> {
     'aqi': Colors.blue,
     'pm25': Colors.red,
     'pm10': Colors.orange,
-    'co2': Colors.green,
+    'co': Colors.green,
     'temperature': Colors.purple,
     'humidity': Colors.teal,
   };
@@ -22951,8 +23136,8 @@ class _HistoryChartState extends State<HistoryChart> {
         case 'pm10':
           y = data.pm10;
           break;
-        case 'co2':
-          y = data.co2;
+        case 'co':
+          y = data.co;
           break;
         case 'temperature':
           y = data.temperature;
@@ -23215,7 +23400,7 @@ class _HistoryChartState extends State<HistoryChart> {
                                   '${data.pm25.toStringAsFixed(1)} μg/m³',
                               'PM10':
                                   '${data.pm10.toStringAsFixed(1)} μg/m³',
-                              'CO₂': '${data.co2.round()} ppm',
+                               'CO': '${data.co.round()} μg/m³',
                               'Suhu':
                                   '${data.temperature.toStringAsFixed(1)}°C',
                               'Kelembaban': '${data.humidity.round()}%',
@@ -23267,8 +23452,8 @@ class _HistoryChartState extends State<HistoryChart> {
         case 'pm10':
           value = data.pm10;
           break;
-        case 'co2':
-          value = data.co2;
+        case 'co':
+          value = data.co;
           break;
         case 'temperature':
           value = data.temperature;
@@ -23301,8 +23486,8 @@ class _HistoryChartState extends State<HistoryChart> {
         case 'pm10':
           value = data.pm10;
           break;
-        case 'co2':
-          value = data.co2;
+        case 'co':
+          value = data.co;
           break;
         case 'temperature':
           value = data.temperature;
@@ -23838,7 +24023,6 @@ class AppDrawer extends StatelessWidget {
 ---------------------------------------------------------------------------------------------------------------------------------------
 lib/presentation/widgets/common/room_card.dart:
 
-
 import 'package:flutter/material.dart';
 import '../../../data/models/room.dart';
 import '../../../core/utils/helpers.dart';
@@ -23994,13 +24178,13 @@ class RoomCard extends StatelessWidget {
                     color: Helpers.getPM10Color(room.currentData.pm10),
                   ),
 
-                  // CO2
+                  // CO
                   _buildParameterCell(
-                    label: 'CO₂',
-                    value: room.currentData.co2.round().toString(),
-                    unit: 'ppm',
-                    status: Helpers.getCO2Status(room.currentData.co2),
-                    color: Helpers.getCO2Color(room.currentData.co2),
+                    label: 'CO', 
+                    value: room.currentData.co.round().toString(), 
+                    unit: 'µg/m³', 
+                    status: Helpers.getCOStatus(room.currentData.co), 
+                    color: Helpers.getCOColor(room.currentData.co), 
                   ),
 
                   // Temperature
@@ -24410,47 +24594,48 @@ const calculateISPUFromPM10 = (pm10) => calculateISPU(pm10, PM10_BREAKPOINTS);
 
 // ============================================================
 // Time-based ranges
+// Nilai CO disesuaikan dengan skala ISPU (µg/m³) 
 // ============================================================
 const TIME_RANGES = {
   '06-08': {
     pm25:        { min: 8,  max: 20, mean: 14  },
     pm10:        { min: 15, max: 40, mean: 25  },
-    co2:         { min: 420, max: 650,  mean: 520  },
+    co:          { min: 500, max: 2000, mean: 1000 }, // Diubah dari co2
     temperature: { min: 22, max: 26, mean: 24  },
     humidity:    { min: 65, max: 85, mean: 75  },
   },
   '08-12': {
     pm25:        { min: 15, max: 40, mean: 27  },
     pm10:        { min: 25, max: 80, mean: 50  },
-    co2:         { min: 600, max: 1400, mean: 1000 },
+    co:          { min: 1000, max: 4000, mean: 2500 }, // Diubah dari co2
     temperature: { min: 24, max: 29, mean: 26  },
     humidity:    { min: 55, max: 75, mean: 65  },
   },
   '12-16': {
     pm25:        { min: 18, max: 45, mean: 30  },
     pm10:        { min: 30, max: 90, mean: 55  },
-    co2:         { min: 700, max: 1600, mean: 1100 },
+    co:          { min: 1500, max: 6000, mean: 3500 }, // Diubah dari co2
     temperature: { min: 26, max: 32, mean: 29  },
     humidity:    { min: 50, max: 70, mean: 60  },
   },
   '16-18': {
     pm25:        { min: 12, max: 32, mean: 22  },
     pm10:        { min: 20, max: 65, mean: 40  },
-    co2:         { min: 550, max: 1100, mean: 800  },
+    co:          { min: 1000, max: 4500, mean: 2500 }, // Diubah dari co2
     temperature: { min: 25, max: 30, mean: 27  },
     humidity:    { min: 55, max: 75, mean: 65  },
   },
   '18-20': {
     pm25:        { min: 10, max: 25, mean: 17  },
     pm10:        { min: 18, max: 50, mean: 32  },
-    co2:         { min: 500, max: 1000, mean: 700  },
+    co:          { min: 600, max: 2500, mean: 1200 }, // Diubah dari co2
     temperature: { min: 24, max: 28, mean: 26  },
     humidity:    { min: 60, max: 80, mean: 70  },
   },
   '20-06': {
     pm25:        { min: 5,  max: 15, mean: 9   },
     pm10:        { min: 10, max: 30, mean: 18  },
-    co2:         { min: 420, max: 550, mean: 450 },
+    co:          { min: 300, max: 1500, mean: 800 }, // Diubah dari co2
     temperature: { min: 22, max: 26, mean: 24  },
     humidity:    { min: 70, max: 90, mean: 80  },
   },
@@ -24482,7 +24667,7 @@ const secondDataCache = new Map();
 // Anomaly simulation (SAMA dengan backend dataGenerator)
 // 92% normal / 5% spike (8-17x) / 3% error
 // ============================================================
-function applyAnomaly(pm25, pm10, co2, temperature, humidity) {
+function applyAnomaly(pm25, pm10, co, temperature, humidity) {
   const roll = Math.random();
 
   if (roll < 0.05) {
@@ -24501,7 +24686,7 @@ function applyAnomaly(pm25, pm10, co2, temperature, humidity) {
       anomalyType: 'spike',
       pm25: pm25 * multiplier,
       pm10: pm10 * multiplier,
-      co2: co2 * (1.5 + Math.random()),
+      co: co * (1.5 + Math.random()), // Spike CO 1.5x - 2.5x dari nilai normal
       temperature,
       humidity,
     };
@@ -24511,14 +24696,14 @@ function applyAnomaly(pm25, pm10, co2, temperature, humidity) {
     return {
       isAnomaly: true,
       anomalyType: 'error',
-      pm25: -1, pm10: -1, co2: -1, temperature: -1, humidity: -1,
+      pm25: -1, pm10: -1, co: -1, temperature: -1, humidity: -1,
     };
   }
 
   return {
     isAnomaly: false,
     anomalyType: null,
-    pm25, pm10, co2, temperature, humidity,
+    pm25, pm10, co, temperature, humidity,
   };
 }
 
@@ -24560,29 +24745,27 @@ function generate10SecondBasedData(deviceId) {
 
   const rawPm25 = randomInRange(r.pm25.min, r.pm25.max, r.pm25.mean);
   const rawPm10 = randomInRange(r.pm10.min, r.pm10.max, r.pm10.mean);
-  const rawCo2  = randomInRange(r.co2.min,  r.co2.max,  r.co2.mean);
+  const rawCo   = randomInRange(r.co.min,  r.co.max,  r.co.mean); // Diubah dari rawCo2
   const rawTemp = randomInRange(r.temperature.min, r.temperature.max, r.temperature.mean);
   const rawRh   = randomInRange(r.humidity.min,    r.humidity.max,    r.humidity.mean);
 
   const alpha = 0.4;
   const prev = state.prevValues || {
-    pm25: rawPm25, pm10: rawPm10, co2: rawCo2,
+    pm25: rawPm25, pm10: rawPm10, co: rawCo, // Diubah dari co2
     temperature: rawTemp, humidity: rawRh,
   };
   const pm25 = prev.pm25 * (1 - alpha) + rawPm25 * alpha;
   const pm10 = prev.pm10 * (1 - alpha) + rawPm10 * alpha;
-  const co2  = prev.co2  * (1 - alpha) + rawCo2  * alpha;
+  const co   = prev.co  * (1 - alpha) + rawCo  * alpha; // Diubah dari co2
   const temperature = prev.temperature * (1 - alpha) + rawTemp * alpha;
   const humidity    = prev.humidity    * (1 - alpha) + rawRh   * alpha;
 
   // Update state (JANGAN feed anomali ke state — supaya spike transien 1 tick)
-  state.prevValues = { pm25, pm10, co2, temperature, humidity };
+  state.prevValues = { pm25, pm10, co, temperature, humidity }; // Diubah dari co2
   state.updateCounter++;
   state.last10SecondBlock = current10SecondBlock;
 
-  // FIXED: apply anomaly — hasilnya TIDAK mengubah state.prevValues,
-  // sehingga spike hanya muncul 1 tick dan hilang pada tick berikutnya.
-  const anomalous = applyAnomaly(pm25, pm10, co2, temperature, humidity);
+  const anomalous = applyAnomaly(pm25, pm10, co, temperature, humidity); // Diubah dari co2
 
   // Hitung AQI
   let finalAQI, finalCategory;
@@ -24610,7 +24793,7 @@ function generate10SecondBasedData(deviceId) {
     aqi: finalAQI,
     pm25: parseFloat(anomalous.pm25.toFixed(1)),
     pm10: parseFloat(anomalous.pm10.toFixed(1)),
-    co2: Math.round(anomalous.co2),
+    co: Math.round(anomalous.co), // Diubah dari co2
     temperature: parseFloat(anomalous.temperature.toFixed(1)),
     humidity: Math.round(anomalous.humidity),
     category: finalCategory,
@@ -24633,7 +24816,7 @@ function generate10SecondBasedData(deviceId) {
     );
   } else {
     console.log(
-      `🔄 ${deviceId} [${slot}] AQI=${finalAQI}, PM2.5=${sensorData.pm25}, PM10=${sensorData.pm10}`
+      `🔄 ${deviceId} [${slot}] AQI=${finalAQI}, PM2.5=${sensorData.pm25}, PM10=${sensorData.pm10}, CO=${sensorData.co}`
     );
   }
 
@@ -24806,7 +24989,7 @@ const server = http.createServer((req, res) => {
             units: {
               pm25: 'μg/m³',
               pm10: 'μg/m³',
-              co2: 'ppm',
+              co: 'μg/m³', // Diubah dari co2: 'ppm'
               temperature: '°C',
               humidity: '%'
             }
@@ -24887,7 +25070,7 @@ const server = http.createServer((req, res) => {
 
       if (pathname.startsWith('/set-base/') && method === 'POST') {
         const deviceId = pathname.split('/')[2];
-        const { pm25, pm10, co2, temperature, humidity, roomType } = requestData;
+        const { pm25, pm10, co, temperature, humidity, roomType } = requestData; // Diubah dari co2
 
         if (!deviceId) {
           return sendJson(res, 400, { success: false, message: 'Device ID is required' });
@@ -24895,9 +25078,9 @@ const server = http.createServer((req, res) => {
 
         if (!deviceStates.has(deviceId)) {
           deviceStates.set(deviceId, {
-            basePM25: 20, basePM10: 40, baseCO2: 550,
+            basePM25: 20, basePM10: 40, baseCO: 1500, // Diubah dari baseCO2
             baseTemp: 23, baseHumidity: 50, roomType: 0,
-            trendPM25: 0, trendCO2: 0, last10SecondBlock: -1, updateCounter: 0
+            trendPM25: 0, trendCO: 0, last10SecondBlock: -1, updateCounter: 0
           });
         }
 
@@ -24905,7 +25088,7 @@ const server = http.createServer((req, res) => {
 
         if (pm25 !== undefined) state.basePM25 = pm25;
         if (pm10 !== undefined) state.basePM10 = pm10;
-        if (co2 !== undefined) state.baseCO2 = co2;
+        if (co !== undefined) state.baseCO = co; // Diubah dari baseCO2
         if (temperature !== undefined) state.baseTemp = temperature;
         if (humidity !== undefined) state.baseHumidity = humidity;
         if (roomType !== undefined) {
@@ -24924,7 +25107,7 @@ const server = http.createServer((req, res) => {
           values: {
             basePM25: state.basePM25,
             basePM10: state.basePM10,
-            baseCO2: state.baseCO2,
+            baseCO: state.baseCO, // Diubah dari baseCO2
             baseTemp: state.baseTemp,
             baseHumidity: state.baseHumidity,
             roomType: ['Kelas', 'Laboratorium', 'Perpustakaan', 'Aula'][state.roomType]
@@ -24962,7 +25145,7 @@ const server = http.createServer((req, res) => {
 
             const pm25 = state.basePM25 * timeFactor * (1 + Math.sin(updateOffset * 0.2) * 0.2);
             const pm10 = pm25 * 2;
-            const co2 = state.baseCO2 * timeFactor;
+            const co = state.baseCO * timeFactor; // Diubah dari baseCO2
 
             let aqi;
             if (pm25 <= 12.0) aqi = Math.round((pm25 / 12.0) * 50);
@@ -24975,7 +25158,7 @@ const server = http.createServer((req, res) => {
               aqi: Math.min(500, aqi),
               pm25: parseFloat(pm25.toFixed(1)),
               pm10: parseFloat(pm10.toFixed(1)),
-              co2: Math.round(co2),
+              co: Math.round(co), // Diubah dari co2
               temperature: state.baseTemp + Math.sin(hour * 0.2618 + minute * 0.00436) * 3,
               humidity: state.baseHumidity + Math.cos(hour * 0.2618 + minute * 0.00436) * 10
             });

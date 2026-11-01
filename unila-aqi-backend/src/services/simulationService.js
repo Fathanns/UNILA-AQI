@@ -1,7 +1,7 @@
 const cron = require('node-cron');
 const Room = require('../models/Room');
 const SensorData = require('../models/SensorData');
-const { getAQICategory } = require('../utils/aqiCalculator');
+const { getAQICategory, calculateAQI } = require('../utils/aqiCalculator');
 const {
   generateSensorData,
   simulateAnomaly,
@@ -43,7 +43,6 @@ class SimulationService {
 
   async updateAllRooms() {
     try {
-      // FIXED: skip room yang sedang dalam demoMode
       const rooms = await Room.find({
         dataSource: 'simulation',
         demoMode: { $ne: true }
@@ -70,15 +69,28 @@ class SimulationService {
     try {
       const roomType = this.getRoomType(room.name);
 
-      // FIXED: 1) generate normal, 2) post-process dengan anomaly
       const normalData = generateSensorData(roomType);
       const sensorData = simulateAnomaly(normalData);
 
-      // FIXED: error sensor ditangani terpisah — TIDAK overwrite room
       if (sensorData.isAnomaly && sensorData.anomalyType === 'error') {
         await this.handleSensorError(room, sensorData);
         return;
       }
+
+      // ✅ AQI dihitung dari PM2.5, PM10, dan CO — ambil yang dominan
+      const aqiResult = calculateAQI(
+        sensorData.pm25,
+        sensorData.pm10,
+        sensorData.co
+      );
+
+      // Sinkronkan aqiResult ke sensorData supaya konsisten saat disimpan & di-broadcast
+      sensorData.aqi = aqiResult.aqi;
+      sensorData.category = aqiResult.category;
+      sensorData.dominant = aqiResult.dominant;
+      sensorData.ispuPM25 = aqiResult.ispuPM25;
+      sensorData.ispuPM10 = aqiResult.ispuPM10;
+      sensorData.ispuCO = aqiResult.ispuCO;
 
       const hasChanged = this._hasDataChanged(room, sensorData);
 
@@ -91,7 +103,7 @@ class SimulationService {
       room.currentData = {
         pm25: sensorData.pm25,
         pm10: sensorData.pm10,
-        co2: sensorData.co2,
+        co: sensorData.co,
         temperature: sensorData.temperature,
         humidity: sensorData.humidity,
         updatedAt: new Date()
@@ -107,7 +119,7 @@ class SimulationService {
         aqi: sensorData.aqi,
         pm25: sensorData.pm25,
         pm10: sensorData.pm10,
-        co2: sensorData.co2,
+        co: sensorData.co,
         temperature: sensorData.temperature,
         humidity: sensorData.humidity,
         category: sensorData.category,
@@ -118,9 +130,20 @@ class SimulationService {
 
       this.broadcastRoomUpdate(room, sensorData);
 
+            // Log untuk setiap parameter dominan (normal maupun anomali)
+      const dominantLabel = {
+        pm25: `PM2.5 (ISPU=${sensorData.ispuPM25})`,
+        pm10: `PM10 (ISPU=${sensorData.ispuPM10})`,
+        co:   `CO (ISPU=${sensorData.ispuCO})`,
+      }[sensorData.dominant] || sensorData.dominant;
+
       if (sensorData.isAnomaly) {
         console.log(
-          `🚨 ANOMALY in ${room.name}: AQI ${sensorData.aqi} (${sensorData.category}) — type: ${sensorData.anomalyType}`
+          `🚨 ANOMALY in ${room.name}: AQI ${sensorData.aqi} (${sensorData.category}) — dominant: ${dominantLabel} — type: ${sensorData.anomalyType}`
+        );
+      } else {
+        console.log(
+          `⚠️  DOMINAN ${sensorData.dominant.toUpperCase()} in ${room.name}: AQI ${sensorData.aqi} (${dominantLabel})`
         );
       }
     } catch (error) {
@@ -128,13 +151,6 @@ class SimulationService {
     }
   }
 
-  /**
-   * FIXED: saat sensor error (aqi=-1):
-   *  - Catat ke SensorData (untuk grafik history)
-   *  - JANGAN overwrite room.currentAQI agar dashboard tetap menampilkan
-   *    nilai valid terakhir (tidak menipu pengguna dengan -1)
-   *  - Broadcast notification
-   */
   async handleSensorError(room, sensorData) {
     try {
       await new SensorData({
@@ -144,7 +160,7 @@ class SimulationService {
         aqi: -1,
         pm25: -1,
         pm10: -1,
-        co2: -1,
+        co: -1,
         temperature: -1,
         humidity: -1,
         category: 'error',
@@ -172,7 +188,7 @@ class SimulationService {
       aqi: 0,
       pm25: 0,
       pm10: 0,
-      co2: 0,
+      co: 0,
       temperature: 0,
       humidity: 0
     };
@@ -181,7 +197,7 @@ class SimulationService {
       Math.abs(newData.aqi - room.currentAQI) > thresholds.aqi ||
       Math.abs(newData.pm25 - (currentData.pm25 || 0)) > thresholds.pm25 ||
       Math.abs(newData.pm10 - (currentData.pm10 || 0)) > thresholds.pm10 ||
-      Math.abs(newData.co2 - (currentData.co2 || 0)) > thresholds.co2 ||
+      Math.abs(newData.co - (currentData.co || 0)) > thresholds.co ||
       Math.abs(newData.temperature - (currentData.temperature || 0)) > thresholds.temperature ||
       Math.abs(newData.humidity - (currentData.humidity || 0)) > thresholds.humidity
     );

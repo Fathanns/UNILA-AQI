@@ -124,7 +124,7 @@ class IoTService {
            typeof data.aqi === 'number' &&
            typeof data.pm25 === 'number' &&
            typeof data.pm10 === 'number' &&
-           typeof data.co2 === 'number' &&
+           typeof data.co === 'number' &&
            typeof data.temperature === 'number' &&
            typeof data.humidity === 'number';
   }
@@ -133,14 +133,14 @@ class IoTService {
     if (!oldData || !newData) return true;
 
     const thresholds = {
-      aqi: 0, pm25: 0, pm10: 0, co2: 0, temperature: 0, humidity: 0
+      aqi: 0, pm25: 0, pm10: 0, co: 0, temperature: 0, humidity: 0
     };
 
     return (
       Math.abs(newData.aqi - (oldData.aqi || 0)) > thresholds.aqi ||
       Math.abs(newData.pm25 - (oldData.pm25 || 0)) > thresholds.pm25 ||
       Math.abs(newData.pm10 - (oldData.pm10 || 0)) > thresholds.pm10 ||
-      Math.abs(newData.co2 - (oldData.co2 || 0)) > thresholds.co2 ||
+      Math.abs(newData.co - (oldData.co || 0)) > thresholds.co ||
       Math.abs(newData.temperature - (oldData.temperature || 0)) > thresholds.temperature ||
       Math.abs(newData.humidity - (oldData.humidity || 0)) > thresholds.humidity
     );
@@ -160,12 +160,12 @@ class IoTService {
         return;
       }
 
-      const aqiResult = calculateAQI(iotData.pm25, iotData.pm10);
+      const aqiResult = calculateAQI(iotData.pm25, iotData.pm10, iotData.co);
 
       const normalizedData = {
         pm25: iotData.pm25,
         pm10: iotData.pm10,
-        co2: iotData.co2,
+        co: iotData.co,
         temperature: iotData.temperature,
         humidity: iotData.humidity,
         aqi: aqiResult.aqi,
@@ -179,7 +179,7 @@ class IoTService {
           aqi: room.currentAQI,
           pm25: currentData.pm25,
           pm10: currentData.pm10,
-          co2: currentData.co2,
+          co: currentData.co,
           temperature: currentData.temperature,
           humidity: currentData.humidity,
         },
@@ -195,7 +195,7 @@ class IoTService {
       room.currentData = {
         pm25: normalizedData.pm25,
         pm10: normalizedData.pm10,
-        co2: normalizedData.co2,
+        co: normalizedData.co,
         temperature: normalizedData.temperature,
         humidity: normalizedData.humidity,
         updatedAt: new Date(),
@@ -210,7 +210,7 @@ class IoTService {
         aqi: normalizedData.aqi,
         pm25: normalizedData.pm25,
         pm10: normalizedData.pm10,
-        co2: normalizedData.co2,
+        co: normalizedData.co,
         temperature: normalizedData.temperature,
         humidity: normalizedData.humidity,
         category: aqiResult.category,
@@ -248,13 +248,13 @@ class IoTService {
         return;
       }
 
-      const aqiResult = calculateAQI(iotData.pm25, iotData.pm10);
+     const aqiResult = calculateAQI(iotData.pm25, iotData.pm10, iotData.co);
 
       room.currentAQI = aqiResult.aqi;
       room.currentData = {
         pm25: iotData.pm25,
         pm10: iotData.pm10,
-        co2: iotData.co2,
+        co: iotData.co,
         temperature: iotData.temperature,
         humidity: iotData.humidity,
         updatedAt: new Date(),
@@ -269,7 +269,7 @@ class IoTService {
         aqi: aqiResult.aqi,
         pm25: iotData.pm25,
         pm10: iotData.pm10,
-        co2: iotData.co2,
+        co: iotData.co,
         temperature: iotData.temperature,
         humidity: iotData.humidity,
         category: aqiResult.category,
@@ -303,7 +303,7 @@ class IoTService {
         aqi: -1,
         pm25: -1,
         pm10: -1,
-        co2: -1,
+        co: -1,
         temperature: -1,
         humidity: -1,
         category: 'error',
