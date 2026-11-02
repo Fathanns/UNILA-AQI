@@ -41,28 +41,36 @@ class SimulationService {
     }
   }
 
-  async updateAllRooms() {
-    try {
-      const rooms = await Room.find({
-        dataSource: 'simulation',
-        demoMode: { $ne: true }
-      });
+    async updateAllRooms() {
+    // ✅ Serialize: pastikan siklus simulasi ini selesai dulu
+    // sebelum IoT service boleh mencetak log-nya (dan sebaliknya).
+    const { runExclusive } = require('../utils/serviceLock');
 
-      if (rooms.length === 0) {
-        console.log('ℹ️ No active simulation rooms to update');
-        return;
+    return runExclusive(async () => {
+      try {
+        const rooms = await Room.find({
+          dataSource: 'simulation',
+          demoMode: { $ne: true }
+        });
+
+        if (rooms.length === 0) {
+          console.log('ℹ️ No active simulation rooms to update');
+          return;
+        }
+
+        // 🔄 Header di dalam lock → selalu tercetak pertama
+        // sebelum log room manapun (simulation atau IoT).
+        console.log(`\n🔄 Updating ${rooms.length} simulation rooms...`);
+
+        for (const room of rooms) {
+          await this.updateRoom(room);
+        }
+
+        console.log(`\n🕒 Updated ${rooms.length} rooms at ${new Date().toLocaleTimeString()} \n`);
+      } catch (error) {
+        console.error('❌ Error in updateAllRooms:', error.message);
       }
-
-      console.log(`🔄 Updating ${rooms.length} simulation rooms...`);
-
-      for (const room of rooms) {
-        await this.updateRoom(room);
-      }
-
-      console.log(`🕒 Updated ${rooms.length} simulation rooms at ${new Date().toLocaleTimeString()} \n`);
-    } catch (error) {
-      console.error('❌ Error in updateAllRooms:', error.message);
-    }
+    });
   }
 
   async updateRoom(room) {
@@ -128,7 +136,7 @@ class SimulationService {
 
       await historicalData.save();
 
-      console.log('┌────────────────────────────────────────────────────────────────');
+      console.log('┌────────────────────────────────────────────────────────────────────────────────────');
 
       this.broadcastRoomUpdate(room, sensorData);
 
@@ -156,11 +164,11 @@ class SimulationService {
       console.log(
         `⚠️  DOMINAN ${sensorData.dominant.toUpperCase()} in ${room.name}: AQI ${sensorData.aqi} (${dominantLabel})`
       );
-      console.log('└────────────────────────────────────────────────────────────────');
+      console.log('└────────────────────────────────────────────────────────────────────────────────────');
     } catch (error) {
-      console.log('┌────────────────────────────────────────────────────────────────');
+      console.log('┌────────────────────────────────────────────────────────────────────────────────────');
       console.error(`❌ Error updating room ${room.name}:`, error.message);
-      console.log('└────────────────────────────────────────────────────────────────');
+      console.log('└────────────────────────────────────────────────────────────────────────────────────');
     }
   }
 
@@ -187,10 +195,13 @@ class SimulationService {
           timestamp: new Date(),
         });
       }
-
+      console.log('┌────────────────────────────────────────────────────────────────────────────────────');
       console.log(`⚠️ SENSOR ERROR in ${room.name} (data invalid, room retained last good value)`);
+      console.log('└────────────────────────────────────────────────────────────────────────────────────');
     } catch (err) {
+      console.log('┌────────────────────────────────────────────────────────────────────────────────────');
       console.error(`❌ Error handling sensor error for ${room.name}:`, err.message);
+      console.log('└────────────────────────────────────────────────────────────────────────────────────');
     }
   }
 

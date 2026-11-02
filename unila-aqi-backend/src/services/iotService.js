@@ -40,35 +40,43 @@ class IoTService {
     }
   }
 
-  async pollAllIoTDevices() {
-    try {
-      const devices = await IoTDevice.find({});
+    async pollAllIoTDevices() {
+    // ✅ Serialize: hanya satu service yang mencetak log pada satu waktu.
+    const { runExclusive } = require('../utils/serviceLock');
 
-      if (devices.length === 0) {
-        console.log('ℹ️ No IoT devices to poll');
-        return;
+    return runExclusive(async () => {
+      try {
+        const devices = await IoTDevice.find({});
+
+        if (devices.length === 0) {
+          console.log('ℹ️ No IoT devices to poll');
+          return;
+        }
+
+        // 🔄 Header di dalam lock → selalu tercetak utuh sebelum
+        // log room/device dari service lain masuk.
+        console.log(`🔄 Polling ${devices.length} IoT devices...`);
+
+        const pollPromises = devices.map(device =>
+          this.pollDevice(device).catch(error => {
+            console.error(`❌ Error polling device ${device.name}:`, error.message);
+            return null;
+          })
+        );
+
+        const results = await Promise.allSettled(pollPromises);
+
+        const successfulPolls = results.filter(
+          r => r.status === 'fulfilled' && r.value && r.value.success
+        ).length;
+
+        console.log(`\n✅ IoT polling completed: ${successfulPolls}/${devices.length} successful`);
+        console.log(`🕒 Updated at ${new Date().toLocaleTimeString()}`);
+        console.log ('\n=====================================================================================')
+      } catch (error) {
+        console.error('❌ Error in pollAllIoTDevices:', error.message);
       }
-
-      console.log(`🔄 Polling ${devices.length} IoT devices...`);
-
-      const pollPromises = devices.map(device =>
-        this.pollDevice(device).catch(error => {
-          console.error(`❌ Error polling device ${device.name}:`, error.message);
-          return null;
-        })
-      );
-
-      const results = await Promise.allSettled(pollPromises);
-
-      const successfulPolls = results.filter(
-        r => r.status === 'fulfilled' && r.value && r.value.success
-      ).length;
-
-      console.log(`✅ IoT polling completed: ${successfulPolls}/${devices.length} successful`);
-      console.log(`🕒 Updated at ${new Date().toLocaleTimeString()} \n`);
-    } catch (error) {
-      console.error('❌ Error in pollAllIoTDevices:', error.message);
-    }
+    });
   }
 
   async pollDevice(device) {
@@ -93,7 +101,6 @@ class IoTService {
         await device.save();
 
         if (hasChanged || !lastData) {
-          console.log(`🔄 Data changed for device ${device.name}, broadcasting...`);
 
           const rooms = await Room.find({
             iotDeviceId: device._id.toString()
@@ -113,8 +120,9 @@ class IoTService {
     } catch (error) {
       device.status = 'offline';
       await device.save();
-
+      console.log('┌──────────────────────────────────────────────────────────────────────────────');
       console.error(`❌ Error polling device ${device.name}:`, error.message);
+      console.log('└──────────────────────────────────────────────────────────────────────────────');
       return { success: false, error: error.message };
     }
   }
@@ -187,9 +195,9 @@ class IoTService {
       );
 
       if (!hasRoomDataChanged) {
-        console.log('┌──────────────────────────────────────────────────────────');
+        console.log('┌───────────────────────────────────────────────────────────────────────');
         console.log(`ℹ️  Room ${room.name} data unchanged (exact match), skipping update`);
-        console.log('└──────────────────────────────────────────────────────────');
+        console.log('└───────────────────────────────────────────────────────────────────────');
         return;
       }
 
@@ -220,7 +228,7 @@ class IoTService {
       });
       await historicalData.save();
 
-      console.log('┌────────────────────────────────────────────────────────────────');
+      console.log('┌────────────────────────────────────────────────────────────────────────────────────');
 
       this.broadcastRoomUpdate(room, normalizedData, 'iot', deviceName);
 
@@ -249,11 +257,11 @@ class IoTService {
       console.log(
         `⚠️  DOMINAN ${aqiResult.dominant.toUpperCase()} in ${room.name}: AQI ${aqiResult.aqi} (${dominantLabel})`
       );
-      console.log('└────────────────────────────────────────────────────────────────');
+      console.log('└────────────────────────────────────────────────────────────────────────────────────');
     } catch (error) {
-      console.log('┌────────────────────────────────────────────────────────────────');
+      console.log('┌────────────────────────────────────────────────────────────────────────────────────');
       console.error(`❌ Error updating IoT room ${room.name}:`, error.message);
-      console.log('└────────────────────────────────────────────────────────────────');
+      console.log('└────────────────────────────────────────────────────────────────────────────────────');
     }
   }
   
@@ -340,12 +348,15 @@ class IoTService {
           timestamp: new Date(),
         });
       }
-
+      console.log('┌──────────────────────────────────────────────────────────────────────────────');
       console.log(
         `⚠️ IoT SENSOR ERROR in ${room.name} (device: ${deviceName}) — room retained last good value`
       );
+      console.log('└──────────────────────────────────────────────────────────────────────────────');
     } catch (err) {
+      console.log('┌────────────────────────────────────────────────────────────────────────────────────');
       console.error(`❌ Error handling device error for ${room.name}:`, err.message);
+      console.log('└────────────────────────────────────────────────────────────────────────────────────');
     }
   }
 
