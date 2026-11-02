@@ -15,6 +15,8 @@
 
 - perbaiki catch ketika ada nama ruangan yang sama di gedung yang sama
 
+- perbaiki responsif halaman device iot
+
 error
 - ~~error Ketika edit Gedung dan refresh di dashboard~~
 - ~~error Ketika hapus ruangan dan refresh di dashboard~~

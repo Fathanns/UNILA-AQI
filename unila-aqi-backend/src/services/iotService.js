@@ -11,7 +11,7 @@ class IoTService {
     this.task = null;
     this.io = null;
     this.deviceLastData = new Map();
-    this.pollingInterval = 10000;
+    this.pollingInterval = 30000;
   }
 
   start(io) {
@@ -23,7 +23,7 @@ class IoTService {
     this.io = io;
     console.log(`🚀 Starting IoT Service (polling every ${this.pollingInterval/1000}s)...`);
 
-    this.task = cron.schedule('*/10 * * * * *', async () => {
+    this.task = cron.schedule('*/30 * * * * *', async () => {
       await this.pollAllIoTDevices();
     });
 
@@ -65,7 +65,7 @@ class IoTService {
       ).length;
 
       console.log(`✅ IoT polling completed: ${successfulPolls}/${devices.length} successful`);
-      console.log(`✅ Updated at ${new Date().toLocaleTimeString()}`);
+      console.log(`🕒 Updated at ${new Date().toLocaleTimeString()} \n`);
     } catch (error) {
       console.error('❌ Error in pollAllIoTDevices:', error.message);
     }
@@ -187,7 +187,9 @@ class IoTService {
       );
 
       if (!hasRoomDataChanged) {
-        console.log(`ℹ️ Room ${room.name} data unchanged (exact match), skipping update`);
+        console.log('┌──────────────────────────────────────────────────────────');
+        console.log(`ℹ️  Room ${room.name} data unchanged (exact match), skipping update`);
+        console.log('└──────────────────────────────────────────────────────────');
         return;
       }
 
@@ -218,22 +220,43 @@ class IoTService {
       });
       await historicalData.save();
 
+      console.log('┌────────────────────────────────────────────────────────────────');
+
       this.broadcastRoomUpdate(room, normalizedData, 'iot', deviceName);
 
-      // Log extra untuk kategori tinggi
+      // Log ringkasan data room (IoT) — format sama dengan simulasi,
+      // TANPA keterangan jenis partikel setelah AQI.
+      // Contoh: ✅ IoT room H18: AQI 32, PM2.5=16, PM10=31.6, CO=..., Suhu=..., RH=...
       if (aqiResult.aqi > 100) {
         console.log(
           `🚨 HIGH AQI in ${room.name} (IoT ${deviceName}): ${aqiResult.aqi} (${aqiResult.category})`
         );
       } else {
         console.log(
-          `✅ IoT room ${room.name}: AQI ${normalizedData.aqi} (${aqiResult.dominant.toUpperCase()}), PM2.5=${normalizedData.pm25}, PM10=${normalizedData.pm10}`
+          `✅ IoT room ${room.name}: AQI ${normalizedData.aqi}, ` +
+          `PM2.5=${normalizedData.pm25}, PM10=${normalizedData.pm10}, ` +
+          `CO=${normalizedData.co}, Suhu=${normalizedData.temperature}, RH=${normalizedData.humidity}`
         );
       }
+
+      // Log parameter dominan (setelah ringkasan partikel)
+      const dominantLabel = {
+        pm25: `PM2.5 (ISPU=${aqiResult.ispuPM25})`,
+        pm10: `PM10 (ISPU=${aqiResult.ispuPM10})`,
+        co:   `CO (ISPU=${aqiResult.ispuCO})`,
+      }[aqiResult.dominant] || aqiResult.dominant;
+
+      console.log(
+        `⚠️  DOMINAN ${aqiResult.dominant.toUpperCase()} in ${room.name}: AQI ${aqiResult.aqi} (${dominantLabel})`
+      );
+      console.log('└────────────────────────────────────────────────────────────────');
     } catch (error) {
+      console.log('┌────────────────────────────────────────────────────────────────');
       console.error(`❌ Error updating IoT room ${room.name}:`, error.message);
+      console.log('└────────────────────────────────────────────────────────────────');
     }
   }
+  
 
   async updateRoomFromIoTForce(room, iotData, deviceName) {
     try {

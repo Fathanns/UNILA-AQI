@@ -12,7 +12,7 @@ class SimulationService {
     this.isRunning = false;
     this.task = null;
     this.io = null;
-    this.updateInterval = 10000;
+    this.updateInterval = 30000;
   }
 
   start(io) {
@@ -59,7 +59,7 @@ class SimulationService {
         await this.updateRoom(room);
       }
 
-      console.log(`✅ Updated ${rooms.length} rooms at ${new Date().toLocaleTimeString()}`);
+      console.log(`🕒 Updated ${rooms.length} simulation rooms at ${new Date().toLocaleTimeString()} \n`);
     } catch (error) {
       console.error('❌ Error in updateAllRooms:', error.message);
     }
@@ -128,26 +128,39 @@ class SimulationService {
 
       await historicalData.save();
 
+      console.log('┌────────────────────────────────────────────────────────────────');
+
       this.broadcastRoomUpdate(room, sensorData);
 
-            // Log untuk setiap parameter dominan (normal maupun anomali)
+      // Log ringkasan data room (simulasi) — format sama dengan IoT
+      // Contoh: ✅ Simulation room H17: AQI 28, PM2.5=..., PM10=..., CO=..., Suhu=..., RH=...
+      if (sensorData.isAnomaly) {
+        console.log(
+          `🚨 ANOMALY in ${room.name}: AQI ${sensorData.aqi} (${sensorData.category}) — type: ${sensorData.anomalyType}`
+        );
+      } else {
+        console.log(
+          `✅ Simulation room ${room.name}: AQI ${sensorData.aqi}, ` +
+          `PM2.5=${sensorData.pm25}, PM10=${sensorData.pm10}, ` +
+          `CO=${sensorData.co}, Suhu=${sensorData.temperature}, RH=${sensorData.humidity}`
+        );
+      }
+
+      // Log parameter dominan (setelah ringkasan partikel)
       const dominantLabel = {
         pm25: `PM2.5 (ISPU=${sensorData.ispuPM25})`,
         pm10: `PM10 (ISPU=${sensorData.ispuPM10})`,
         co:   `CO (ISPU=${sensorData.ispuCO})`,
       }[sensorData.dominant] || sensorData.dominant;
 
-      if (sensorData.isAnomaly) {
-        console.log(
-          `🚨 ANOMALY in ${room.name}: AQI ${sensorData.aqi} (${sensorData.category}) — dominant: ${dominantLabel} — type: ${sensorData.anomalyType}`
-        );
-      } else {
-        console.log(
-          `⚠️  DOMINAN ${sensorData.dominant.toUpperCase()} in ${room.name}: AQI ${sensorData.aqi} (${dominantLabel})`
-        );
-      }
+      console.log(
+        `⚠️  DOMINAN ${sensorData.dominant.toUpperCase()} in ${room.name}: AQI ${sensorData.aqi} (${dominantLabel})`
+      );
+      console.log('└────────────────────────────────────────────────────────────────');
     } catch (error) {
+      console.log('┌────────────────────────────────────────────────────────────────');
       console.error(`❌ Error updating room ${room.name}:`, error.message);
+      console.log('└────────────────────────────────────────────────────────────────');
     }
   }
 

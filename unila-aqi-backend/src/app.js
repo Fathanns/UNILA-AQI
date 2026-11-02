@@ -228,8 +228,8 @@ mongoose.connect(process.env.MONGODB_URI)
     iotService.start(io);
 
     console.log('✅ All services started');
-    console.log('   - Simulation Service: ACTIVE (10 second intervals)');
-    console.log('   - IoT Service: ACTIVE (10 second intervals)');
+    console.log('   - Simulation Service: ACTIVE (30 second intervals)');
+    console.log('   - IoT Service: ACTIVE (30 second intervals) \n');
   })
   .catch((err) => {
     console.error('❌ MongoDB connection error:', err.message);

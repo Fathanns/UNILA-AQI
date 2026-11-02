@@ -2744,7 +2744,7 @@ class IoTService {
     this.task = null;
     this.io = null;
     this.deviceLastData = new Map();
-    this.pollingInterval = 10000;
+    this.pollingInterval = 30000;
   }
 
   start(io) {
@@ -2756,7 +2756,7 @@ class IoTService {
     this.io = io;
     console.log(`🚀 Starting IoT Service (polling every ${this.pollingInterval/1000}s)...`);
 
-    this.task = cron.schedule('*/10 * * * * *', async () => {
+    this.task = cron.schedule('*/30 * * * * *', async () => {
       await this.pollAllIoTDevices();
     });
 
@@ -2798,7 +2798,7 @@ class IoTService {
       ).length;
 
       console.log(`✅ IoT polling completed: ${successfulPolls}/${devices.length} successful`);
-      console.log(`✅ Updated at ${new Date().toLocaleTimeString()}`);
+      console.log(`🕒 Updated at ${new Date().toLocaleTimeString()} \n`);
     } catch (error) {
       console.error('❌ Error in pollAllIoTDevices:', error.message);
     }
@@ -2920,7 +2920,9 @@ class IoTService {
       );
 
       if (!hasRoomDataChanged) {
-        console.log(`ℹ️ Room ${room.name} data unchanged (exact match), skipping update`);
+        console.log('┌──────────────────────────────────────────────────────────');
+        console.log(`ℹ️  Room ${room.name} data unchanged (exact match), skipping update`);
+        console.log('└──────────────────────────────────────────────────────────');
         return;
       }
 
@@ -2951,22 +2953,43 @@ class IoTService {
       });
       await historicalData.save();
 
+      console.log('┌────────────────────────────────────────────────────────────────');
+
       this.broadcastRoomUpdate(room, normalizedData, 'iot', deviceName);
 
-      // Log extra untuk kategori tinggi
+      // Log ringkasan data room (IoT) — format sama dengan simulasi,
+      // TANPA keterangan jenis partikel setelah AQI.
+      // Contoh: ✅ IoT room H18: AQI 32, PM2.5=16, PM10=31.6, CO=..., Suhu=..., RH=...
       if (aqiResult.aqi > 100) {
         console.log(
           `🚨 HIGH AQI in ${room.name} (IoT ${deviceName}): ${aqiResult.aqi} (${aqiResult.category})`
         );
       } else {
         console.log(
-          `✅ IoT room ${room.name}: AQI ${normalizedData.aqi} (${aqiResult.dominant.toUpperCase()}), PM2.5=${normalizedData.pm25}, PM10=${normalizedData.pm10}`
+          `✅ IoT room ${room.name}: AQI ${normalizedData.aqi}, ` +
+          `PM2.5=${normalizedData.pm25}, PM10=${normalizedData.pm10}, ` +
+          `CO=${normalizedData.co}, Suhu=${normalizedData.temperature}, RH=${normalizedData.humidity}`
         );
       }
+
+      // Log parameter dominan (setelah ringkasan partikel)
+      const dominantLabel = {
+        pm25: `PM2.5 (ISPU=${aqiResult.ispuPM25})`,
+        pm10: `PM10 (ISPU=${aqiResult.ispuPM10})`,
+        co:   `CO (ISPU=${aqiResult.ispuCO})`,
+      }[aqiResult.dominant] || aqiResult.dominant;
+
+      console.log(
+        `⚠️  DOMINAN ${aqiResult.dominant.toUpperCase()} in ${room.name}: AQI ${aqiResult.aqi} (${dominantLabel})`
+      );
+      console.log('└────────────────────────────────────────────────────────────────');
     } catch (error) {
+      console.log('┌────────────────────────────────────────────────────────────────');
       console.error(`❌ Error updating IoT room ${room.name}:`, error.message);
+      console.log('└────────────────────────────────────────────────────────────────');
     }
   }
+  
 
   async updateRoomFromIoTForce(room, iotData, deviceName) {
     try {
@@ -3474,6 +3497,51 @@ module.exports = simulationService;
 ---------------------------------------------------------------------------------------------------------------------------------------
 C:\develop\UNILA-AQI\unila-aqi-backend\src\utils\__tests__\aqiCalculator.test.js
 
+/**
+ * ============================================================================
+ * UNIT TEST — src/utils/aqiCalculator.js
+ * ============================================================================
+ *
+ * Menguji 4 fungsi publik dari aqiCalculator.js:
+ *   1. calculateISPUFromPM25(conc)       → ISPU 0-500 (dari PM2.5)
+ *   2. calculateISPUFromPM10(conc)       → ISPU 0-500 (dari PM10)
+ *   3. calculateAQI(pm25, pm10, co)      → { aqi, dominant, ispuPM25, ... }
+ *   4. getAQICategory(aqi)               → { category, label, color }
+ *
+ * Standar acuan: PP No. 22 Tahun 2021 (Indonesia).
+ *
+ * ----------------------------------------------------------------------------
+ * RUMUS INTERPOLASI LINEAR
+ * ----------------------------------------------------------------------------
+ *   ISPU = ((ISPU_high − ISPU_low) / (C_high − C_low)) × (C − C_low) + ISPU_low
+ *
+ * ----------------------------------------------------------------------------
+ * KATEGORI ISPU (PP 22/2021)
+ * ----------------------------------------------------------------------------
+ *   0   –  50   : Baik
+ *   51  – 100   : Sedang
+ *   101 – 200   : Tidak Sehat
+ *   201 – 300   : Sangat Tidak Sehat
+ *   301 – 500   : Berbahaya
+ *
+ * ----------------------------------------------------------------------------
+ * POLA PENGUJIAN TIAP FUNGSI
+ * ----------------------------------------------------------------------------
+ *   A. NILAI DI TENGAH SEGMEN  → verifikasi rumus interpolasi benar
+ *   B. NILAI TEPAT DI BOUNDARY → pastikan tidak "bocor" ke segmen sebelah
+ *   C. PERPINDAHAN SEGMEN      → pastikan titik "naik kelas" benar (+1 unit)
+ *   D. NILAI EKSTREM / INVALID → pastikan clamp & sanitasi input bekerja
+ *
+ * ----------------------------------------------------------------------------
+ * STRUKTUR FILE
+ * ----------------------------------------------------------------------------
+ *   BAGIAN 1 — calculateISPUFromPM25
+ *   BAGIAN 2 — calculateISPUFromPM10
+ *   BAGIAN 3 — calculateAQI  (MAX dari ketiga parameter)
+ *   BAGIAN 4 — getAQICategory (batas antar kategori)
+ * ============================================================================
+ */
+
 const { test, describe } = require('node:test');
 const assert = require('node:assert');
 
@@ -3485,130 +3553,221 @@ const {
 } = require('../aqiCalculator');
 
 
-describe('calculateISPUFromPM25', () => {
+// ============================================================================
+// BAGIAN 1 — calculateISPUFromPM25
+// ============================================================================
+// Tabel breakpoint PM2.5 (µg/m³) → ISPU:
+//
+//   ISPU          Konsentrasi (µg/m³)
+//   ─────         ───────────────────
+//     0 –  50        0 –  55
+//    51 – 100       56 – 150
+//   101 – 200      151 – 250
+//   201 – 300      251 – 350
+//   301 – 500      351 – 500
+// ============================================================================
+describe('calculateISPUFromPM25 — konversi PM2.5 (µg/m³) → ISPU', () => {
 
-  // === Kategori A: Nilai di tengah segmen ===
-  test('PM2.5 = 0 → ISPU 0', () => {
+  // ── A. Nilai di tengah segmen (verifikasi rumus interpolasi) ─────────────
+
+  test('PM2.5 = 0 → ISPU 0 (titik awal, tanpa interpolasi)', () => {
     assert.strictEqual(calculateISPUFromPM25(0), 0);
   });
 
-  test('PM2.5 = 27.5 (tengah segmen 0-55) → ISPU 25', () => {
-    // (50/55) × 27.5 = 25
+  test('PM2.5 = 27.5 → ISPU 25 (tengah segmen 0–55)', () => {
+    // (50 − 0)/(55 − 0) × (27.5 − 0) + 0 = 25
     assert.strictEqual(calculateISPUFromPM25(27.5), 25);
   });
 
-  test('PM2.5 = 100 (tengah segmen 56-150) → ISPU ~74', () => {
-    // (49/94) × (100-56) + 51 = 22.93 + 51 = 73.93 → round 74
+  test('PM2.5 = 100 → ISPU 74 (tengah segmen 56–150)', () => {
+    // (100 − 51)/(150 − 56) × (100 − 56) + 51
+    //   = (49/94) × 44 + 51
+    //   = 22.94 + 51
+    //   ≈ 73.93  → dibulatkan 74
     assert.strictEqual(calculateISPUFromPM25(100), 74);
   });
 
-  // === Kategori B: Boundary exact ===
-  test('PM2.5 = 55 → ISPU tepat 50 (bukan 51)', () => {
+  // ── B. Nilai tepat di boundary (tidak boleh "bocor" ke segmen sebelah) ──
+
+  test('PM2.5 = 55 → ISPU 50 (batas atas segmen Baik, BUKAN 51)', () => {
     assert.strictEqual(calculateISPUFromPM25(55), 50);
   });
 
-  test('PM2.5 = 150 → ISPU tepat 100', () => {
+  test('PM2.5 = 150 → ISPU 100 (batas atas segmen Sedang)', () => {
     assert.strictEqual(calculateISPUFromPM25(150), 100);
   });
 
-  test('PM2.5 = 250 → ISPU tepat 200', () => {
+  test('PM2.5 = 250 → ISPU 200 (batas atas segmen Tidak Sehat)', () => {
     assert.strictEqual(calculateISPUFromPM25(250), 200);
   });
 
-  // === Kategori C: Perpindahan segmen ===
-  test('PM2.5 = 56 → ISPU tepat 51 (naik ke segmen Sedang)', () => {
+  // ── C. Perpindahan segmen (1 unit di atas boundary) ──────────────────────
+
+  test('PM2.5 = 56 → ISPU 51 (naik 1 tingkat ke segmen Sedang)', () => {
     assert.strictEqual(calculateISPUFromPM25(56), 51);
   });
 
-  test('PM2.5 = 151 → ISPU tepat 101', () => {
+  test('PM2.5 = 151 → ISPU 101 (naik 1 tingkat ke segmen Tidak Sehat)', () => {
     assert.strictEqual(calculateISPUFromPM25(151), 101);
   });
 
-  // === Kategori D: Nilai ekstrem ===
-  test('PM2.5 negatif → ISPU 0 (clamp)', () => {
+  // ── D. Nilai ekstrem & input tidak valid (clamp + sanitasi) ──────────────
+
+  test('PM2.5 = −5 (negatif) → ISPU 0 (di-clamp ke batas bawah)', () => {
     assert.strictEqual(calculateISPUFromPM25(-5), 0);
   });
 
-  test('PM2.5 di atas 500 → ISPU 500 (clamp)', () => {
+  test('PM2.5 = 1000 (di atas 500) → ISPU 500 (di-clamp ke batas atas)', () => {
     assert.strictEqual(calculateISPUFromPM25(1000), 500);
   });
 
-  test('PM2.5 = NaN → ISPU 0', () => {
+  test('PM2.5 = NaN → ISPU 0 (input tidak valid disanitasi)', () => {
     assert.strictEqual(calculateISPUFromPM25(NaN), 0);
   });
 
-  test('PM2.5 = null → ISPU 0', () => {
+  test('PM2.5 = null → ISPU 0 (input null disanitasi)', () => {
     assert.strictEqual(calculateISPUFromPM25(null), 0);
   });
 });
 
 
-describe('calculateISPUFromPM10', () => {
+// ============================================================================
+// BAGIAN 2 — calculateISPUFromPM10
+// ============================================================================
+// Tabel breakpoint PM10 (µg/m³) → ISPU:
+//
+//   ISPU          Konsentrasi (µg/m³)
+//   ─────         ───────────────────
+//     0 –  50        0 –  50
+//    51 – 100       51 – 150
+//   101 – 200      151 – 350
+//   201 – 300      351 – 420
+//   301 – 500      421 – 500
+//
+// CATATAN: seluruh test di bagian ini fokus pada BOUNDARY karena breakpoint
+// PM10 bersinggungan tepat di integer (0/50/51/150/…). Rumus interpolasi
+// sudah divalidasi lengkap di BAGIAN 1, jadi di sini cukup memastikan setiap
+// batas segmen jatuh di ISPU yang benar.
+// ============================================================================
+describe('calculateISPUFromPM10 — konversi PM10 (µg/m³) → ISPU', () => {
 
-  test('PM10 = 50 → ISPU tepat 50', () => {
+  test('PM10 = 50 → ISPU 50 (batas atas segmen Baik)', () => {
     assert.strictEqual(calculateISPUFromPM10(50), 50);
   });
 
-  test('PM10 = 51 → ISPU tepat 51', () => {
+  test('PM10 = 51 → ISPU 51 (batas bawah segmen Sedang)', () => {
     assert.strictEqual(calculateISPUFromPM10(51), 51);
   });
 
-  test('PM10 = 150 → ISPU tepat 100', () => {
+  test('PM10 = 150 → ISPU 100 (batas atas segmen Sedang)', () => {
     assert.strictEqual(calculateISPUFromPM10(150), 100);
   });
 
-  test('PM10 = 350 → ISPU tepat 200', () => {
+  test('PM10 = 350 → ISPU 200 (batas atas segmen Tidak Sehat)', () => {
     assert.strictEqual(calculateISPUFromPM10(350), 200);
   });
 
-  test('PM10 = 420 → ISPU tepat 300', () => {
+  test('PM10 = 420 → ISPU 300 (batas atas segmen Sangat Tidak Sehat)', () => {
     assert.strictEqual(calculateISPUFromPM10(420), 300);
   });
 });
 
 
-describe('calculateAQI (MAX of PM2.5 & PM10)', () => {
+// ============================================================================
+// BAGIAN 3 — calculateAQI
+// ============================================================================
+// AQI = MAX(ISPU_PM25, ISPU_PM10, ISPU_CO).
+//
+// `dominant` = parameter penyumbang nilai MAX.
+//
+// ATURAN TIE (nilai ISPU sama di beberapa parameter):
+//   Urutan pengecekan di implementasi adalah CO → PM2.5 → PM10.
+//   Konsekuensi:
+//     • CO tie dengan parameter lain   → CO menang
+//     • PM2.5 tie dengan PM10          → PM2.5 menang
+//
+// Skenario yang diuji:
+//   1. Masing-masing parameter menjadi dominan (PM10, PM2.5, CO)
+//   2. Tie 2 arah & tie 3 arah
+//   3. Konsistensi category/label mengikuti nilai MAX
+// ============================================================================
+describe('calculateAQI — AQI = MAX(ISPU PM2.5, ISPU PM10, ISPU CO)', () => {
 
-  test('PM10 dominan (PM2.5 kecil)', () => {
+  // ── Skenario 1: parameter dominan ────────────────────────────────────────
+
+  test('PM10 dominan: PM2.5=20, PM10=60 → AQI 55, dominant "pm10"', () => {
+    // PM2.5: (50/55) × 20                  = 18
+    // PM10 : (49/99) × (60−51) + 51        = 55.45 → 55
+    // CO   : 0                              = 0
+    // MAX(18, 55, 0) = 55 → PM10 dominan
     const r = calculateAQI(20, 60);
-    // PM2.5: (50/55)×20 = 18; PM10: (49/99)×(60-51)+51 = 55.45 → 55
-    // MAX(18, 55) = 55, dominant pm10
     assert.strictEqual(r.aqi, 55);
     assert.strictEqual(r.dominant, 'pm10');
     assert.strictEqual(r.ispuPM25, 18);
     assert.strictEqual(r.ispuPM10, 55);
   });
 
-  test('PM2.5 dominan', () => {
+  test('PM2.5 dominan: PM2.5=100, PM10=30 → AQI 74, dominant "pm25"', () => {
+    // PM2.5: (49/94) × (100−56) + 51       = 73.93 → 74
+    // PM10 : (50/50) × 30                  = 30
+    // CO   : 0                              = 0
+    // MAX(74, 30, 0) = 74 → PM2.5 dominan
     const r = calculateAQI(100, 30);
-    // PM2.5: (49/94)×(100-56)+51 = 73.93 → 74; PM10: (50/50)×30 = 30
-    // MAX(74, 30) = 74, dominant pm25
     assert.strictEqual(r.aqi, 74);
     assert.strictEqual(r.dominant, 'pm25');
   });
 
-  test('Tie → dominant pm25 (default)', () => {
-    const r = calculateAQI(50, 50);
-    // PM2.5: (50/55)×50 = 45; PM10: (50/50)×50 = 50
-    // Tidak tie. Coba lain:
-    const r2 = calculateAQI(0, 0);
-    assert.strictEqual(r2.aqi, 0);
-    assert.strictEqual(r2.dominant, 'pm25'); // tie → PM2.5 dipilih
+  test('CO dominan: PM2.5=10, PM10=20, CO=20000 → AQI 234, dominant "co"', () => {
+    // PM2.5: (50/55) × 10                  ≈ 9
+    // PM10 : (50/50) × 20                  = 20
+    // CO   : segmen 15001–30000 µg/m³      → (99/14999) × (20000−15001) + 201 ≈ 234
+    // MAX(9, 20, 234) = 234 → CO dominan
+    const r = calculateAQI(10, 20, 20000);
+    assert.strictEqual(r.aqi, 234);
+    assert.strictEqual(r.dominant, 'co');
+    assert.ok(r.ispuCO > r.ispuPM25);
+    assert.ok(r.ispuCO > r.ispuPM10);
   });
 
-  test('Kategori ikut hasil MAX', () => {
+  // ── Skenario 2: tie (nilai ISPU sama antar parameter) ────────────────────
+
+  test('Tie PM2.5 vs PM10, CO rendah → dominant "pm25"', () => {
+    // PM2.5 = 30 → ISPU (50/55) × 30 ≈ 27
+    // PM10  = 27 → ISPU (50/50) × 27 = 27
+    // CO    =  0 → ISPU = 0 (tidak ikut tie)
+    // Tie PM2.5 vs PM10 → PM2.5 menang (dicek lebih dulu)
+    const r = calculateAQI(30, 27, 0);
+    assert.strictEqual(r.ispuPM25, r.ispuPM10);
+    assert.ok(r.ispuPM25 > r.ispuCO);
+    assert.strictEqual(r.dominant, 'pm25');
+  });
+
+  test('Tie 3 arah (semua ISPU = 0) → dominant "co"', () => {
+    // PM2.5 = 0, PM10 = 0, CO = 0 → semua ISPU = 0
+    // Tie 3 arah → CO menang (dicek lebih dulu)
+    const r = calculateAQI(0, 0, 0);
+    assert.strictEqual(r.aqi, 0);
+    assert.strictEqual(r.ispuPM25, 0);
+    assert.strictEqual(r.ispuPM10, 0);
+    assert.strictEqual(r.ispuCO, 0);
+    assert.strictEqual(r.dominant, 'co');
+  });
+
+  // ── Skenario 3: konsistensi category & label ─────────────────────────────
+
+  test('Kategori mengikuti nilai MAX: AQI 55 → category "sedang", label "Sedang"', () => {
     const r = calculateAQI(20, 60);
-    assert.strictEqual(r.category, 'sedang'); // AQI 55 masuk 51-100
+    assert.strictEqual(r.category, 'sedang');
     assert.strictEqual(r.label, 'Sedang');
   });
 
-  test('Kedua nilai 0 → AQI 0, kategori baik', () => {
+  test('Semua input nol → AQI 0, category "baik"', () => {
     const r = calculateAQI(0, 0);
     assert.strictEqual(r.aqi, 0);
     assert.strictEqual(r.category, 'baik');
   });
 
-  test('Kedua nilai sangat tinggi → AQI 500', () => {
+  test('Input sangat tinggi (600, 600) → AQI 500 (clamped), category "berbahaya"', () => {
     const r = calculateAQI(600, 600);
     assert.strictEqual(r.aqi, 500);
     assert.strictEqual(r.category, 'berbahaya');
@@ -3616,41 +3775,64 @@ describe('calculateAQI (MAX of PM2.5 & PM10)', () => {
 });
 
 
-describe('getAQICategory (batas PP 22/2021)', () => {
+// ============================================================================
+// BAGIAN 4 — getAQICategory
+// ============================================================================
+// Memastikan nilai AQI jatuh ke kategori yang benar tepat di batas:
+//
+//   Batas 50/51   : Baik             ↔ Sedang
+//   Batas 100/101 : Sedang           ↔ Tidak Sehat
+//   Batas 200/201 : Tidak Sehat      ↔ Sangat Tidak Sehat
+//   Batas 300/301 : Sangat Tidak Sehat ↔ Berbahaya
+//
+// Pola pengujian: setiap transisi diuji dengan SEPASANG test — nilai tepat
+// di batas atas kategori lama (n), dan n+1 untuk memastikan "naik kelas".
+// ============================================================================
+describe('getAQICategory — batas kategori sesuai PP 22/2021', () => {
 
-  test('50 → baik (batas atas baik)', () => {
+  // ── Baik ↔ Sedang (batas 50/51) ──────────────────────────────────────────
+
+  test('AQI = 50 → category "baik" (batas atas)', () => {
     assert.strictEqual(getAQICategory(50).category, 'baik');
   });
 
-  test('51 → sedang (batas bawah sedang)', () => {
+  test('AQI = 51 → category "sedang" (batas bawah)', () => {
     assert.strictEqual(getAQICategory(51).category, 'sedang');
   });
 
-  test('100 → sedang', () => {
+  // ── Sedang ↔ Tidak Sehat (batas 100/101) ─────────────────────────────────
+
+  test('AQI = 100 → category "sedang" (batas atas)', () => {
     assert.strictEqual(getAQICategory(100).category, 'sedang');
   });
 
-  test('101 → tidak_sehat', () => {
+  test('AQI = 101 → category "tidak_sehat" (batas bawah)', () => {
     assert.strictEqual(getAQICategory(101).category, 'tidak_sehat');
   });
 
-  test('200 → tidak_sehat (batas atas)', () => {
+  // ── Tidak Sehat ↔ Sangat Tidak Sehat (batas 200/201) ─────────────────────
+
+  test('AQI = 200 → category "tidak_sehat" (batas atas)', () => {
     assert.strictEqual(getAQICategory(200).category, 'tidak_sehat');
   });
 
-  test('201 → sangat_tidak_sehat', () => {
+  test('AQI = 201 → category "sangat_tidak_sehat" (batas bawah)', () => {
     assert.strictEqual(getAQICategory(201).category, 'sangat_tidak_sehat');
   });
 
-  test('300 → sangat_tidak_sehat (batas atas)', () => {
+  // ── Sangat Tidak Sehat ↔ Berbahaya (batas 300/301) ───────────────────────
+
+  test('AQI = 300 → category "sangat_tidak_sehat" (batas atas)', () => {
     assert.strictEqual(getAQICategory(300).category, 'sangat_tidak_sehat');
   });
 
-  test('301 → berbahaya', () => {
+  test('AQI = 301 → category "berbahaya" (batas bawah)', () => {
     assert.strictEqual(getAQICategory(301).category, 'berbahaya');
   });
 
-  test('500 → berbahaya', () => {
+  // ── Batas atas global (500) ──────────────────────────────────────────────
+
+  test('AQI = 500 → category "berbahaya" (batas atas skala)', () => {
     assert.strictEqual(getAQICategory(500).category, 'berbahaya');
   });
 });
@@ -4581,8 +4763,8 @@ mongoose.connect(process.env.MONGODB_URI)
     iotService.start(io);
 
     console.log('✅ All services started');
-    console.log('   - Simulation Service: ACTIVE (10 second intervals)');
-    console.log('   - IoT Service: ACTIVE (10 second intervals)');
+    console.log('   - Simulation Service: ACTIVE (30 second intervals)');
+    console.log('   - IoT Service: ACTIVE (30 second intervals) \n');
   })
   .catch((err) => {
     console.error('❌ MongoDB connection error:', err.message);
@@ -24594,48 +24776,48 @@ const calculateISPUFromPM10 = (pm10) => calculateISPU(pm10, PM10_BREAKPOINTS);
 
 // ============================================================
 // Time-based ranges
-// Nilai CO disesuaikan dengan skala ISPU (µg/m³) 
+// Nilai CO disesuaikan dengan skala ISPU (µg/m³)
 // ============================================================
 const TIME_RANGES = {
   '06-08': {
     pm25:        { min: 8,  max: 20, mean: 14  },
     pm10:        { min: 15, max: 40, mean: 25  },
-    co:          { min: 500, max: 2000, mean: 1000 }, // Diubah dari co2
+    co:          { min: 500, max: 2000, mean: 1000 },
     temperature: { min: 22, max: 26, mean: 24  },
     humidity:    { min: 65, max: 85, mean: 75  },
   },
   '08-12': {
     pm25:        { min: 15, max: 40, mean: 27  },
     pm10:        { min: 25, max: 80, mean: 50  },
-    co:          { min: 1000, max: 4000, mean: 2500 }, // Diubah dari co2
+    co:          { min: 1000, max: 4000, mean: 2500 },
     temperature: { min: 24, max: 29, mean: 26  },
     humidity:    { min: 55, max: 75, mean: 65  },
   },
   '12-16': {
     pm25:        { min: 18, max: 45, mean: 30  },
     pm10:        { min: 30, max: 90, mean: 55  },
-    co:          { min: 1500, max: 6000, mean: 3500 }, // Diubah dari co2
+    co:          { min: 1500, max: 6000, mean: 3500 },
     temperature: { min: 26, max: 32, mean: 29  },
     humidity:    { min: 50, max: 70, mean: 60  },
   },
   '16-18': {
     pm25:        { min: 12, max: 32, mean: 22  },
     pm10:        { min: 20, max: 65, mean: 40  },
-    co:          { min: 1000, max: 4500, mean: 2500 }, // Diubah dari co2
+    co:          { min: 1000, max: 4500, mean: 2500 },
     temperature: { min: 25, max: 30, mean: 27  },
     humidity:    { min: 55, max: 75, mean: 65  },
   },
   '18-20': {
     pm25:        { min: 10, max: 25, mean: 17  },
     pm10:        { min: 18, max: 50, mean: 32  },
-    co:          { min: 600, max: 2500, mean: 1200 }, // Diubah dari co2
+    co:          { min: 600, max: 2500, mean: 1200 },
     temperature: { min: 24, max: 28, mean: 26  },
     humidity:    { min: 60, max: 80, mean: 70  },
   },
   '20-06': {
     pm25:        { min: 5,  max: 15, mean: 9   },
     pm10:        { min: 10, max: 30, mean: 18  },
-    co:          { min: 300, max: 1500, mean: 800 }, // Diubah dari co2
+    co:          { min: 300, max: 1500, mean: 800 },
     temperature: { min: 22, max: 26, mean: 24  },
     humidity:    { min: 70, max: 90, mean: 80  },
   },
@@ -24707,11 +24889,11 @@ function applyAnomaly(pm25, pm10, co, temperature, humidity) {
   };
 }
 
-// Helper: Generate data per 10 detik
-function generate10SecondBasedData(deviceId) {
+// Helper: Generate data per 30 detik
+function generate30SecondBasedData(deviceId) {
   const now = new Date();
   const currentSecond = Math.floor(now.getTime() / 1000);
-  const current10SecondBlock = Math.floor(currentSecond / 10);
+  const current30SecondBlock = Math.floor(currentSecond / 30);
   const hour = now.getHours();
   const minute = now.getMinutes();
   const second = now.getSeconds();
@@ -24722,7 +24904,7 @@ function generate10SecondBasedData(deviceId) {
     deviceStates.set(deviceId, {
       roomType: hash % 4,
       prevValues: null,
-      last10SecondBlock: current10SecondBlock - 1,
+      last30SecondBlock: current30SecondBlock - 1,
       updateCounter: 0,
     });
     console.log(`📊 Init device ${deviceId}:`, {
@@ -24732,10 +24914,10 @@ function generate10SecondBasedData(deviceId) {
 
   const state = deviceStates.get(deviceId);
 
-  // Cache 10 detik
+  // Cache 30 detik
   if (secondDataCache.has(deviceId)) {
     const cached = secondDataCache.get(deviceId);
-    if (cached.block10 === current10SecondBlock) {
+    if (cached.block30 === current30SecondBlock) {
       return cached.data;
     }
   }
@@ -24745,27 +24927,27 @@ function generate10SecondBasedData(deviceId) {
 
   const rawPm25 = randomInRange(r.pm25.min, r.pm25.max, r.pm25.mean);
   const rawPm10 = randomInRange(r.pm10.min, r.pm10.max, r.pm10.mean);
-  const rawCo   = randomInRange(r.co.min,  r.co.max,  r.co.mean); // Diubah dari rawCo2
+  const rawCo   = randomInRange(r.co.min,  r.co.max,  r.co.mean);
   const rawTemp = randomInRange(r.temperature.min, r.temperature.max, r.temperature.mean);
   const rawRh   = randomInRange(r.humidity.min,    r.humidity.max,    r.humidity.mean);
 
   const alpha = 0.4;
   const prev = state.prevValues || {
-    pm25: rawPm25, pm10: rawPm10, co: rawCo, // Diubah dari co2
+    pm25: rawPm25, pm10: rawPm10, co: rawCo,
     temperature: rawTemp, humidity: rawRh,
   };
   const pm25 = prev.pm25 * (1 - alpha) + rawPm25 * alpha;
   const pm10 = prev.pm10 * (1 - alpha) + rawPm10 * alpha;
-  const co   = prev.co  * (1 - alpha) + rawCo  * alpha; // Diubah dari co2
+  const co   = prev.co  * (1 - alpha) + rawCo  * alpha;
   const temperature = prev.temperature * (1 - alpha) + rawTemp * alpha;
   const humidity    = prev.humidity    * (1 - alpha) + rawRh   * alpha;
 
   // Update state (JANGAN feed anomali ke state — supaya spike transien 1 tick)
-  state.prevValues = { pm25, pm10, co, temperature, humidity }; // Diubah dari co2
+  state.prevValues = { pm25, pm10, co, temperature, humidity };
   state.updateCounter++;
-  state.last10SecondBlock = current10SecondBlock;
+  state.last30SecondBlock = current30SecondBlock;
 
-  const anomalous = applyAnomaly(pm25, pm10, co, temperature, humidity); // Diubah dari co2
+  const anomalous = applyAnomaly(pm25, pm10, co, temperature, humidity);
 
   // Hitung AQI
   let finalAQI, finalCategory;
@@ -24787,13 +24969,13 @@ function generate10SecondBasedData(deviceId) {
   const sensorData = {
     deviceId,
     timestamp: now.toISOString(),
-    block10: current10SecondBlock,
-    secondsInBlock: second % 10,
+    block30: current30SecondBlock,
+    secondsInBlock: second % 30,
     updateCounter: state.updateCounter,
     aqi: finalAQI,
     pm25: parseFloat(anomalous.pm25.toFixed(1)),
     pm10: parseFloat(anomalous.pm10.toFixed(1)),
-    co: Math.round(anomalous.co), // Diubah dari co2
+    co: Math.round(anomalous.co),
     temperature: parseFloat(anomalous.temperature.toFixed(1)),
     humidity: Math.round(anomalous.humidity),
     category: finalCategory,
@@ -24805,7 +24987,7 @@ function generate10SecondBasedData(deviceId) {
   };
 
   secondDataCache.set(deviceId, {
-    block10: current10SecondBlock,
+    block30: current30SecondBlock,
     data: sensorData,
     timestamp: now,
   });
@@ -24826,10 +25008,10 @@ function generate10SecondBasedData(deviceId) {
 // Clean old cache setiap 30 detik
 setInterval(() => {
   const now = Date.now();
-  const currentBlock = Math.floor(now / (10 * 1000));
+  const currentBlock = Math.floor(now / (30 * 1000));
 
   for (const [deviceId, cache] of secondDataCache.entries()) {
-    if (cache.block10 < currentBlock - 3) {
+    if (cache.block30 < currentBlock - 3) {
       secondDataCache.delete(deviceId);
     }
   }
@@ -24882,21 +25064,21 @@ const server = http.createServer((req, res) => {
       if (pathname === '/health' && method === 'GET') {
         const now = new Date();
         const currentSecond = Math.floor(Date.now() / 1000);
-        const current10SecondBlock = Math.floor(currentSecond / 10);
-        const nextChangeInSeconds = 10 - (now.getSeconds() % 10);
+        const current30SecondBlock = Math.floor(currentSecond / 30);
+        const nextChangeInSeconds = 30 - (now.getSeconds() % 30);
 
         sendJson(res, 200, {
           status: 'ok',
-          service: 'UNILA AQI IoT Simulator - 10 SECOND UPDATES',
-          version: '5.0.0',
+          service: 'UNILA AQI IoT Simulator - 30 SECOND UPDATES',
+          version: '6.0.0',
           currentTime: now.toISOString(),
-          current10SecondBlock,
-          secondsInCurrentBlock: now.getSeconds() % 10,
+          current30SecondBlock,
+          secondsInCurrentBlock: now.getSeconds() % 30,
           nextUpdateIn: nextChangeInSeconds,
           devices: registeredDevices.size,
           cacheSize: secondDataCache.size,
           features: [
-            '10-second updates',
+            '30-second updates',
             'Predictable patterns',
             'Anomaly simulation (5% spike, 3% error)',
             'Room type variations',
@@ -24926,7 +25108,7 @@ const server = http.createServer((req, res) => {
           registeredAt: new Date(),
           lastSeen: new Date(),
           status: 'active',
-          updatePattern: '10-second-based'
+          updatePattern: '30-second-based'
         });
 
         console.log(`✅ Device registered: ${deviceId}`);
@@ -24958,7 +25140,7 @@ const server = http.createServer((req, res) => {
             registeredAt: new Date(),
             lastSeen: new Date(),
             status: 'active',
-            updatePattern: '10-second-based-auto'
+            updatePattern: '30-second-based-auto'
           });
 
           console.log(`✅ Auto-registered: ${deviceId}`);
@@ -24968,20 +25150,20 @@ const server = http.createServer((req, res) => {
           registeredDevices.set(deviceId, device);
         }
 
-        const sensorData = generate10SecondBasedData(deviceId);
+        const sensorData = generate30SecondBasedData(deviceId);
 
         const now = new Date();
-        const secondsRemaining = 10 - (now.getSeconds() % 10);
+        const secondsRemaining = 30 - (now.getSeconds() % 30);
 
         const response = {
           success: true,
-          message: 'Sensor data (updates every 10 seconds)',
+          message: 'Sensor data (updates every 30 seconds)',
           device: registeredDevices.get(deviceId),
           data: sensorData,
           metadata: {
-            source: 'UNILA AQI IoT Simulator - 10 SECOND UPDATES',
-            updateFrequency: 'Every 10 seconds',
-            currentBlock: sensorData.block10,
+            source: 'UNILA AQI IoT Simulator - 30 SECOND UPDATES',
+            updateFrequency: 'Every 30 seconds',
+            currentBlock: sensorData.block30,
             secondsInCurrentBlock: sensorData.secondsInBlock,
             nextUpdateInSeconds: secondsRemaining,
             isAnomaly: sensorData.isAnomaly,
@@ -24989,7 +25171,7 @@ const server = http.createServer((req, res) => {
             units: {
               pm25: 'μg/m³',
               pm10: 'μg/m³',
-              co: 'μg/m³', // Diubah dari co2: 'ppm'
+              co: 'μg/m³',
               temperature: '°C',
               humidity: '%'
             }
@@ -25016,8 +25198,8 @@ const server = http.createServer((req, res) => {
         const lastSeen = new Date(deviceInfo.lastSeen);
         const secondsSinceLastSeen = (now - lastSeen) / 1000;
         const currentSecond = Math.floor(now.getTime() / 1000);
-        const current10SecondBlock = Math.floor(currentSecond / 10);
-        const secondsRemaining = 10 - (now.getSeconds() % 10);
+        const current30SecondBlock = Math.floor(currentSecond / 30);
+        const secondsRemaining = 30 - (now.getSeconds() % 30);
 
         const state = deviceStates.get(deviceId);
         const cache = secondDataCache.get(deviceId);
@@ -25029,11 +25211,11 @@ const server = http.createServer((req, res) => {
             online: secondsSinceLastSeen < 120,
             lastSeen: deviceInfo.lastSeen,
             secondsSinceLastSeen: Math.round(secondsSinceLastSeen),
-            current10SecondBlock,
-            secondsInCurrentBlock: now.getSeconds() % 10,
+            current30SecondBlock,
+            secondsInCurrentBlock: now.getSeconds() % 30,
             nextUpdateInSeconds: secondsRemaining,
             hasCachedData: !!cache,
-            cachedBlock: cache ? cache.block10 : null,
+            cachedBlock: cache ? cache.block30 : null,
             stateInfo: state ? {
               roomType: ['Kelas', 'Laboratorium', 'Perpustakaan', 'Aula'][state.roomType],
               updateCounter: state.updateCounter,
@@ -25054,7 +25236,7 @@ const server = http.createServer((req, res) => {
 
         if (deviceStates.has(deviceId)) {
           const state = deviceStates.get(deviceId);
-          state.last10SecondBlock = -1;
+          state.last30SecondBlock = -1;
         }
 
         console.log(`🔄 Force update triggered for ${deviceId}`);
@@ -25063,14 +25245,14 @@ const server = http.createServer((req, res) => {
           success: true,
           message: 'Force update triggered',
           deviceId,
-          note: 'Next request will generate new 10-second-based data'
+          note: 'Next request will generate new 30-second-based data'
         });
         return;
       }
 
       if (pathname.startsWith('/set-base/') && method === 'POST') {
         const deviceId = pathname.split('/')[2];
-        const { pm25, pm10, co, temperature, humidity, roomType } = requestData; // Diubah dari co2
+        const { pm25, pm10, co, temperature, humidity, roomType } = requestData;
 
         if (!deviceId) {
           return sendJson(res, 400, { success: false, message: 'Device ID is required' });
@@ -25078,9 +25260,9 @@ const server = http.createServer((req, res) => {
 
         if (!deviceStates.has(deviceId)) {
           deviceStates.set(deviceId, {
-            basePM25: 20, basePM10: 40, baseCO: 1500, // Diubah dari baseCO2
+            basePM25: 20, basePM10: 40, baseCO: 1500,
             baseTemp: 23, baseHumidity: 50, roomType: 0,
-            trendPM25: 0, trendCO: 0, last10SecondBlock: -1, updateCounter: 0
+            trendPM25: 0, trendCO: 0, last30SecondBlock: -1, updateCounter: 0
           });
         }
 
@@ -25088,7 +25270,7 @@ const server = http.createServer((req, res) => {
 
         if (pm25 !== undefined) state.basePM25 = pm25;
         if (pm10 !== undefined) state.basePM10 = pm10;
-        if (co !== undefined) state.baseCO = co; // Diubah dari baseCO2
+        if (co !== undefined) state.baseCO = co;
         if (temperature !== undefined) state.baseTemp = temperature;
         if (humidity !== undefined) state.baseHumidity = humidity;
         if (roomType !== undefined) {
@@ -25107,7 +25289,7 @@ const server = http.createServer((req, res) => {
           values: {
             basePM25: state.basePM25,
             basePM10: state.basePM10,
-            baseCO: state.baseCO, // Diubah dari baseCO2
+            baseCO: state.baseCO,
             baseTemp: state.baseTemp,
             baseHumidity: state.baseHumidity,
             roomType: ['Kelas', 'Laboratorium', 'Perpustakaan', 'Aula'][state.roomType]
@@ -25126,7 +25308,7 @@ const server = http.createServer((req, res) => {
 
         const now = new Date();
         const currentSecond = Math.floor(now.getTime() / 1000);
-        const currentBlock = Math.floor(currentSecond / 10);
+        const currentBlock = Math.floor(currentSecond / 30);
         const history = [];
 
         if (deviceStates.has(deviceId)) {
@@ -25134,7 +25316,7 @@ const server = http.createServer((req, res) => {
 
           for (let i = blocks; i >= 0; i--) {
             const historyBlock = currentBlock - i;
-            const historyTime = new Date(now.getTime() - (i * 10 * 1000));
+            const historyTime = new Date(now.getTime() - (i * 30 * 1000));
 
             const updateOffset = state.updateCounter - i;
             const hour = historyTime.getHours();
@@ -25145,7 +25327,7 @@ const server = http.createServer((req, res) => {
 
             const pm25 = state.basePM25 * timeFactor * (1 + Math.sin(updateOffset * 0.2) * 0.2);
             const pm10 = pm25 * 2;
-            const co = state.baseCO * timeFactor; // Diubah dari baseCO2
+            const co = state.baseCO * timeFactor;
 
             let aqi;
             if (pm25 <= 12.0) aqi = Math.round((pm25 / 12.0) * 50);
@@ -25158,7 +25340,7 @@ const server = http.createServer((req, res) => {
               aqi: Math.min(500, aqi),
               pm25: parseFloat(pm25.toFixed(1)),
               pm10: parseFloat(pm10.toFixed(1)),
-              co: Math.round(co), // Diubah dari co2
+              co: Math.round(co),
               temperature: state.baseTemp + Math.sin(hour * 0.2618 + minute * 0.00436) * 3,
               humidity: state.baseHumidity + Math.cos(hour * 0.2618 + minute * 0.00436) * 10
             });
@@ -25168,7 +25350,7 @@ const server = http.createServer((req, res) => {
         sendJson(res, 200, {
           success: true,
           deviceId,
-          period: `${blocks * 10} seconds (${blocks} blocks)`,
+          period: `${blocks * 30} seconds (${blocks} blocks)`,
           currentBlock,
           count: history.length,
           data: history
@@ -25180,8 +25362,8 @@ const server = http.createServer((req, res) => {
         const devices = Array.from(registeredDevices.values());
         const now = new Date();
         const currentSecond = Math.floor(now.getTime() / 1000);
-        const currentBlock = Math.floor(currentSecond / 10);
-        const secondsRemaining = 10 - (now.getSeconds() % 10);
+        const currentBlock = Math.floor(currentSecond / 30);
+        const secondsRemaining = 30 - (now.getSeconds() % 30);
 
         const devicesWithInfo = devices.map(device => {
           const lastSeen = new Date(device.lastSeen);
@@ -25197,7 +25379,7 @@ const server = http.createServer((req, res) => {
             hasState: !!state,
             updateCounter: state ? state.updateCounter : 0,
             cachedData: !!cache,
-            cachedAtBlock: cache ? cache.block10 : null,
+            cachedAtBlock: cache ? cache.block30 : null,
             currentBlock,
             nextUpdateIn: secondsRemaining
           };
@@ -25207,7 +25389,7 @@ const server = http.createServer((req, res) => {
           success: true,
           currentBlock,
           currentTime: now.toISOString(),
-          secondsInCurrentBlock: now.getSeconds() % 10,
+          secondsInCurrentBlock: now.getSeconds() % 30,
           nextUpdateInSeconds: secondsRemaining,
           totalDevices: devices.length,
           onlineDevices: devicesWithInfo.filter(d => d.status === 'online').length,
@@ -25237,21 +25419,21 @@ const PORT = process.env.IOT_PORT || 3002;
 const HOST = process.env.IOT_HOST || 'localhost';
 
 server.listen(PORT, HOST, () => {
-  console.log('🚀 UNILA AQI IoT Simulator - 10 SECOND UPDATES');
+  console.log('🚀 UNILA AQI IoT Simulator - 30 SECOND UPDATES');
   console.log(`📍 URL: http://${HOST}:${PORT}`);
   console.log(`📡 Health Check: http://${HOST}:${PORT}/health`);
 
   console.log('\n⏰ FEATURE HIGHLIGHTS:');
-  console.log('   ✅ Data BERUBAH SETIAP 10 DETIK');
+  console.log('   ✅ Data BERUBAH SETIAP 30 DETIK');
   console.log('   ✅ Pola berdasarkan waktu (jam, hari)');
   console.log('   ✅ ANOMALY: 5% spike (8-17x), 3% sensor error');
-  console.log('   ✅ Cache per 10 detik');
+  console.log('   ✅ Cache per 30 detik');
   console.log('   ✅ Room type variations');
   console.log('   ✅ EMA smoothing (alpha=0.4)');
 
   console.log('\n💡 Contoh untuk Aplikasi AQI:');
   console.log(`  Endpoint: http://${HOST}:${PORT}/data/kelas-h101`);
-  console.log(`  Data akan berubah setiap 10 detik`);
+  console.log(`  Data akan berubah setiap 30 detik`);
   console.log(`  Sekitar 5% request akan menghasilkan AQI 100-500 (spike)`);
   console.log(`  Sekitar 3% request akan menghasilkan AQI=-1 (sensor error)`);
 });
