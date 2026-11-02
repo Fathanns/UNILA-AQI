@@ -127,6 +127,42 @@ class IoTService {
     }
   }
 
+  async checkDeviceStatus(devices) {
+    if (!devices || devices.length === 0) return [];
+
+    const results = await Promise.allSettled(
+      devices.map(async (device) => {
+        try {
+          await axios.get(device.apiEndpoint, { timeout: 3000 });
+          return { id: device._id.toString(), status: 'online' };
+        } catch (_) {
+          return { id: device._id.toString(), status: 'offline' };
+        }
+      })
+    );
+
+    const updates = results
+      .filter((r) => r.status === 'fulfilled' && r.value)
+      .map((r) => r.value);
+
+    if (updates.length > 0) {
+      const bulkOps = updates.map((u) => ({
+        updateOne: {
+          filter: { _id: u.id },
+          update: { $set: { status: u.status } },
+        },
+      }));
+
+      try {
+        await IoTDevice.bulkWrite(bulkOps);
+      } catch (bulkErr) {
+        console.error('❌ bulkWrite status check failed:', bulkErr.message);
+      }
+    }
+
+    return updates;
+  }
+
   isValidIoTData(data) {
     return data &&
            typeof data.aqi === 'number' &&

@@ -60,7 +60,7 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
     });
 
     try {
-      final devices = await _deviceRepository.getDevices();
+      final devices = await _deviceRepository.getDevices(live: true);
       if (!mounted) return;
 
       setState(() {
@@ -754,21 +754,6 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
                       .toList(),
                 ),
               ),
-            if (_filteredDevices.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Center(
-                  child: Text(
-                    'Total: ${_filteredDevices.length} device',
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: AppColors.textHint,
-                      fontFamily: 'Inter',
-                    ),
-                  ),
-                ),
-              ),
-            const SizedBox(height: 16),
           ],
         ),
       ),

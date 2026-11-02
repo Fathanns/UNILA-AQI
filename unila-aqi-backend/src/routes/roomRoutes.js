@@ -335,7 +335,7 @@ router.post('/', authMiddleware, adminMiddleware, async (req, res) => {
     if (existingRoom) {
       return res.status(400).json({
         success: false,
-        message: 'Room name already exists in this building'
+        message: 'Nama ruangan sudah ada di gedung ini, silahkan ganti nama atau pilih gedung lain'
       });
     }
 
@@ -448,7 +448,7 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
       if (existingRoom) {
         return res.status(400).json({
           success: false,
-          message: 'Room name already exists in this building'
+          message: 'Nama ruangan sudah ada di gedung ini, silahkan ganti nama atau pilih gedung lain'
         });
       }
     }

@@ -968,21 +968,6 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
                       _filteredRooms.map(_buildRoomCard).toList(),
                 ),
               ),
-            if (_filteredRooms.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Center(
-                  child: Text(
-                    'Total: ${_filteredRooms.length} ruangan',
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: AppColors.textHint,
-                      fontFamily: 'Inter',
-                    ),
-                  ),
-                ),
-              ),
-            const SizedBox(height: 16),
           ],
         ),
       ),

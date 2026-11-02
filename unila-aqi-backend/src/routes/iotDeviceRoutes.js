@@ -6,7 +6,24 @@ const { authMiddleware, adminMiddleware } = require('../middleware/authMiddlewar
 // GET all IoT devices
 router.get('/', authMiddleware, async (req, res) => {
   try {
-    const devices = await IoTDevice.find().sort({ name: 1 });
+    const live = req.query.live === 'true';
+
+    let devices = await IoTDevice.find().sort({ name: 1 });
+
+    // ✅ Bila ?live=true → lakukan quick-check status online/offline
+    // sebelum mengembalikan data, sehingga status di frontend selalu fresh.
+    if (live && devices.length > 0) {
+      try {
+        const iotService = require('../services/iotService');
+        await iotService.checkDeviceStatus(devices);
+
+        // Re-fetch untuk dapat status yang sudah di-update
+        devices = await IoTDevice.find().sort({ name: 1 });
+      } catch (checkErr) {
+        console.warn('⚠️ Live status check failed:', checkErr.message);
+        // Tetap lanjut dengan data cached bila check gagal
+      }
+    }
 
     res.json({
       success: true,
@@ -79,7 +96,7 @@ router.post('/', authMiddleware, adminMiddleware, async (req, res) => {
     if (existingDevice) {
       return res.status(400).json({
         success: false,
-        message: 'Device name already exists'
+        message: 'Nama Device ini sudah ada, silahkan ganti nama lain'
       });
     }
 
@@ -142,7 +159,7 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
       if (existingDevice) {
         return res.status(400).json({
           success: false,
-          message: 'Device name already exists'
+          message: 'Nama Device ini sudah ada, silahkan ganti nama lain'
         });
       }
     }

@@ -1315,7 +1315,24 @@ const { authMiddleware, adminMiddleware } = require('../middleware/authMiddlewar
 // GET all IoT devices
 router.get('/', authMiddleware, async (req, res) => {
   try {
-    const devices = await IoTDevice.find().sort({ name: 1 });
+    const live = req.query.live === 'true';
+
+    let devices = await IoTDevice.find().sort({ name: 1 });
+
+    // ✅ Bila ?live=true → lakukan quick-check status online/offline
+    // sebelum mengembalikan data, sehingga status di frontend selalu fresh.
+    if (live && devices.length > 0) {
+      try {
+        const iotService = require('../services/iotService');
+        await iotService.checkDeviceStatus(devices);
+
+        // Re-fetch untuk dapat status yang sudah di-update
+        devices = await IoTDevice.find().sort({ name: 1 });
+      } catch (checkErr) {
+        console.warn('⚠️ Live status check failed:', checkErr.message);
+        // Tetap lanjut dengan data cached bila check gagal
+      }
+    }
 
     res.json({
       success: true,
@@ -1388,7 +1405,7 @@ router.post('/', authMiddleware, adminMiddleware, async (req, res) => {
     if (existingDevice) {
       return res.status(400).json({
         success: false,
-        message: 'Device name already exists'
+        message: 'Nama Device ini sudah ada, silahkan ganti nama lain'
       });
     }
 
@@ -1451,7 +1468,7 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
       if (existingDevice) {
         return res.status(400).json({
           success: false,
-          message: 'Device name already exists'
+          message: 'Nama Device ini sudah ada, silahkan ganti nama lain'
         });
       }
     }
@@ -1948,7 +1965,7 @@ router.post('/', authMiddleware, adminMiddleware, async (req, res) => {
     if (existingRoom) {
       return res.status(400).json({
         success: false,
-        message: 'Room name already exists in this building'
+        message: 'Nama ruangan sudah ada di gedung ini, silahkan ganti nama atau pilih gedung lain'
       });
     }
 
@@ -2061,7 +2078,7 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
       if (existingRoom) {
         return res.status(400).json({
           success: false,
-          message: 'Room name already exists in this building'
+          message: 'Nama ruangan sudah ada di gedung ini, silahkan ganti nama atau pilih gedung lain'
         });
       }
     }
@@ -2858,6 +2875,42 @@ class IoTService {
       console.log('└──────────────────────────────────────────────────────────────────────────────');
       return { success: false, error: error.message };
     }
+  }
+
+  async checkDeviceStatus(devices) {
+    if (!devices || devices.length === 0) return [];
+
+    const results = await Promise.allSettled(
+      devices.map(async (device) => {
+        try {
+          await axios.get(device.apiEndpoint, { timeout: 3000 });
+          return { id: device._id.toString(), status: 'online' };
+        } catch (_) {
+          return { id: device._id.toString(), status: 'offline' };
+        }
+      })
+    );
+
+    const updates = results
+      .filter((r) => r.status === 'fulfilled' && r.value)
+      .map((r) => r.value);
+
+    if (updates.length > 0) {
+      const bulkOps = updates.map((u) => ({
+        updateOne: {
+          filter: { _id: u.id },
+          update: { $set: { status: u.status } },
+        },
+      }));
+
+      try {
+        await IoTDevice.bulkWrite(bulkOps);
+      } catch (bulkErr) {
+        console.error('❌ bulkWrite status check failed:', bulkErr.message);
+      }
+    }
+
+    return updates;
   }
 
   isValidIoTData(data) {
@@ -13281,11 +13334,14 @@ class IoTDeviceRepository {
     return headers;
   }
 
-  Future<List<IoTDevice>> getDevices() async {
+  Future<List<IoTDevice>> getDevices({bool live = false}) async {
     try {
       final headers = await _getHeaders();
+      final url =
+          '${AppConstants.apiBaseUrl}/iot-devices${live ? '?live=true' : ''}';
+
       final response = await http.get(
-        Uri.parse('${AppConstants.apiBaseUrl}/iot-devices'),
+        Uri.parse(url),
         headers: headers,
       );
 
@@ -14653,7 +14709,7 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
     });
 
     try {
-      final devices = await _deviceRepository.getDevices();
+      final devices = await _deviceRepository.getDevices(live: true);
       if (!mounted) return;
 
       setState(() {
@@ -15347,21 +15403,6 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
                       .toList(),
                 ),
               ),
-            if (_filteredDevices.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Center(
-                  child: Text(
-                    'Total: ${_filteredDevices.length} device',
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: AppColors.textHint,
-                      fontFamily: 'Inter',
-                    ),
-                  ),
-                ),
-              ),
-            const SizedBox(height: 16),
           ],
         ),
       ),
@@ -16779,7 +16820,7 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
 }
 
 ---------------------------------------------------------------------------------------------------------------------------------------
-lib/presentation/pages/admin/room_management.dart:
+lib/presentation/pages/admin/room_management.dart
 
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -17751,21 +17792,6 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
                       _filteredRooms.map(_buildRoomCard).toList(),
                 ),
               ),
-            if (_filteredRooms.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Center(
-                  child: Text(
-                    'Total: ${_filteredRooms.length} ruangan',
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: AppColors.textHint,
-                      fontFamily: 'Inter',
-                    ),
-                  ),
-                ),
-              ),
-            const SizedBox(height: 16),
           ],
         ),
       ),

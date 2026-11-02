@@ -11,11 +11,18 @@
 
 - ~~perbaiki halmaman bantuan, perbaiki jadi lebih bagus~~
 
-- Perbaiki tampilan dan ui pada halaman kelola gedung, ruangan, dan device iot menjadi seragam dengan halaman profil admin
+- ~~Perbaiki tampilan dan ui pada halaman kelola gedung, ruangan, dan device iot menjadi seragam dengan halaman profil admin~~
 
-- perbaiki catch ketika ada nama ruangan yang sama di gedung yang sama
+- ~~perbaiki catch ketika ada nama ruangan yang sama di gedung yang sama~~
 
-- perbaiki responsif halaman device iot
+- ~~perbaiki responsif halaman device iot~~
+
+
+*FITUR*
+
+- lengkapi partikel ispu lainnya, dan buat jika tidak ada data json di field partikel yang diterima, dibuat catch nya
+- tambahkan daily data nya dalam sebulan: highest, rata-rata, lowest
+- tambahkan breakpoint co di informasi dan bantuan
 
 error
 - ~~error Ketika edit Gedung dan refresh di dashboard~~

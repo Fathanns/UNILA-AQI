@@ -26,11 +26,14 @@ class IoTDeviceRepository {
     return headers;
   }
 
-  Future<List<IoTDevice>> getDevices() async {
+  Future<List<IoTDevice>> getDevices({bool live = false}) async {
     try {
       final headers = await _getHeaders();
+      final url =
+          '${AppConstants.apiBaseUrl}/iot-devices${live ? '?live=true' : ''}';
+
       final response = await http.get(
-        Uri.parse('${AppConstants.apiBaseUrl}/iot-devices'),
+        Uri.parse(url),
         headers: headers,
       );
 
