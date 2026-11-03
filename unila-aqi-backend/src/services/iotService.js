@@ -163,53 +163,83 @@ class IoTService {
     return updates;
   }
 
-  isValidIoTData(data) {
-    return data &&
-           typeof data.aqi === 'number' &&
-           typeof data.pm25 === 'number' &&
-           typeof data.pm10 === 'number' &&
-           typeof data.co === 'number' &&
-           typeof data.temperature === 'number' &&
-           typeof data.humidity === 'number';
-  }
+    isValidIoTData(data) {
+    if (!data) return false;
 
-  _hasDataChanged(oldData, newData) {
-    if (!oldData || !newData) return true;
+    const required = ['aqi', 'pm25', 'pm10', 'co', 'temperature', 'humidity'];
+    if (!required.every((k) => typeof data[k] === 'number')) return false;
 
-    const thresholds = {
-      aqi: 0, pm25: 0, pm10: 0, co: 0, temperature: 0, humidity: 0
-    };
-
-    return (
-      Math.abs(newData.aqi - (oldData.aqi || 0)) > thresholds.aqi ||
-      Math.abs(newData.pm25 - (oldData.pm25 || 0)) > thresholds.pm25 ||
-      Math.abs(newData.pm10 - (oldData.pm10 || 0)) > thresholds.pm10 ||
-      Math.abs(newData.co - (oldData.co || 0)) > thresholds.co ||
-      Math.abs(newData.temperature - (oldData.temperature || 0)) > thresholds.temperature ||
-      Math.abs(newData.humidity - (oldData.humidity || 0)) > thresholds.humidity
+    const optional = ['so2', 'o3', 'no2'];
+    return optional.every(
+      (k) => data[k] === undefined || data[k] === null || typeof data[k] === 'number'
     );
   }
 
-  async updateRoomFromIoT(room, iotData, deviceName) {
+   _hasDataChanged(oldData, newData) {
+    if (!oldData || !newData) return true;
+
+    const changed = (oldV, newV) => {
+      if (oldV == null && newV == null) return false;
+      if (oldV == null || newV == null) return true;
+      return Math.abs(Number(newV) - Number(oldV)) > 0;
+    };
+
+    return (
+      changed(oldData.aqi, newData.aqi) ||
+      changed(oldData.pm25, newData.pm25) ||
+      changed(oldData.pm10, newData.pm10) ||
+      changed(oldData.co, newData.co) ||
+      changed(oldData.so2, newData.so2) ||
+      changed(oldData.o3, newData.o3) ||
+      changed(oldData.no2, newData.no2) ||
+      changed(oldData.temperature, newData.temperature) ||
+      changed(oldData.humidity, newData.humidity)
+    );
+  }
+
+    async updateRoomFromIoT(room, iotData, deviceName) {
     try {
-      // FIXED: skip room demoMode — jangan timpa nilai demo
       if (room.demoMode) {
         console.log(`ℹ️ Skipping room ${room.name} (demoMode active)`);
         return;
       }
 
-      // FIXED: deteksi device error (nilai negatif) SEBELUM kalkulasi AQI
-      if (iotData.aqi < 0 || iotData.pm25 < 0 || iotData.pm10 < 0) {
+      const optionalNum = (v) =>
+        typeof v === 'number' && Number.isFinite(v) && !Number.isNaN(v) ? v : null;
+
+      const so2 = optionalNum(iotData.so2);
+      const o3 = optionalNum(iotData.o3);
+      const no2 = optionalNum(iotData.no2);
+
+      // Deteksi error pada field yang tersedia
+      if (
+        iotData.aqi < 0 ||
+        iotData.pm25 < 0 ||
+        iotData.pm10 < 0 ||
+        (so2 != null && so2 < 0) ||
+        (o3 != null && o3 < 0) ||
+        (no2 != null && no2 < 0)
+      ) {
         await this.handleDeviceError(room, deviceName);
         return;
       }
 
-      const aqiResult = calculateAQI(iotData.pm25, iotData.pm10, iotData.co);
+      const aqiResult = calculateAQI(
+        iotData.pm25,
+        iotData.pm10,
+        iotData.co,
+        so2,
+        o3,
+        no2
+      );
 
       const normalizedData = {
         pm25: iotData.pm25,
         pm10: iotData.pm10,
         co: iotData.co,
+        so2,
+        o3,
+        no2,
         temperature: iotData.temperature,
         humidity: iotData.humidity,
         aqi: aqiResult.aqi,
@@ -224,6 +254,9 @@ class IoTService {
           pm25: currentData.pm25,
           pm10: currentData.pm10,
           co: currentData.co,
+          so2: currentData.so2,
+          o3: currentData.o3,
+          no2: currentData.no2,
           temperature: currentData.temperature,
           humidity: currentData.humidity,
         },
@@ -242,6 +275,9 @@ class IoTService {
         pm25: normalizedData.pm25,
         pm10: normalizedData.pm10,
         co: normalizedData.co,
+        so2: normalizedData.so2,
+        o3: normalizedData.o3,
+        no2: normalizedData.no2,
         temperature: normalizedData.temperature,
         humidity: normalizedData.humidity,
         updatedAt: new Date(),
@@ -257,6 +293,9 @@ class IoTService {
         pm25: normalizedData.pm25,
         pm10: normalizedData.pm10,
         co: normalizedData.co,
+        so2: normalizedData.so2,
+        o3: normalizedData.o3,
+        no2: normalizedData.no2,
         temperature: normalizedData.temperature,
         humidity: normalizedData.humidity,
         category: aqiResult.category,
@@ -268,9 +307,6 @@ class IoTService {
 
       this.broadcastRoomUpdate(room, normalizedData, 'iot', deviceName);
 
-      // Log ringkasan data room (IoT) — format sama dengan simulasi,
-      // TANPA keterangan jenis partikel setelah AQI.
-      // Contoh: ✅ IoT room H18: AQI 32, PM2.5=16, PM10=31.6, CO=..., Suhu=..., RH=...
       if (aqiResult.aqi > 100) {
         console.log(
           `🚨 HIGH AQI in ${room.name} (IoT ${deviceName}): ${aqiResult.aqi} (${aqiResult.category})`
@@ -279,15 +315,18 @@ class IoTService {
         console.log(
           `✅ IoT room ${room.name}: AQI ${normalizedData.aqi}, ` +
           `PM2.5=${normalizedData.pm25}, PM10=${normalizedData.pm10}, ` +
-          `CO=${normalizedData.co}, Suhu=${normalizedData.temperature}, RH=${normalizedData.humidity}`
+          `CO=${normalizedData.co}, SO2=${normalizedData.so2}, O3=${normalizedData.o3}, NO2=${normalizedData.no2}, ` +
+          `Suhu=${normalizedData.temperature}, RH=${normalizedData.humidity}`
         );
       }
 
-      // Log parameter dominan (setelah ringkasan partikel)
       const dominantLabel = {
         pm25: `PM2.5 (ISPU=${aqiResult.ispuPM25})`,
         pm10: `PM10 (ISPU=${aqiResult.ispuPM10})`,
         co:   `CO (ISPU=${aqiResult.ispuCO})`,
+        so2:  `SO2 (ISPU=${aqiResult.ispuSO2})`,
+        o3:   `O3 (ISPU=${aqiResult.ispuO3})`,
+        no2:  `NO2 (ISPU=${aqiResult.ispuNO2})`,
       }[aqiResult.dominant] || aqiResult.dominant;
 
       console.log(
@@ -302,26 +341,49 @@ class IoTService {
   }
   
 
-  async updateRoomFromIoTForce(room, iotData, deviceName) {
+    async updateRoomFromIoTForce(room, iotData, deviceName) {
     try {
       if (room.demoMode) {
         console.log(`ℹ️ Skipping force update ${room.name} (demoMode active)`);
         return;
       }
 
-      // FIXED: handle error juga di force path
-      if (iotData.aqi < 0 || iotData.pm25 < 0 || iotData.pm10 < 0) {
+      const optionalNum = (v) =>
+        typeof v === 'number' && Number.isFinite(v) && !Number.isNaN(v) ? v : null;
+
+      const so2 = optionalNum(iotData.so2);
+      const o3 = optionalNum(iotData.o3);
+      const no2 = optionalNum(iotData.no2);
+
+      if (
+        iotData.aqi < 0 ||
+        iotData.pm25 < 0 ||
+        iotData.pm10 < 0 ||
+        (so2 != null && so2 < 0) ||
+        (o3 != null && o3 < 0) ||
+        (no2 != null && no2 < 0)
+      ) {
         await this.handleDeviceError(room, deviceName);
         return;
       }
 
-     const aqiResult = calculateAQI(iotData.pm25, iotData.pm10, iotData.co);
+      const aqiResult = calculateAQI(
+        iotData.pm25,
+        iotData.pm10,
+        iotData.co,
+        so2,
+        o3,
+        no2
+      );
 
       room.currentAQI = aqiResult.aqi;
       room.currentData = {
         pm25: iotData.pm25,
         pm10: iotData.pm10,
         co: iotData.co,
+        so2,
+        o3,
+        no2,
         temperature: iotData.temperature,
         humidity: iotData.humidity,
         updatedAt: new Date(),
@@ -337,6 +399,9 @@ class IoTService {
         pm25: iotData.pm25,
         pm10: iotData.pm10,
         co: iotData.co,
+        so2,
+        o3,
+        no2,
         temperature: iotData.temperature,
         humidity: iotData.humidity,
         category: aqiResult.category,
@@ -363,7 +428,7 @@ class IoTService {
    */
   async handleDeviceError(room, deviceName) {
     try {
-      await new SensorData({
+       await new SensorData({
         roomId: room._id,
         roomName: room.name,
         buildingName: room.buildingName,
@@ -371,6 +436,9 @@ class IoTService {
         pm25: -1,
         pm10: -1,
         co: -1,
+        so2: -1,
+        o3: -1,
+        no2: -1,
         temperature: -1,
         humidity: -1,
         category: 'error',

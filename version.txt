@@ -880,10 +880,13 @@ const roomSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
-  currentData: {
+    currentData: {
     pm25: { type: Number, default: 0 },
     pm10: { type: Number, default: 0 },
     co: { type: Number, default: 0 },
+    so2: { type: Number, default: null },
+    o3: { type: Number, default: null },
+    no2: { type: Number, default: null },
     temperature: { type: Number, default: 0 },
     humidity: { type: Number, default: 0 },
     updatedAt: { type: Date }
@@ -941,6 +944,18 @@ const sensorDataSchema = new mongoose.Schema({
   co: {
     type: Number,
     required: true
+  },
+  so2: {
+    type: Number,
+    default: null
+  },
+  o3: {
+    type: Number,
+    default: null
+  },
+  no2: {
+    type: Number,
+    default: null
   },
   temperature: {
     type: Number,
@@ -1634,7 +1649,13 @@ const Room = require('../models/Room');
 const Building = require('../models/Building');
 const SensorData = require('../models/SensorData');
 const { authMiddleware, adminMiddleware } = require('../middleware/authMiddleware');
-const { getAQICategory, aqiToPm25 } = require('../utils/aqiCalculator');
+const {
+  getAQICategory,
+  aqiToPm25,
+  aqiToSO2,
+  aqiToO3,
+  aqiToNO2,
+} = require('../utils/aqiCalculator');
 
 const broadcastRoomUpdate = (io, room, action, oldData = null) => {
   if (io) {
@@ -1751,15 +1772,22 @@ router.post('/demo-cycle', authMiddleware, adminMiddleware, async (req, res) => 
       const target = targets[i];
       const room = rooms[i];
 
-      const pm25 = aqiToPm25(target.aqi);
+       const pm25 = aqiToPm25(target.aqi);
       const pm10 = Math.round(pm25 * 1.5);
       const co = target.aqi > 200 ? 20000 : (target.aqi > 100 ? 12000 : 2000);
+      const so2 = aqiToSO2(target.aqi);
+      const o3 = aqiToO3(target.aqi);
+      const no2 = aqiToNO2(target.aqi);
       const temperature = target.aqi > 200 ? 33 : (target.aqi > 100 ? 30 : 26);
       const humidity = target.aqi > 200 ? 80 : (target.aqi > 100 ? 70 : 55);
 
       room.demoMode = true;
       room.currentAQI = target.aqi;
-      room.currentData = { pm25, pm10, co, temperature, humidity, updatedAt: new Date() };
+      room.currentData = {
+        pm25, pm10, co, so2, o3, no2,
+        temperature, humidity,
+        updatedAt: new Date()
+      };
       room.updatedAt = new Date();
       await room.save();
 
@@ -1768,7 +1796,8 @@ router.post('/demo-cycle', authMiddleware, adminMiddleware, async (req, res) => 
         roomName: room.name,
         buildingName: room.buildingName,
         aqi: target.aqi,
-        pm25, pm10, co, temperature, humidity,
+        pm25, pm10, co, so2, o3, no2,
+        temperature, humidity,
         category: getAQICategory(target.aqi).category,
         timestamp: new Date(),
       }).save();
@@ -1822,16 +1851,20 @@ router.post('/:id/demo-aqi', authMiddleware, adminMiddleware, async (req, res) =
       return res.status(404).json({ success: false, message: 'Room not found' });
     }
 
-    const pm25 = aqiToPm25(target);
+        const pm25 = aqiToPm25(target);
     const pm10 = Math.round(pm25 * 1.5);
-     const co = target > 200 ? 20000 : (target > 100 ? 12000 : 2000);
+    const co = target > 200 ? 20000 : (target > 100 ? 12000 : 2000);
+    const so2 = aqiToSO2(target);
+    const o3 = aqiToO3(target);
+    const no2 = aqiToNO2(target);
     const temperature = target > 200 ? 33 : (target > 100 ? 30 : 26);
     const humidity = target > 200 ? 80 : (target > 100 ? 70 : 55);
 
     room.demoMode = true;
     room.currentAQI = target;
     room.currentData = {
-      pm25, pm10, co, temperature, humidity,
+      pm25, pm10, co, so2, o3, no2,
+      temperature, humidity,
       updatedAt: new Date()
     };
     room.updatedAt = new Date();
@@ -1842,7 +1875,8 @@ router.post('/:id/demo-aqi', authMiddleware, adminMiddleware, async (req, res) =
       roomName: room.name,
       buildingName: room.buildingName,
       aqi: target,
-      pm25, pm10, co, temperature, humidity,
+      pm25, pm10, co, so2, o3, no2,
+      temperature, humidity,
       category: getAQICategory(target).category,
       timestamp: new Date(),
     }).save();
@@ -1977,7 +2011,9 @@ router.post('/', authMiddleware, adminMiddleware, async (req, res) => {
       iotDeviceId: dataSource === 'iot' ? iotDeviceId : null,
       currentAQI: 0,
       currentData: {
-        pm25: 0, pm10: 0, co: 0, temperature: 0, humidity: 0,
+        pm25: 0, pm10: 0, co: 0,
+        so2: null, o3: null, no2: null,
+        temperature: 0, humidity: 0,
         updatedAt: new Date()
       },
       createdAt: new Date(),
@@ -2106,7 +2142,9 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
     if (deviceChanged) {
       room.currentAQI = 0;
       room.currentData = {
-        pm25: 0, pm10: 0, co: 0, temperature: 0, humidity: 0,
+        pm25: 0, pm10: 0, co: 0,
+        so2: null, o3: null, no2: null,
+        temperature: 0, humidity: 0,
         updatedAt: new Date()
       };
       console.log(
@@ -2581,7 +2619,10 @@ router.get('/:roomId/history', async (req, res) => {
           aqi: { $first: "$aqi" },
           pm25: { $first: "$pm25" },
           pm10: { $first: "$pm10" },
-          co2: { $first: "$co2" },
+          co: { $first: "$co" },
+          so2: { $first: "$so2" },
+          o3: { $first: "$o3" },
+          no2: { $first: "$no2" },
           temperature: { $first: "$temperature" },
           humidity: { $first: "$humidity" },
           category: { $first: "$category" },
@@ -2615,7 +2656,10 @@ router.get('/:roomId/history', async (req, res) => {
           aqi: 1,
           pm25: 1,
           pm10: 1,
-          co2: 1,
+          co: 1,
+          so2: 1,
+          o3: 1,
+          no2: 1,
           temperature: 1,
           humidity: 1,
           category: 1,
@@ -2913,53 +2957,83 @@ class IoTService {
     return updates;
   }
 
-  isValidIoTData(data) {
-    return data &&
-           typeof data.aqi === 'number' &&
-           typeof data.pm25 === 'number' &&
-           typeof data.pm10 === 'number' &&
-           typeof data.co === 'number' &&
-           typeof data.temperature === 'number' &&
-           typeof data.humidity === 'number';
-  }
+    isValidIoTData(data) {
+    if (!data) return false;
 
-  _hasDataChanged(oldData, newData) {
-    if (!oldData || !newData) return true;
+    const required = ['aqi', 'pm25', 'pm10', 'co', 'temperature', 'humidity'];
+    if (!required.every((k) => typeof data[k] === 'number')) return false;
 
-    const thresholds = {
-      aqi: 0, pm25: 0, pm10: 0, co: 0, temperature: 0, humidity: 0
-    };
-
-    return (
-      Math.abs(newData.aqi - (oldData.aqi || 0)) > thresholds.aqi ||
-      Math.abs(newData.pm25 - (oldData.pm25 || 0)) > thresholds.pm25 ||
-      Math.abs(newData.pm10 - (oldData.pm10 || 0)) > thresholds.pm10 ||
-      Math.abs(newData.co - (oldData.co || 0)) > thresholds.co ||
-      Math.abs(newData.temperature - (oldData.temperature || 0)) > thresholds.temperature ||
-      Math.abs(newData.humidity - (oldData.humidity || 0)) > thresholds.humidity
+    const optional = ['so2', 'o3', 'no2'];
+    return optional.every(
+      (k) => data[k] === undefined || data[k] === null || typeof data[k] === 'number'
     );
   }
 
-  async updateRoomFromIoT(room, iotData, deviceName) {
+   _hasDataChanged(oldData, newData) {
+    if (!oldData || !newData) return true;
+
+    const changed = (oldV, newV) => {
+      if (oldV == null && newV == null) return false;
+      if (oldV == null || newV == null) return true;
+      return Math.abs(Number(newV) - Number(oldV)) > 0;
+    };
+
+    return (
+      changed(oldData.aqi, newData.aqi) ||
+      changed(oldData.pm25, newData.pm25) ||
+      changed(oldData.pm10, newData.pm10) ||
+      changed(oldData.co, newData.co) ||
+      changed(oldData.so2, newData.so2) ||
+      changed(oldData.o3, newData.o3) ||
+      changed(oldData.no2, newData.no2) ||
+      changed(oldData.temperature, newData.temperature) ||
+      changed(oldData.humidity, newData.humidity)
+    );
+  }
+
+    async updateRoomFromIoT(room, iotData, deviceName) {
     try {
-      // FIXED: skip room demoMode — jangan timpa nilai demo
       if (room.demoMode) {
         console.log(`ℹ️ Skipping room ${room.name} (demoMode active)`);
         return;
       }
 
-      // FIXED: deteksi device error (nilai negatif) SEBELUM kalkulasi AQI
-      if (iotData.aqi < 0 || iotData.pm25 < 0 || iotData.pm10 < 0) {
+      const optionalNum = (v) =>
+        typeof v === 'number' && Number.isFinite(v) && !Number.isNaN(v) ? v : null;
+
+      const so2 = optionalNum(iotData.so2);
+      const o3 = optionalNum(iotData.o3);
+      const no2 = optionalNum(iotData.no2);
+
+      // Deteksi error pada field yang tersedia
+      if (
+        iotData.aqi < 0 ||
+        iotData.pm25 < 0 ||
+        iotData.pm10 < 0 ||
+        (so2 != null && so2 < 0) ||
+        (o3 != null && o3 < 0) ||
+        (no2 != null && no2 < 0)
+      ) {
         await this.handleDeviceError(room, deviceName);
         return;
       }
 
-      const aqiResult = calculateAQI(iotData.pm25, iotData.pm10, iotData.co);
+      const aqiResult = calculateAQI(
+        iotData.pm25,
+        iotData.pm10,
+        iotData.co,
+        so2,
+        o3,
+        no2
+      );
 
       const normalizedData = {
         pm25: iotData.pm25,
         pm10: iotData.pm10,
         co: iotData.co,
+        so2,
+        o3,
+        no2,
         temperature: iotData.temperature,
         humidity: iotData.humidity,
         aqi: aqiResult.aqi,
@@ -2974,6 +3048,9 @@ class IoTService {
           pm25: currentData.pm25,
           pm10: currentData.pm10,
           co: currentData.co,
+          so2: currentData.so2,
+          o3: currentData.o3,
+          no2: currentData.no2,
           temperature: currentData.temperature,
           humidity: currentData.humidity,
         },
@@ -2992,6 +3069,9 @@ class IoTService {
         pm25: normalizedData.pm25,
         pm10: normalizedData.pm10,
         co: normalizedData.co,
+        so2: normalizedData.so2,
+        o3: normalizedData.o3,
+        no2: normalizedData.no2,
         temperature: normalizedData.temperature,
         humidity: normalizedData.humidity,
         updatedAt: new Date(),
@@ -3007,6 +3087,9 @@ class IoTService {
         pm25: normalizedData.pm25,
         pm10: normalizedData.pm10,
         co: normalizedData.co,
+        so2: normalizedData.so2,
+        o3: normalizedData.o3,
+        no2: normalizedData.no2,
         temperature: normalizedData.temperature,
         humidity: normalizedData.humidity,
         category: aqiResult.category,
@@ -3018,9 +3101,6 @@ class IoTService {
 
       this.broadcastRoomUpdate(room, normalizedData, 'iot', deviceName);
 
-      // Log ringkasan data room (IoT) — format sama dengan simulasi,
-      // TANPA keterangan jenis partikel setelah AQI.
-      // Contoh: ✅ IoT room H18: AQI 32, PM2.5=16, PM10=31.6, CO=..., Suhu=..., RH=...
       if (aqiResult.aqi > 100) {
         console.log(
           `🚨 HIGH AQI in ${room.name} (IoT ${deviceName}): ${aqiResult.aqi} (${aqiResult.category})`
@@ -3029,15 +3109,18 @@ class IoTService {
         console.log(
           `✅ IoT room ${room.name}: AQI ${normalizedData.aqi}, ` +
           `PM2.5=${normalizedData.pm25}, PM10=${normalizedData.pm10}, ` +
-          `CO=${normalizedData.co}, Suhu=${normalizedData.temperature}, RH=${normalizedData.humidity}`
+          `CO=${normalizedData.co}, SO2=${normalizedData.so2}, O3=${normalizedData.o3}, NO2=${normalizedData.no2}, ` +
+          `Suhu=${normalizedData.temperature}, RH=${normalizedData.humidity}`
         );
       }
 
-      // Log parameter dominan (setelah ringkasan partikel)
       const dominantLabel = {
         pm25: `PM2.5 (ISPU=${aqiResult.ispuPM25})`,
         pm10: `PM10 (ISPU=${aqiResult.ispuPM10})`,
         co:   `CO (ISPU=${aqiResult.ispuCO})`,
+        so2:  `SO2 (ISPU=${aqiResult.ispuSO2})`,
+        o3:   `O3 (ISPU=${aqiResult.ispuO3})`,
+        no2:  `NO2 (ISPU=${aqiResult.ispuNO2})`,
       }[aqiResult.dominant] || aqiResult.dominant;
 
       console.log(
@@ -3052,26 +3135,49 @@ class IoTService {
   }
   
 
-  async updateRoomFromIoTForce(room, iotData, deviceName) {
+    async updateRoomFromIoTForce(room, iotData, deviceName) {
     try {
       if (room.demoMode) {
         console.log(`ℹ️ Skipping force update ${room.name} (demoMode active)`);
         return;
       }
 
-      // FIXED: handle error juga di force path
-      if (iotData.aqi < 0 || iotData.pm25 < 0 || iotData.pm10 < 0) {
+      const optionalNum = (v) =>
+        typeof v === 'number' && Number.isFinite(v) && !Number.isNaN(v) ? v : null;
+
+      const so2 = optionalNum(iotData.so2);
+      const o3 = optionalNum(iotData.o3);
+      const no2 = optionalNum(iotData.no2);
+
+      if (
+        iotData.aqi < 0 ||
+        iotData.pm25 < 0 ||
+        iotData.pm10 < 0 ||
+        (so2 != null && so2 < 0) ||
+        (o3 != null && o3 < 0) ||
+        (no2 != null && no2 < 0)
+      ) {
         await this.handleDeviceError(room, deviceName);
         return;
       }
 
-     const aqiResult = calculateAQI(iotData.pm25, iotData.pm10, iotData.co);
+      const aqiResult = calculateAQI(
+        iotData.pm25,
+        iotData.pm10,
+        iotData.co,
+        so2,
+        o3,
+        no2
+      );
 
       room.currentAQI = aqiResult.aqi;
       room.currentData = {
         pm25: iotData.pm25,
         pm10: iotData.pm10,
         co: iotData.co,
+        so2,
+        o3,
+        no2,
         temperature: iotData.temperature,
         humidity: iotData.humidity,
         updatedAt: new Date(),
@@ -3087,6 +3193,9 @@ class IoTService {
         pm25: iotData.pm25,
         pm10: iotData.pm10,
         co: iotData.co,
+        so2,
+        o3,
+        no2,
         temperature: iotData.temperature,
         humidity: iotData.humidity,
         category: aqiResult.category,
@@ -3113,7 +3222,7 @@ class IoTService {
    */
   async handleDeviceError(room, deviceName) {
     try {
-      await new SensorData({
+       await new SensorData({
         roomId: room._id,
         roomName: room.name,
         buildingName: room.buildingName,
@@ -3121,6 +3230,9 @@ class IoTService {
         pm25: -1,
         pm10: -1,
         co: -1,
+        so2: -1,
+        o3: -1,
+        no2: -1,
         temperature: -1,
         humidity: -1,
         category: 'error',
@@ -3378,19 +3490,24 @@ class SimulationService {
       }
 
       // ✅ AQI dihitung dari PM2.5, PM10, dan CO — ambil yang dominan
-      const aqiResult = calculateAQI(
+       const aqiResult = calculateAQI(
         sensorData.pm25,
         sensorData.pm10,
-        sensorData.co
+        sensorData.co,
+        sensorData.so2,
+        sensorData.o3,
+        sensorData.no2
       );
 
-      // Sinkronkan aqiResult ke sensorData supaya konsisten saat disimpan & di-broadcast
       sensorData.aqi = aqiResult.aqi;
       sensorData.category = aqiResult.category;
       sensorData.dominant = aqiResult.dominant;
       sensorData.ispuPM25 = aqiResult.ispuPM25;
       sensorData.ispuPM10 = aqiResult.ispuPM10;
       sensorData.ispuCO = aqiResult.ispuCO;
+      sensorData.ispuSO2 = aqiResult.ispuSO2;
+      sensorData.ispuO3 = aqiResult.ispuO3;
+      sensorData.ispuNO2 = aqiResult.ispuNO2;
 
       const hasChanged = this._hasDataChanged(room, sensorData);
 
@@ -3400,10 +3517,13 @@ class SimulationService {
       }
 
       room.currentAQI = sensorData.aqi;
-      room.currentData = {
+       room.currentData = {
         pm25: sensorData.pm25,
         pm10: sensorData.pm10,
         co: sensorData.co,
+        so2: sensorData.so2,
+        o3: sensorData.o3,
+        no2: sensorData.no2,
         temperature: sensorData.temperature,
         humidity: sensorData.humidity,
         updatedAt: new Date()
@@ -3420,6 +3540,9 @@ class SimulationService {
         pm25: sensorData.pm25,
         pm10: sensorData.pm10,
         co: sensorData.co,
+        so2: sensorData.so2,
+        o3: sensorData.o3,
+        no2: sensorData.no2,
         temperature: sensorData.temperature,
         humidity: sensorData.humidity,
         category: sensorData.category,
@@ -3474,6 +3597,9 @@ class SimulationService {
         pm25: -1,
         pm10: -1,
         co: -1,
+        so2: -1,
+        o3: -1,
+        no2: -1,
         temperature: -1,
         humidity: -1,
         category: 'error',
@@ -3497,25 +3623,25 @@ class SimulationService {
     }
   }
 
-  _hasDataChanged(room, newData) {
+    _hasDataChanged(room, newData) {
     const currentData = room.currentData;
 
-    const thresholds = {
-      aqi: 0,
-      pm25: 0,
-      pm10: 0,
-      co: 0,
-      temperature: 0,
-      humidity: 0
+    const changed = (oldV, newV) => {
+      if (oldV == null && newV == null) return false;
+      if (oldV == null || newV == null) return true;
+      return Math.abs(Number(newV) - Number(oldV)) > 0;
     };
 
     return (
-      Math.abs(newData.aqi - room.currentAQI) > thresholds.aqi ||
-      Math.abs(newData.pm25 - (currentData.pm25 || 0)) > thresholds.pm25 ||
-      Math.abs(newData.pm10 - (currentData.pm10 || 0)) > thresholds.pm10 ||
-      Math.abs(newData.co - (currentData.co || 0)) > thresholds.co ||
-      Math.abs(newData.temperature - (currentData.temperature || 0)) > thresholds.temperature ||
-      Math.abs(newData.humidity - (currentData.humidity || 0)) > thresholds.humidity
+      changed(room.currentAQI, newData.aqi) ||
+      changed(currentData.pm25, newData.pm25) ||
+      changed(currentData.pm10, newData.pm10) ||
+      changed(currentData.co, newData.co) ||
+      changed(currentData.so2, newData.so2) ||
+      changed(currentData.o3, newData.o3) ||
+      changed(currentData.no2, newData.no2) ||
+      changed(currentData.temperature, newData.temperature) ||
+      changed(currentData.humidity, newData.humidity)
     );
   }
 
@@ -3583,7 +3709,7 @@ const simulationService = new SimulationService();
 module.exports = simulationService;
 
 ---------------------------------------------------------------------------------------------------------------------------------------
-C:\develop\UNILA-AQI\unila-aqi-backend\src\utils\__tests__\aqiCalculator.test.js
+unila-aqi-backend\src\utils\__tests__\aqiCalculator.test.js
 
 /**
  * ============================================================================
@@ -3930,9 +4056,11 @@ src/utils/aqiCalculator.js:
 
 /**
  * ISPU (Indeks Standar Pencemar Udara) Calculator
- * Berdasarkan PP No. 22 Tahun 2021 (Indonesia)
+ * PP No. 22 Tahun 2021 + breakpoint SO2/O3/NO2 sesuai tabel ISPU.
  *
- * Nilai AQI = MAX dari ISPU setiap parameter (PM2.5, PM10, CO).
+ * AQI = MAX dari ISPU parameter yang tersedia:
+ * PM2.5, PM10, CO, SO2, O3, NO2.
+ * Parameter opsional yang null/undefined TIDAK diikutkan.
  */
 
 const PM25_BREAKPOINTS = [
@@ -3951,8 +4079,6 @@ const PM10_BREAKPOINTS = [
   { ispuLow: 301, ispuHigh: 500, concLow: 421, concHigh: 500 },
 ];
 
-// ⚠️ CO breakpoints — sesuaikan dengan tabel yang Anda pegang.
-// Untuk range ISPU > 300, batas atas konsentrasi CO umumnya 45.000.
 const CO_BREAKPOINTS = [
   { ispuLow: 0,   ispuHigh: 50,  concLow: 0,     concHigh: 4000  },
   { ispuLow: 51,  ispuHigh: 100, concLow: 4001,  concHigh: 8000  },
@@ -3961,10 +4087,36 @@ const CO_BREAKPOINTS = [
   { ispuLow: 301, ispuHigh: 500, concLow: 30001, concHigh: 45000 },
 ];
 
+// Tabel baru: SO2 (24 jam), O3 (1 jam), NO2 (1 jam), satuan µg/m³
+const SO2_BREAKPOINTS = [
+  { ispuLow: 0,   ispuHigh: 50,  concLow: 0,    concHigh: 80   },
+  { ispuLow: 51,  ispuHigh: 100, concLow: 81,   concHigh: 365  },
+  { ispuLow: 101, ispuHigh: 200, concLow: 366,  concHigh: 800  },
+  { ispuLow: 201, ispuHigh: 300, concLow: 801,  concHigh: 1600 },
+  { ispuLow: 301, ispuHigh: 500, concLow: 1601, concHigh: 3000 },
+];
+
+const O3_BREAKPOINTS = [
+  { ispuLow: 0,   ispuHigh: 50,  concLow: 0,   concHigh: 120  },
+  { ispuLow: 51,  ispuHigh: 100, concLow: 121, concHigh: 235  },
+  { ispuLow: 101, ispuHigh: 200, concLow: 236, concHigh: 400  },
+  { ispuLow: 201, ispuHigh: 300, concLow: 401, concHigh: 800  },
+  { ispuLow: 301, ispuHigh: 500, concLow: 801, concHigh: 1000 },
+];
+
+const NO2_BREAKPOINTS = [
+  { ispuLow: 0,   ispuHigh: 50,  concLow: 0,    concHigh: 80   },
+  { ispuLow: 51,  ispuHigh: 100, concLow: 81,   concHigh: 200  },
+  { ispuLow: 101, ispuHigh: 200, concLow: 201,  concHigh: 1130 },
+  { ispuLow: 201, ispuHigh: 300, concLow: 1131, concHigh: 2260 },
+  { ispuLow: 301, ispuHigh: 500, concLow: 2261, concHigh: 3000 },
+];
+
+const isValidNumber = (v) =>
+  typeof v === 'number' && Number.isFinite(v) && !Number.isNaN(v);
+
 function calculateISPUFromConcentration(concentration, breakpoints) {
-  if (concentration == null || isNaN(concentration) || concentration < 0) {
-    return 0;
-  }
+  if (!isValidNumber(concentration) || concentration < 0) return 0;
 
   for (const bp of breakpoints) {
     if (concentration <= bp.concHigh) {
@@ -3986,30 +4138,56 @@ function calculateISPUFromConcentration(concentration, breakpoints) {
 function calculateISPUFromPM25(pm25) {
   return calculateISPUFromConcentration(pm25, PM25_BREAKPOINTS);
 }
-
 function calculateISPUFromPM10(pm10) {
   return calculateISPUFromConcentration(pm10, PM10_BREAKPOINTS);
 }
-
 function calculateISPUFromCO(co) {
   return calculateISPUFromConcentration(co, CO_BREAKPOINTS);
 }
+function calculateISPUFromSO2(so2) {
+  return calculateISPUFromConcentration(so2, SO2_BREAKPOINTS);
+}
+function calculateISPUFromO3(o3) {
+  return calculateISPUFromConcentration(o3, O3_BREAKPOINTS);
+}
+function calculateISPUFromNO2(no2) {
+  return calculateISPUFromConcentration(no2, NO2_BREAKPOINTS);
+}
 
 /**
- * AQI = MAX dari ISPU PM2.5, PM10, dan CO.
- * `dominant` berisi nama parameter dengan ISPU tertinggi.
+ * AQI = MAX dari parameter yang tersedia.
+ * Parameter SO2/O3/NO2 hanya diikutkan bila berupa angka valid.
+ * CO selalu dianggap tersedia (default 0) agar kompatibel dengan kode lama.
  */
-function calculateAQI(pm25, pm10, co = 0) {
+function calculateAQI(pm25, pm10, co = 0, so2 = null, o3 = null, no2 = null) {
+  const coValue = co == null ? 0 : co;
+
   const ispuPM25 = calculateISPUFromPM25(pm25);
   const ispuPM10 = calculateISPUFromPM10(pm10);
-  const ispuCO   = calculateISPUFromCO(co);
+  const ispuCO = calculateISPUFromCO(coValue);
 
-  const aqi = Math.max(ispuPM25, ispuPM10, ispuCO);
+  const hasSO2 = isValidNumber(so2);
+  const hasO3 = isValidNumber(o3);
+  const hasNO2 = isValidNumber(no2);
 
-  let dominant;
-  if (aqi === ispuCO)        dominant = 'co';
-  else if (aqi === ispuPM25) dominant = 'pm25';
-  else                       dominant = 'pm10';
+  const ispuSO2 = hasSO2 ? calculateISPUFromSO2(so2) : null;
+  const ispuO3 = hasO3 ? calculateISPUFromO3(o3) : null;
+  const ispuNO2 = hasNO2 ? calculateISPUFromNO2(no2) : null;
+
+  // Urutan tie-breaker: CO -> SO2 -> O3 -> NO2 -> PM2.5 -> PM10.
+  // Ini mempertahankan perilaku lama: tie PM2.5 vs PM10 => PM2.5;
+  // tie semua nol dengan CO => CO.
+  const ordered = [
+    { name: 'co', value: ispuCO },
+    ...(hasSO2 ? [{ name: 'so2', value: ispuSO2 }] : []),
+    ...(hasO3 ? [{ name: 'o3', value: ispuO3 }] : []),
+    ...(hasNO2 ? [{ name: 'no2', value: ispuNO2 }] : []),
+    { name: 'pm25', value: ispuPM25 },
+    { name: 'pm10', value: ispuPM10 },
+  ];
+
+  const aqi = Math.max(...ordered.map((c) => c.value));
+  const dominant = ordered.find((c) => c.value === aqi)?.name || 'pm10';
 
   const cat = getAQICategory(aqi);
 
@@ -4018,6 +4196,9 @@ function calculateAQI(pm25, pm10, co = 0) {
     ispuPM25,
     ispuPM10,
     ispuCO,
+    ispuSO2,
+    ispuO3,
+    ispuNO2,
     dominant,
     category: cat.category,
     color: cat.color,
@@ -4033,20 +4214,32 @@ function getAQICategory(aqi) {
   return { category: 'berbahaya', color: '#000000', label: 'Berbahaya' };
 }
 
-function aqiToPm25(aqi) {
-  if (aqi == null || isNaN(aqi) || aqi <= 0) return 0;
+function aqiToConcentration(aqi, breakpoints) {
+  if (!isValidNumber(aqi) || aqi <= 0) return 0;
   const target = Math.min(500, aqi);
 
-  for (const bp of PM25_BREAKPOINTS) {
+  for (const bp of breakpoints) {
     if (target <= bp.ispuHigh) {
       const ispuRange = bp.ispuHigh - bp.ispuLow;
       if (ispuRange === 0) return bp.concLow;
       const ratio = (target - bp.ispuLow) / ispuRange;
-      const conc = bp.concLow + ratio * (bp.concHigh - bp.concLow);
-      return Math.round(conc);
+      return Math.round(bp.concLow + ratio * (bp.concHigh - bp.concLow));
     }
   }
   return 500;
+}
+
+function aqiToPm25(aqi) {
+  return aqiToConcentration(aqi, PM25_BREAKPOINTS);
+}
+function aqiToSO2(aqi) {
+  return aqiToConcentration(aqi, SO2_BREAKPOINTS);
+}
+function aqiToO3(aqi) {
+  return aqiToConcentration(aqi, O3_BREAKPOINTS);
+}
+function aqiToNO2(aqi) {
+  return aqiToConcentration(aqi, NO2_BREAKPOINTS);
 }
 
 const evaluateParameter = (type, value) => {
@@ -4063,6 +4256,21 @@ const evaluateParameter = (type, value) => {
     }
     case 'co': {
       const ispu = calculateISPUFromCO(value);
+      const cat = getAQICategory(ispu);
+      return { status: cat.category, color: cat.color, ispu };
+    }
+    case 'so2': {
+      const ispu = calculateISPUFromSO2(value);
+      const cat = getAQICategory(ispu);
+      return { status: cat.category, color: cat.color, ispu };
+    }
+    case 'o3': {
+      const ispu = calculateISPUFromO3(value);
+      const cat = getAQICategory(ispu);
+      return { status: cat.category, color: cat.color, ispu };
+    }
+    case 'no2': {
+      const ispu = calculateISPUFromNO2(value);
       const cat = getAQICategory(ispu);
       return { status: cat.category, color: cat.color, ispu };
     }
@@ -4087,10 +4295,16 @@ module.exports = {
   calculateISPUFromPM25,
   calculateISPUFromPM10,
   calculateISPUFromCO,
+  calculateISPUFromSO2,
+  calculateISPUFromO3,
+  calculateISPUFromNO2,
   calculateAQI,
   getAQICategory,
   evaluateParameter,
   aqiToPm25,
+  aqiToSO2,
+  aqiToO3,
+  aqiToNO2,
   calculateAQIFromPM25: (pm25) => {
     const ispu = calculateISPUFromPM25(pm25);
     const cat = getAQICategory(ispu);
@@ -4150,6 +4364,9 @@ const TIME_RANGES = {
     pm25:        { min: 8,  max: 20, mean: 14  },
     pm10:        { min: 15, max: 40, mean: 25  },
     co:          { min: 500, max: 2000, mean: 1000 },
+    so2:         { min: 20, max: 60, mean: 40 },
+    o3:          { min: 20, max: 80, mean: 50 },
+    no2:         { min: 20, max: 70, mean: 45 },
     temperature: { min: 22, max: 26, mean: 24  },
     humidity:    { min: 65, max: 85, mean: 75  },
   },
@@ -4157,6 +4374,9 @@ const TIME_RANGES = {
     pm25:        { min: 15, max: 40, mean: 27  },
     pm10:        { min: 25, max: 80, mean: 50  },
     co:          { min: 1000, max: 4000, mean: 2500 },
+    so2:         { min: 30, max: 100, mean: 60 },
+    o3:          { min: 40, max: 120, mean: 80 },
+    no2:         { min: 30, max: 100, mean: 60 },
     temperature: { min: 24, max: 29, mean: 26  },
     humidity:    { min: 55, max: 75, mean: 65  },
   },
@@ -4164,6 +4384,9 @@ const TIME_RANGES = {
     pm25:        { min: 18, max: 45, mean: 30  },
     pm10:        { min: 30, max: 90, mean: 55  },
     co:          { min: 1500, max: 6000, mean: 3500 },
+    so2:         { min: 40, max: 140, mean: 80 },
+    o3:          { min: 60, max: 160, mean: 110 },
+    no2:         { min: 40, max: 120, mean: 80 },
     temperature: { min: 26, max: 32, mean: 29  },
     humidity:    { min: 50, max: 70, mean: 60  },
   },
@@ -4171,6 +4394,9 @@ const TIME_RANGES = {
     pm25:        { min: 12, max: 32, mean: 22  },
     pm10:        { min: 20, max: 65, mean: 40  },
     co:          { min: 1000, max: 4500, mean: 2500 },
+    so2:         { min: 30, max: 110, mean: 60 },
+    o3:          { min: 50, max: 140, mean: 90 },
+    no2:         { min: 30, max: 100, mean: 60 },
     temperature: { min: 25, max: 30, mean: 27  },
     humidity:    { min: 55, max: 75, mean: 65  },
   },
@@ -4178,6 +4404,9 @@ const TIME_RANGES = {
     pm25:        { min: 10, max: 25, mean: 17  },
     pm10:        { min: 18, max: 50, mean: 32  },
     co:          { min: 600, max: 2500, mean: 1200 },
+    so2:         { min: 20, max: 80, mean: 40 },
+    o3:          { min: 30, max: 100, mean: 60 },
+    no2:         { min: 20, max: 80, mean: 50 },
     temperature: { min: 24, max: 28, mean: 26  },
     humidity:    { min: 60, max: 80, mean: 70  },
   },
@@ -4185,6 +4414,9 @@ const TIME_RANGES = {
     pm25:        { min: 5,  max: 15, mean: 9   },
     pm10:        { min: 10, max: 30, mean: 18  },
     co:          { min: 300, max: 1500, mean: 800 },
+    so2:         { min: 10, max: 50, mean: 25 },
+    o3:          { min: 10, max: 60, mean: 30 },
+    no2:         { min: 10, max: 50, mean: 30 },
     temperature: { min: 22, max: 26, mean: 24  },
     humidity:    { min: 70, max: 90, mean: 80  },
   },
@@ -4210,10 +4442,6 @@ function randomInRange(min, max, mean) {
   return max - Math.sqrt((1 - u) * (max - min) * (max - mode));
 }
 
-/**
- * Generate data sensor normal berdasarkan slot waktu saat ini.
- * AQI dihitung dari MAX(PM2.5, PM10, CO) — sinkron dengan aqiCalculator.js
- */
 const generateSensorData = (roomType = 'normal') => {
   const now = new Date();
   const slot = getTimeSlot(now.getHours());
@@ -4222,16 +4450,21 @@ const generateSensorData = (roomType = 'normal') => {
   const pm25 = randomInRange(r.pm25.min, r.pm25.max, r.pm25.mean);
   const pm10 = randomInRange(r.pm10.min, r.pm10.max, r.pm10.mean);
   const co   = randomInRange(r.co.min,   r.co.max,   r.co.mean);
+  const so2  = randomInRange(r.so2.min,  r.so2.max,  r.so2.mean);
+  const o3   = randomInRange(r.o3.min,   r.o3.max,   r.o3.mean);
+  const no2  = randomInRange(r.no2.min,  r.no2.max,  r.no2.mean);
   const temperature = randomInRange(r.temperature.min, r.temperature.max, r.temperature.mean);
   const humidity    = randomInRange(r.humidity.min,    r.humidity.max,    r.humidity.mean);
 
-  // ✅ AQI = MAX dari PM2.5, PM10, dan CO
-  const aqiResult = calculateAQI(pm25, pm10, co);
+  const aqiResult = calculateAQI(pm25, pm10, co, so2, o3, no2);
 
   return {
     pm25: parseFloat(pm25.toFixed(1)),
     pm10: parseFloat(pm10.toFixed(1)),
     co: Math.round(co),
+    so2: parseFloat(so2.toFixed(1)),
+    o3: parseFloat(o3.toFixed(1)),
+    no2: parseFloat(no2.toFixed(1)),
     temperature: parseFloat(temperature.toFixed(1)),
     humidity: Math.round(humidity),
     aqi: aqiResult.aqi,
@@ -4240,6 +4473,9 @@ const generateSensorData = (roomType = 'normal') => {
     ispuPM25: aqiResult.ispuPM25,
     ispuPM10: aqiResult.ispuPM10,
     ispuCO: aqiResult.ispuCO,
+    ispuSO2: aqiResult.ispuSO2,
+    ispuO3: aqiResult.ispuO3,
+    ispuNO2: aqiResult.ispuNO2,
     timeSlot: slot,
     timestamp: now,
     isAnomaly: false,
@@ -4247,58 +4483,63 @@ const generateSensorData = (roomType = 'normal') => {
   };
 };
 
-/**
- * simulateAnomaly:
- *   - 92% normal  → data dari generateSensorData
- *   -  5% spike   → PM naik 8-17x, CO naik 1.5-2.5x, AQI dihitung ulang
- *   -  3% error   → semua nilai -1 (sensor mati)
- */
 const simulateAnomaly = (normalData) => {
   const roll = Math.random();
 
-  // ── 5% SPIKE ──
+  // 5% SPIKE
   if (roll < 0.05) {
     const subRoll = Math.random();
     let multiplier;
 
     if (subRoll < 0.60) {
-      multiplier = 8 + Math.random() * 2;       // 8-10x
+      multiplier = 8 + Math.random() * 2;
     } else if (subRoll < 0.90) {
-      multiplier = 10 + Math.random() * 3;      // 10-13x
+      multiplier = 10 + Math.random() * 3;
     } else {
-      multiplier = 13 + Math.random() * 4;      // 13-17x
+      multiplier = 13 + Math.random() * 4;
     }
 
     const pm25 = normalData.pm25 * multiplier;
     const pm10 = normalData.pm10 * multiplier;
-    const co   = normalData.co * (1.5 + Math.random());   // CO spike 1.5x-2.5x
+    const co   = normalData.co * (1.5 + Math.random());
+    const so2  = normalData.so2 * multiplier;
+    const o3   = normalData.o3 * multiplier;
+    const no2  = normalData.no2 * multiplier;
 
-    // ✅ AQI dihitung ulang setelah spike (termasuk CO)
-    const aqiResult = calculateAQI(pm25, pm10, co);
+    const aqiResult = calculateAQI(pm25, pm10, co, so2, o3, no2);
 
     return {
       ...normalData,
       pm25: parseFloat(pm25.toFixed(1)),
       pm10: parseFloat(pm10.toFixed(1)),
       co: Math.round(co),
+      so2: parseFloat(so2.toFixed(1)),
+      o3: parseFloat(o3.toFixed(1)),
+      no2: parseFloat(no2.toFixed(1)),
       aqi: aqiResult.aqi,
       category: aqiResult.category,
       dominant: aqiResult.dominant,
       ispuPM25: aqiResult.ispuPM25,
       ispuPM10: aqiResult.ispuPM10,
       ispuCO: aqiResult.ispuCO,
+      ispuSO2: aqiResult.ispuSO2,
+      ispuO3: aqiResult.ispuO3,
+      ispuNO2: aqiResult.ispuNO2,
       isAnomaly: true,
       anomalyType: 'spike',
     };
   }
 
-  // ── 3% SENSOR ERROR ──
+  // 3% SENSOR ERROR
   if (roll < 0.08) {
     return {
       ...normalData,
       pm25: -1,
       pm10: -1,
       co: -1,
+      so2: -1,
+      o3: -1,
+      no2: -1,
       temperature: -1,
       humidity: -1,
       aqi: -1,
@@ -4308,7 +4549,6 @@ const simulateAnomaly = (normalData) => {
     };
   }
 
-  // ── 92% NORMAL ──
   return normalData;
 };
 
@@ -10102,24 +10342,12 @@ class AppColors {
   static const Color secondary = Color(0xFF00B894);
   static const Color secondaryDark = Color(0xFF00A085);
   static const Color secondaryLight = Color(0xFF55EFC4);
-
-  // ============================================================
-  // AQI Colors — PP No. 22 Tahun 2021
-  // Sumber kebenaran tunggal: dipakai oleh Helpers, AQIInfoRepository,
-  // dan seluruh widget. Selaras dengan backend aqiCalculator.js.
-  //
-  //   Baik                #00E400   ISPU   0 –  50
-  //   Sedang              #0000FF   ISPU  51 – 100
-  //   Tidak Sehat         #FFFF00   ISPU 101 – 200
-  //   Sangat Tidak Sehat  #FF0000   ISPU 201 – 300
-  //   Berbahaya           #000000   ISPU 301 – 500
-  //   Error               #9E9E9E   sensor/device error (aqi < 0)
-  // ============================================================
-  static const Color aqiGood = Color(0xFF28A745);               // Baik — soft green
-  static const Color aqiModerate = Color(0xFF2196F3);           // Sedang — soft blue
-  static const Color aqiUnhealthySensitive = Color(0xFFFFC107); // Tidak Sehat — soft amber
-  static const Color aqiUnhealthy = Color(0xFFDC3545);          // Sangat Tidak Sehat — soft red
-  static const Color aqiHazardous = Color(0xFF37474F);          // Berbahaya — soft dark slate
+ 
+  static const Color aqiGood = Color(0xFF28A745);              
+  static const Color aqiModerate = Color(0xFF2196F3);           
+  static const Color aqiUnhealthySensitive = Color(0xFFFFC107); 
+  static const Color aqiUnhealthy = Color(0xFFDC3545);         
+  static const Color aqiHazardous = Color(0xFF37474F);         
   static const Color aqiError = Color(0xFF9E9E9E);   
 
   // Neutral Colors
@@ -11864,6 +12092,60 @@ class Helpers {
     return AppColors.aqiHazardous;
   }
 
+  static String getSO2Status(double value) {
+    if (value < 0) return 'ERROR';
+    if (value <= 80) return 'BAIK';
+    if (value <= 365) return 'SEDANG';
+    if (value <= 800) return 'TIDAK SEHAT';
+    if (value <= 1600) return 'SANGAT TIDAK SEHAT';
+    return 'BERBAHAYA';
+  }
+
+  static Color getSO2Color(double value) {
+    if (value < 0) return AppColors.aqiError;
+    if (value <= 80) return AppColors.aqiGood;
+    if (value <= 365) return AppColors.aqiModerate;
+    if (value <= 800) return AppColors.aqiUnhealthySensitive;
+    if (value <= 1600) return AppColors.aqiUnhealthy;
+    return AppColors.aqiHazardous;
+  }
+
+  static String getO3Status(double value) {
+    if (value < 0) return 'ERROR';
+    if (value <= 120) return 'BAIK';
+    if (value <= 235) return 'SEDANG';
+    if (value <= 400) return 'TIDAK SEHAT';
+    if (value <= 800) return 'SANGAT TIDAK SEHAT';
+    return 'BERBAHAYA';
+  }
+
+  static Color getO3Color(double value) {
+    if (value < 0) return AppColors.aqiError;
+    if (value <= 120) return AppColors.aqiGood;
+    if (value <= 235) return AppColors.aqiModerate;
+    if (value <= 400) return AppColors.aqiUnhealthySensitive;
+    if (value <= 800) return AppColors.aqiUnhealthy;
+    return AppColors.aqiHazardous;
+  }
+
+  static String getNO2Status(double value) {
+    if (value < 0) return 'ERROR';
+    if (value <= 80) return 'BAIK';
+    if (value <= 200) return 'SEDANG';
+    if (value <= 1130) return 'TIDAK SEHAT';
+    if (value <= 2260) return 'SANGAT TIDAK SEHAT';
+    return 'BERBAHAYA';
+  }
+
+  static Color getNO2Color(double value) {
+    if (value < 0) return AppColors.aqiError;
+    if (value <= 80) return AppColors.aqiGood;
+    if (value <= 200) return AppColors.aqiModerate;
+    if (value <= 1130) return AppColors.aqiUnhealthySensitive;
+    if (value <= 2260) return AppColors.aqiUnhealthy;
+    return AppColors.aqiHazardous;
+  }
+
   // ============================================================
   // DATE & TIME HELPERS
   // ============================================================
@@ -12218,6 +12500,66 @@ class Helpers {
       } else {
         recommendations.add(
             'CO: Evakuasi ruangan. Investigasi segera (sistem HVAC, kebocoran, ruangan tertutup terlalu lama).');
+      }
+    }
+
+    // 4b. SO2
+    final so2 = data.so2;
+    if (so2 != null && so2 >= 0) {
+      if (so2 <= 80) {
+        recommendations.add('SO2: Aman untuk perkuliahan normal.');
+      } else if (so2 <= 365) {
+        recommendations.add(
+            'SO2: Pastikan ventilasi ruangan baik. Hindari sumber pembakaran di sekitar ruangan.');
+      } else if (so2 <= 800) {
+        recommendations.add(
+            'SO2: Nyalakan ventilasi/exhaust. Masker disarankan. Kurangi aktivitas fisik berat.');
+      } else if (so2 <= 1600) {
+        recommendations.add(
+            'SO2: Masker wajib. Ventilasi maksimum. Pertimbangkan relokasi kelas atau daring.');
+      } else {
+        recommendations.add(
+            'SO2: Evakuasi ruangan. Investigasi sumber gas sulfur segera.');
+      }
+    }
+
+    // 4c. O3
+    final o3 = data.o3;
+    if (o3 != null && o3 >= 0) {
+      if (o3 <= 120) {
+        recommendations.add('O3: Aman untuk perkuliahan normal.');
+      } else if (o3 <= 235) {
+        recommendations.add(
+            'O3: Kelompok sensitif sebaiknya mengurangi aktivitas fisik berat. Pastikan ventilasi baik.');
+      } else if (o3 <= 400) {
+        recommendations.add(
+            'O3: Kurangi aktivitas fisik berat. Masker disarankan. Nyalakan air purifier bila ada.');
+      } else if (o3 <= 800) {
+        recommendations.add(
+            'O3: Masker wajib. Batasi durasi tatap muka. Pertimbangkan daring.');
+      } else {
+        recommendations.add(
+            'O3: Tidak ada aktivitas tatap muka. Evakuasi ruangan. Investigasi sumber ozon.');
+      }
+    }
+
+    // 4d. NO2
+    final no2 = data.no2;
+    if (no2 != null && no2 >= 0) {
+      if (no2 <= 80) {
+        recommendations.add('NO2: Aman untuk perkuliahan normal.');
+      } else if (no2 <= 200) {
+        recommendations.add(
+            'NO2: Pastikan ventilasi baik. Hindari sumber pembakaran di dalam ruangan.');
+      } else if (no2 <= 1130) {
+        recommendations.add(
+            'NO2: Nyalakan exhaust/ventilasi. Masker disarankan. Kurangi kapasitas ruangan.');
+      } else if (no2 <= 2260) {
+        recommendations.add(
+            'NO2: Masker wajib. Ventilasi darurat. Pertimbangkan mengosongkan ruangan sementara.');
+      } else {
+        recommendations.add(
+            'NO2: Evakuasi ruangan. Investigasi kebocoran gas/sistem HVAC segera.');
       }
     }
 
@@ -12619,6 +12961,9 @@ class RoomData {
   final double pm25;
   final double pm10;
   final double co;
+  final double? so2;
+  final double? o3;
+  final double? no2;
   final double temperature;
   final double humidity;
   final DateTime updatedAt;
@@ -12627,16 +12972,28 @@ class RoomData {
     required this.pm25,
     required this.pm10,
     required this.co,
+    this.so2,
+    this.o3,
+    this.no2,
     required this.temperature,
     required this.humidity,
     required this.updatedAt,
   });
+
+  static double? _nullableDouble(dynamic v) {
+    if (v == null) return null;
+    if (v is num) return v.toDouble();
+    return double.tryParse(v.toString());
+  }
 
   factory RoomData.fromJson(Map<String, dynamic> json) {
     return RoomData(
       pm25: (json['pm25'] ?? 0).toDouble(),
       pm10: (json['pm10'] ?? 0).toDouble(),
       co: (json['co'] ?? 0).toDouble(),
+      so2: _nullableDouble(json['so2']),
+      o3: _nullableDouble(json['o3']),
+      no2: _nullableDouble(json['no2']),
       temperature: (json['temperature'] ?? 0).toDouble(),
       humidity: (json['humidity'] ?? 0).toDouble(),
       updatedAt: json['updatedAt'] != null
@@ -12650,11 +13007,18 @@ class RoomData {
       'pm25': pm25,
       'pm10': pm10,
       'co': co,
+      'so2': so2,
+      'o3': o3,
+      'no2': no2,
       'temperature': temperature,
       'humidity': humidity,
       'updatedAt': updatedAt.toIso8601String(),
     };
   }
+
+  bool get hasSO2 => so2 != null;
+  bool get hasO3 => o3 != null;
+  bool get hasNO2 => no2 != null;
 }
 
 ---------------------------------------------------------------------------------------------------------------------------------------
@@ -12669,6 +13033,9 @@ class SensorData {
   final double pm25;
   final double pm10;
   final double co;
+  final double? so2;
+  final double? o3;
+  final double? no2;
   final double temperature;
   final double humidity;
   final String category;
@@ -12685,6 +13052,9 @@ class SensorData {
     required this.pm25,
     required this.pm10,
     required this.co,
+     this.so2,
+     this.o3,
+     this.no2,
     required this.temperature,
     required this.humidity,
     required this.category,
@@ -12703,6 +13073,9 @@ class SensorData {
       pm25: (json['pm25'] ?? 0).toDouble(),
       pm10: (json['pm10'] ?? 0).toDouble(),
       co: (json['co'] ?? 0).toDouble(),
+      so2: _nullableDouble(json['so2']),
+      o3: _nullableDouble(json['o3']),
+      no2: _nullableDouble(json['no2']),
       temperature: (json['temperature'] ?? 0).toDouble(),
       humidity: (json['humidity'] ?? 0).toDouble(),
       category: json['category']?.toString() ?? 'baik',
@@ -12712,6 +13085,12 @@ class SensorData {
       rawData: json['rawData'],
       timeLabel: json['timeLabel']?.toString(),
     );
+  }
+
+  static double? _nullableDouble(dynamic v) {
+    if (v == null) return null;
+    if (v is num) return v.toDouble();
+    return double.tryParse(v.toString());
   }
 
   Map<String, dynamic> toJson() {
@@ -12724,6 +13103,9 @@ class SensorData {
       'pm25': pm25,
       'pm10': pm10,
       'co': co,
+      'so2': so2,
+      'o3': o3,
+      'no2': no2,
       'temperature': temperature,
       'humidity': humidity,
       'category': category,
@@ -22032,6 +22414,18 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
             Helpers.getPM10Color(data.pm10)),
         _buildStatusChip(
             'CO: ${data.co.round()}', Helpers.getCOColor(data.co)),
+            if (data.so2 != null)
+          _buildStatusChip(
+              'SO2: ${data.so2!.toStringAsFixed(1)}',
+              Helpers.getSO2Color(data.so2!)),
+        if (data.o3 != null)
+          _buildStatusChip(
+              'O3: ${data.o3!.toStringAsFixed(1)}',
+              Helpers.getO3Color(data.o3!)),
+        if (data.no2 != null)
+          _buildStatusChip(
+              'NO2: ${data.no2!.toStringAsFixed(1)}',
+              Helpers.getNO2Color(data.no2!)),
         _buildStatusChip(
             'Suhu: ${data.temperature.toStringAsFixed(1)}°C',
             Helpers.getTemperatureColor(data.temperature)),
@@ -22100,6 +22494,31 @@ _RecSeverity _recommendationSeverity(String text) {
       if (data.co <= 8000) return _RecSeverity.warning; 
       return _RecSeverity.danger;
     }
+
+        if (text.startsWith('SO2:')) {
+      final v = data.so2;
+      if (v == null) return _RecSeverity.normal;
+      if (v <= 80) return _RecSeverity.normal;
+      if (v <= 365) return _RecSeverity.warning;
+      return _RecSeverity.danger;
+    }
+
+    if (text.startsWith('O3:')) {
+      final v = data.o3;
+      if (v == null) return _RecSeverity.normal;
+      if (v <= 120) return _RecSeverity.normal;
+      if (v <= 235) return _RecSeverity.warning;
+      return _RecSeverity.danger;
+    }
+
+    if (text.startsWith('NO2:')) {
+      final v = data.no2;
+      if (v == null) return _RecSeverity.normal;
+      if (v <= 80) return _RecSeverity.normal;
+      if (v <= 200) return _RecSeverity.warning;
+      return _RecSeverity.danger;
+    }
+    
 
     // --- Suhu ---
     if (text.startsWith('Suhu:')) {
@@ -22279,6 +22698,44 @@ _RecSeverity _recommendationSeverity(String text) {
     );
   }
 
+    Widget _buildOptionalPollutantRow() {
+    final data = _currentRoomData.currentData;
+    final cards = <Widget>[];
+
+    void addCard(Widget card) {
+      if (cards.isNotEmpty) cards.add(const SizedBox(width: 12));
+      cards.add(Expanded(child: card));
+    }
+
+    if (data.so2 != null) {
+      addCard(_buildParameterCard(
+        'SO2',
+        '${data.so2!.toStringAsFixed(1)}\nµg/m³',
+        Helpers.getSO2Status(data.so2!),
+        Helpers.getSO2Color(data.so2!),
+      ));
+    }
+    if (data.o3 != null) {
+      addCard(_buildParameterCard(
+        'O3',
+        '${data.o3!.toStringAsFixed(1)}\nµg/m³',
+        Helpers.getO3Status(data.o3!),
+        Helpers.getO3Color(data.o3!),
+      ));
+    }
+    if (data.no2 != null) {
+      addCard(_buildParameterCard(
+        'NO2',
+        '${data.no2!.toStringAsFixed(1)}\nµg/m³',
+        Helpers.getNO2Status(data.no2!),
+        Helpers.getNO2Color(data.no2!),
+      ));
+    }
+
+    if (cards.isEmpty) return const SizedBox.shrink();
+    return Row(children: cards);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -22371,6 +22828,8 @@ _RecSeverity _recommendationSeverity(String text) {
                 ),
               ],
             ),
+            const SizedBox(height: 12),
+            _buildOptionalPollutantRow(),
             const SizedBox(height: 12),
             Row(
               children: [
@@ -23207,19 +23666,26 @@ class _HistoryChartState extends State<HistoryChart> {
   static const double _containerPadding = 16.0;
 
   // Parameter options
-  final List<String> _parameters = [
+  // Parameter opsional (so2, o3, no2) hanya dimasukkan bila ada data.
+  final List<String> _baseParameters = [
     'aqi',
     'pm25',
     'pm10',
     'co',
     'temperature',
-    'humidity'
+    'humidity',
   ];
+
+  final List<String> _optionalParameters = ['so2', 'o3', 'no2'];
+
   final Map<String, String> _parameterLabels = {
     'aqi': 'AQI',
     'pm25': 'PM2.5',
     'pm10': 'PM10',
     'co': 'CO',
+    'so2': 'SO2',
+    'o3': 'O3',
+    'no2': 'NO2',
     'temperature': 'Suhu',
     'humidity': 'Kelembaban',
   };
@@ -23230,6 +23696,9 @@ class _HistoryChartState extends State<HistoryChart> {
     'pm25': Colors.red,
     'pm10': Colors.orange,
     'co': Colors.green,
+    'so2': Colors.brown,
+    'o3': Colors.cyan,
+    'no2': Colors.indigo,
     'temperature': Colors.purple,
     'humidity': Colors.teal,
   };
@@ -23255,6 +23724,45 @@ class _HistoryChartState extends State<HistoryChart> {
   void dispose() {
     _scrollController.dispose();
     super.dispose();
+  }
+
+  // ============================================================
+  // HELPER: ambil nilai parameter dari satu titik data.
+  // Mengembalikan null bila parameter tidak tersedia (IoT parsial).
+  // ============================================================
+  double? _valueFor(SensorData data, String parameter) {
+    switch (parameter) {
+      case 'aqi':
+        return data.aqi.toDouble();
+      case 'pm25':
+        return data.pm25;
+      case 'pm10':
+        return data.pm10;
+      case 'co':
+        return data.co;
+      case 'so2':
+        return data.so2;
+      case 'o3':
+        return data.o3;
+      case 'no2':
+        return data.no2;
+      case 'temperature':
+        return data.temperature;
+      case 'humidity':
+        return data.humidity;
+      default:
+        return null;
+    }
+  }
+
+  // ============================================================
+  // Parameter yang boleh dipilih: base + optional (hanya yang ada data)
+  // ============================================================
+  List<String> get _availableParameters {
+    final optional = _optionalParameters.where((p) {
+      return _historyData.any((d) => _valueFor(d, p) != null);
+    }).toList();
+    return [..._baseParameters, ...optional];
   }
 
   Future<void> _loadHistoryData() async {
@@ -23287,9 +23795,15 @@ class _HistoryChartState extends State<HistoryChart> {
                 SensorData.fromJson(Map<String, dynamic>.from(json)))
             .toList();
 
-        // Jika backend balas sukses tapi kosong → kosongkan (tanggal memang tidak ada data)
         setState(() {
           _historyData = parsed;
+
+          // Pastikan parameter terpilih masih tersedia.
+          // Jika tidak (mis. sebelumnya user pilih SO2, lalu pindah
+          // tanggal yang datanya tidak punya SO2), fallback ke AQI.
+          if (!_availableParameters.contains(_selectedParameter)) {
+            _selectedParameter = 'aqi';
+          }
         });
       } else {
         failed = true;
@@ -23366,33 +23880,9 @@ class _HistoryChartState extends State<HistoryChart> {
 
     for (int i = 0; i < _historyData.length; i++) {
       final data = _historyData[i];
-      final x = i.toDouble();
-
-      double y;
-      switch (_selectedParameter) {
-        case 'aqi':
-          y = data.aqi.toDouble();
-          break;
-        case 'pm25':
-          y = data.pm25;
-          break;
-        case 'pm10':
-          y = data.pm10;
-          break;
-        case 'co':
-          y = data.co;
-          break;
-        case 'temperature':
-          y = data.temperature;
-          break;
-        case 'humidity':
-          y = data.humidity;
-          break;
-        default:
-          y = 0;
-      }
-
-      spots.add(FlSpot(x, y));
+      final y = _valueFor(data, _selectedParameter);
+      if (y == null) continue;
+      spots.add(FlSpot(i.toDouble(), y));
     }
 
     return spots;
@@ -23643,7 +24133,16 @@ class _HistoryChartState extends State<HistoryChart> {
                                   '${data.pm25.toStringAsFixed(1)} μg/m³',
                               'PM10':
                                   '${data.pm10.toStringAsFixed(1)} μg/m³',
-                               'CO': '${data.co.round()} μg/m³',
+                              'CO': '${data.co.round()} μg/m³',
+                              if (data.so2 != null)
+                                'SO2':
+                                    '${data.so2!.toStringAsFixed(1)} μg/m³',
+                              if (data.o3 != null)
+                                'O3':
+                                    '${data.o3!.toStringAsFixed(1)} μg/m³',
+                              if (data.no2 != null)
+                                'NO2':
+                                    '${data.no2!.toStringAsFixed(1)} μg/m³',
                               'Suhu':
                                   '${data.temperature.toStringAsFixed(1)}°C',
                               'Kelembaban': '${data.humidity.round()}%',
@@ -23679,37 +24178,19 @@ class _HistoryChartState extends State<HistoryChart> {
   // spike (lonjakan mendadak) tetap MUAT di dalam FOV chart.
   // Contoh: data normal AQI 40-60, spike 350 → maxY = 350 × 1.1 = 385,
   // sehingga spike terlihat penuh tanpa terpotong.
+  //
+  // Untuk parameter opsional (SO2/O3/NO2), nilai null dilewati.
   double _getMinY() {
     if (_historyData.isEmpty) return 0.0;
 
     double minValue = double.infinity;
     for (var data in _historyData) {
-      double value;
-      switch (_selectedParameter) {
-        case 'aqi':
-          value = data.aqi.toDouble();
-          break;
-        case 'pm25':
-          value = data.pm25;
-          break;
-        case 'pm10':
-          value = data.pm10;
-          break;
-        case 'co':
-          value = data.co;
-          break;
-        case 'temperature':
-          value = data.temperature;
-          break;
-        case 'humidity':
-          value = data.humidity;
-          break;
-        default:
-          value = 0.0;
-      }
+      final value = _valueFor(data, _selectedParameter);
+      if (value == null) continue;
       if (value < minValue) minValue = value;
     }
 
+    if (minValue == double.infinity) return 0.0;
     return minValue - (minValue * 0.1);
   }
 
@@ -23718,44 +24199,26 @@ class _HistoryChartState extends State<HistoryChart> {
 
     double maxValue = double.negativeInfinity;
     for (var data in _historyData) {
-      double value;
-      switch (_selectedParameter) {
-        case 'aqi':
-          value = data.aqi.toDouble();
-          break;
-        case 'pm25':
-          value = data.pm25;
-          break;
-        case 'pm10':
-          value = data.pm10;
-          break;
-        case 'co':
-          value = data.co;
-          break;
-        case 'temperature':
-          value = data.temperature;
-          break;
-        case 'humidity':
-          value = data.humidity;
-          break;
-        default:
-          value = 0.0;
-      }
+      final value = _valueFor(data, _selectedParameter);
+      if (value == null) continue;
       if (value > maxValue) maxValue = value;
     }
 
+    if (maxValue == double.negativeInfinity) return 100.0;
     return maxValue + (maxValue * 0.1);
   }
 
   Widget _buildParameterSelector() {
+    final available = _availableParameters;
+
     return Container(
       height: 50,
       margin: const EdgeInsets.only(bottom: 16),
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
-        itemCount: _parameters.length,
+        itemCount: available.length,
         itemBuilder: (context, index) {
-          final parameter = _parameters[index];
+          final parameter = available[index];
           final isSelected = _selectedParameter == parameter;
           final color = _parameterColors[parameter]!;
 
@@ -24403,7 +24866,6 @@ class RoomCard extends StatelessWidget {
                 crossAxisSpacing: 12,
                 childAspectRatio: 1.1,
                 children: [
-                  // PM2.5
                   _buildParameterCell(
                     label: 'PM2.5',
                     value: room.currentData.pm25.toStringAsFixed(1),
@@ -24411,8 +24873,6 @@ class RoomCard extends StatelessWidget {
                     status: Helpers.getPM25Status(room.currentData.pm25),
                     color: Helpers.getPM25Color(room.currentData.pm25),
                   ),
-
-                  // PM10
                   _buildParameterCell(
                     label: 'PM10',
                     value: room.currentData.pm10.toStringAsFixed(1),
@@ -24420,17 +24880,40 @@ class RoomCard extends StatelessWidget {
                     status: Helpers.getPM10Status(room.currentData.pm10),
                     color: Helpers.getPM10Color(room.currentData.pm10),
                   ),
-
-                  // CO
                   _buildParameterCell(
-                    label: 'CO', 
-                    value: room.currentData.co.round().toString(), 
-                    unit: 'µg/m³', 
-                    status: Helpers.getCOStatus(room.currentData.co), 
-                    color: Helpers.getCOColor(room.currentData.co), 
+                    label: 'CO',
+                    value: room.currentData.co.round().toString(),
+                    unit: 'µg/m³',
+                    status: Helpers.getCOStatus(room.currentData.co),
+                    color: Helpers.getCOColor(room.currentData.co),
                   ),
 
-                  // Temperature
+                  // PARTIKEL BARU — hanya tampil jika data tersedia
+                  if (room.currentData.so2 != null)
+                    _buildParameterCell(
+                      label: 'SO2',
+                      value: room.currentData.so2!.toStringAsFixed(1),
+                      unit: 'µg/m³',
+                      status: Helpers.getSO2Status(room.currentData.so2!),
+                      color: Helpers.getSO2Color(room.currentData.so2!),
+                    ),
+                  if (room.currentData.o3 != null)
+                    _buildParameterCell(
+                      label: 'O3',
+                      value: room.currentData.o3!.toStringAsFixed(1),
+                      unit: 'µg/m³',
+                      status: Helpers.getO3Status(room.currentData.o3!),
+                      color: Helpers.getO3Color(room.currentData.o3!),
+                    ),
+                  if (room.currentData.no2 != null)
+                    _buildParameterCell(
+                      label: 'NO2',
+                      value: room.currentData.no2!.toStringAsFixed(1),
+                      unit: 'µg/m³',
+                      status: Helpers.getNO2Status(room.currentData.no2!),
+                      color: Helpers.getNO2Color(room.currentData.no2!),
+                    ),
+
                   _buildParameterCell(
                     label: 'SUHU',
                     value: room.currentData.temperature.toStringAsFixed(1),
@@ -24438,8 +24921,6 @@ class RoomCard extends StatelessWidget {
                     status: Helpers.getTemperatureStatus(room.currentData.temperature),
                     color: Helpers.getTemperatureColor(room.currentData.temperature),
                   ),
-
-                  // Humidity
                   _buildParameterCell(
                     label: 'LEMBAB',
                     value: room.currentData.humidity.round().toString(),
@@ -24447,63 +24928,7 @@ class RoomCard extends StatelessWidget {
                     status: Helpers.getHumidityStatus(room.currentData.humidity),
                     color: Helpers.getHumidityColor(room.currentData.humidity),
                   ),
-
-                  // Last Update
-                    Container(
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF8F9FA),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: const Color(0xFFE9ECEF)),
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.all(10),
-                        child: Builder(
-                          builder: (context) {
-                            final updateInfo =
-                                Helpers.formatCompactLastUpdate(room.currentData.updatedAt);
-                            final label = updateInfo['label'] ?? '';
-                            final time = updateInfo['time'] ?? '';
-
-                            // Jika hari ini, tampilkan label "UPDATE" di atas jam.
-                            // Jika kemarin/tanggal, tampilkan label tanggal di atas jam.
-                            final topLabel = label == 'HARI INI' ? 'UPDATE' : label;
-
-                            return Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                const SizedBox(height: 4),
-                                // Label atas (UPDATE / KEMARIN / 17/01)
-                                Text(
-                                  topLabel,
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w600,
-                                    color: Colors.grey[700],
-                                    letterSpacing: 0.3,
-                                  ),
-                                  textAlign: TextAlign.center,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                const SizedBox(height: 4),
-                                // Jam
-                                Text(
-                                  time,
-                                  style: const TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w700,
-                                    color: Color(0xFF212529),
-                                  ),
-                                  textAlign: TextAlign.center,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ],
-                            );
-                          },
-                        ),
-                      ),
-                    ),
+                  _buildLastUpdateCell(room),
                 ],
               ),
 
@@ -24575,6 +25000,8 @@ class RoomCard extends StatelessWidget {
       ),
     );
   }
+
+
 
   Widget _buildParameterCell({
     required String label,
@@ -24663,6 +25090,59 @@ class RoomCard extends StatelessWidget {
     );
   }
 }
+
+ Widget _buildLastUpdateCell(Room room) {
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8F9FA),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE9ECEF)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(10),
+        child: Builder(
+          builder: (context) {
+            final updateInfo =
+                Helpers.formatCompactLastUpdate(room.currentData.updatedAt);
+            final label = updateInfo['label'] ?? '';
+            final time = updateInfo['time'] ?? '';
+            final topLabel = label == 'HARI INI' ? 'UPDATE' : label;
+
+            return Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const SizedBox(height: 4),
+                Text(
+                  topLabel,
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.grey[700],
+                    letterSpacing: 0.3,
+                  ),
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  time,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF212529),
+                  ),
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
 
 ---------------------------------------------------------------------------------------------------------------------------------------
 lib/presentation/widgets/common/server_status_indicator.dart
@@ -24802,7 +25282,7 @@ const http = require('http');
 const url = require('url');
 
 // ============================================================
-// ISPU Calculator (sama persis dengan backend)
+// ISPU Calculator (sama persis dengan backend aqiCalculator.js)
 // ============================================================
 const PM25_BREAKPOINTS = [
   { ispuLow: 0,   ispuHigh: 50,  concLow: 0,   concHigh: 55  },
@@ -24811,12 +25291,45 @@ const PM25_BREAKPOINTS = [
   { ispuLow: 201, ispuHigh: 300, concLow: 251, concHigh: 350 },
   { ispuLow: 301, ispuHigh: 500, concLow: 351, concHigh: 500 },
 ];
+
 const PM10_BREAKPOINTS = [
   { ispuLow: 0,   ispuHigh: 50,  concLow: 0,   concHigh: 50  },
   { ispuLow: 51,  ispuHigh: 100, concLow: 51,  concHigh: 150 },
   { ispuLow: 101, ispuHigh: 200, concLow: 151, concHigh: 350 },
   { ispuLow: 201, ispuHigh: 300, concLow: 351, concHigh: 420 },
   { ispuLow: 301, ispuHigh: 500, concLow: 421, concHigh: 500 },
+];
+
+const CO_BREAKPOINTS = [
+  { ispuLow: 0,   ispuHigh: 50,  concLow: 0,     concHigh: 4000  },
+  { ispuLow: 51,  ispuHigh: 100, concLow: 4001,  concHigh: 8000  },
+  { ispuLow: 101, ispuHigh: 200, concLow: 8001,  concHigh: 15000 },
+  { ispuLow: 201, ispuHigh: 300, concLow: 15001, concHigh: 30000 },
+  { ispuLow: 301, ispuHigh: 500, concLow: 30001, concHigh: 45000 },
+];
+
+const SO2_BREAKPOINTS = [
+  { ispuLow: 0,   ispuHigh: 50,  concLow: 0,    concHigh: 80   },
+  { ispuLow: 51,  ispuHigh: 100, concLow: 81,   concHigh: 365  },
+  { ispuLow: 101, ispuHigh: 200, concLow: 366,  concHigh: 800  },
+  { ispuLow: 201, ispuHigh: 300, concLow: 801,  concHigh: 1600 },
+  { ispuLow: 301, ispuHigh: 500, concLow: 1601, concHigh: 3000 },
+];
+
+const O3_BREAKPOINTS = [
+  { ispuLow: 0,   ispuHigh: 50,  concLow: 0,   concHigh: 120  },
+  { ispuLow: 51,  ispuHigh: 100, concLow: 121, concHigh: 235  },
+  { ispuLow: 101, ispuHigh: 200, concLow: 236, concHigh: 400  },
+  { ispuLow: 201, ispuHigh: 300, concLow: 401, concHigh: 800  },
+  { ispuLow: 301, ispuHigh: 500, concLow: 801, concHigh: 1000 },
+];
+
+const NO2_BREAKPOINTS = [
+  { ispuLow: 0,   ispuHigh: 50,  concLow: 0,    concHigh: 80   },
+  { ispuLow: 51,  ispuHigh: 100, concLow: 81,   concHigh: 200  },
+  { ispuLow: 101, ispuHigh: 200, concLow: 201,  concHigh: 1130 },
+  { ispuLow: 201, ispuHigh: 300, concLow: 1131, concHigh: 2260 },
+  { ispuLow: 301, ispuHigh: 500, concLow: 2261, concHigh: 3000 },
 ];
 
 function calculateISPU(conc, bps) {
@@ -24834,16 +25347,23 @@ function calculateISPU(conc, bps) {
 
 const calculateISPUFromPM25 = (pm25) => calculateISPU(pm25, PM25_BREAKPOINTS);
 const calculateISPUFromPM10 = (pm10) => calculateISPU(pm10, PM10_BREAKPOINTS);
+const calculateISPUFromCO   = (co)   => calculateISPU(co,   CO_BREAKPOINTS);
+const calculateISPUFromSO2  = (so2)  => calculateISPU(so2,  SO2_BREAKPOINTS);
+const calculateISPUFromO3   = (o3)   => calculateISPU(o3,   O3_BREAKPOINTS);
+const calculateISPUFromNO2  = (no2)  => calculateISPU(no2,  NO2_BREAKPOINTS);
 
 // ============================================================
 // Time-based ranges
-// Nilai CO disesuaikan dengan skala ISPU (µg/m³)
+// Nilai CO/SO2/O3/NO2 disesuaikan dengan skala ISPU (µg/m³)
 // ============================================================
 const TIME_RANGES = {
   '06-08': {
     pm25:        { min: 8,  max: 20, mean: 14  },
     pm10:        { min: 15, max: 40, mean: 25  },
     co:          { min: 500, max: 2000, mean: 1000 },
+    so2:         { min: 20, max: 60, mean: 40 },
+    o3:          { min: 20, max: 80, mean: 50 },
+    no2:         { min: 20, max: 70, mean: 45 },
     temperature: { min: 22, max: 26, mean: 24  },
     humidity:    { min: 65, max: 85, mean: 75  },
   },
@@ -24851,6 +25371,9 @@ const TIME_RANGES = {
     pm25:        { min: 15, max: 40, mean: 27  },
     pm10:        { min: 25, max: 80, mean: 50  },
     co:          { min: 1000, max: 4000, mean: 2500 },
+    so2:         { min: 30, max: 100, mean: 60 },
+    o3:          { min: 40, max: 120, mean: 80 },
+    no2:         { min: 30, max: 100, mean: 60 },
     temperature: { min: 24, max: 29, mean: 26  },
     humidity:    { min: 55, max: 75, mean: 65  },
   },
@@ -24858,6 +25381,9 @@ const TIME_RANGES = {
     pm25:        { min: 18, max: 45, mean: 30  },
     pm10:        { min: 30, max: 90, mean: 55  },
     co:          { min: 1500, max: 6000, mean: 3500 },
+    so2:         { min: 40, max: 140, mean: 80 },
+    o3:          { min: 60, max: 160, mean: 110 },
+    no2:         { min: 40, max: 120, mean: 80 },
     temperature: { min: 26, max: 32, mean: 29  },
     humidity:    { min: 50, max: 70, mean: 60  },
   },
@@ -24865,6 +25391,9 @@ const TIME_RANGES = {
     pm25:        { min: 12, max: 32, mean: 22  },
     pm10:        { min: 20, max: 65, mean: 40  },
     co:          { min: 1000, max: 4500, mean: 2500 },
+    so2:         { min: 30, max: 110, mean: 60 },
+    o3:          { min: 50, max: 140, mean: 90 },
+    no2:         { min: 30, max: 100, mean: 60 },
     temperature: { min: 25, max: 30, mean: 27  },
     humidity:    { min: 55, max: 75, mean: 65  },
   },
@@ -24872,6 +25401,9 @@ const TIME_RANGES = {
     pm25:        { min: 10, max: 25, mean: 17  },
     pm10:        { min: 18, max: 50, mean: 32  },
     co:          { min: 600, max: 2500, mean: 1200 },
+    so2:         { min: 20, max: 80, mean: 40 },
+    o3:          { min: 30, max: 100, mean: 60 },
+    no2:         { min: 20, max: 80, mean: 50 },
     temperature: { min: 24, max: 28, mean: 26  },
     humidity:    { min: 60, max: 80, mean: 70  },
   },
@@ -24879,6 +25411,9 @@ const TIME_RANGES = {
     pm25:        { min: 5,  max: 15, mean: 9   },
     pm10:        { min: 10, max: 30, mean: 18  },
     co:          { min: 300, max: 1500, mean: 800 },
+    so2:         { min: 10, max: 50, mean: 25 },
+    o3:          { min: 10, max: 60, mean: 30 },
+    no2:         { min: 10, max: 50, mean: 30 },
     temperature: { min: 22, max: 26, mean: 24  },
     humidity:    { min: 70, max: 90, mean: 80  },
   },
@@ -24910,7 +25445,7 @@ const secondDataCache = new Map();
 // Anomaly simulation (SAMA dengan backend dataGenerator)
 // 92% normal / 5% spike (8-17x) / 3% error
 // ============================================================
-function applyAnomaly(pm25, pm10, co, temperature, humidity) {
+function applyAnomaly(pm25, pm10, co, so2, o3, no2, temperature, humidity) {
   const roll = Math.random();
 
   if (roll < 0.05) {
@@ -24930,6 +25465,9 @@ function applyAnomaly(pm25, pm10, co, temperature, humidity) {
       pm25: pm25 * multiplier,
       pm10: pm10 * multiplier,
       co: co * (1.5 + Math.random()), // Spike CO 1.5x - 2.5x dari nilai normal
+      so2: so2 * multiplier,
+      o3: o3 * multiplier,
+      no2: no2 * multiplier,
       temperature,
       humidity,
     };
@@ -24939,14 +25477,16 @@ function applyAnomaly(pm25, pm10, co, temperature, humidity) {
     return {
       isAnomaly: true,
       anomalyType: 'error',
-      pm25: -1, pm10: -1, co: -1, temperature: -1, humidity: -1,
+      pm25: -1, pm10: -1, co: -1,
+      so2: -1, o3: -1, no2: -1,
+      temperature: -1, humidity: -1,
     };
   }
 
   return {
     isAnomaly: false,
     anomalyType: null,
-    pm25, pm10, co, temperature, humidity,
+    pm25, pm10, co, so2, o3, no2, temperature, humidity,
   };
 }
 
@@ -24989,36 +25529,60 @@ function generate30SecondBasedData(deviceId) {
   const rawPm25 = randomInRange(r.pm25.min, r.pm25.max, r.pm25.mean);
   const rawPm10 = randomInRange(r.pm10.min, r.pm10.max, r.pm10.mean);
   const rawCo   = randomInRange(r.co.min,  r.co.max,  r.co.mean);
+  const rawSo2  = randomInRange(r.so2.min, r.so2.max, r.so2.mean);
+  const rawO3   = randomInRange(r.o3.min,  r.o3.max,  r.o3.mean);
+  const rawNo2  = randomInRange(r.no2.min, r.no2.max, r.no2.mean);
   const rawTemp = randomInRange(r.temperature.min, r.temperature.max, r.temperature.mean);
   const rawRh   = randomInRange(r.humidity.min,    r.humidity.max,    r.humidity.mean);
 
   const alpha = 0.4;
   const prev = state.prevValues || {
     pm25: rawPm25, pm10: rawPm10, co: rawCo,
+    so2: rawSo2, o3: rawO3, no2: rawNo2,
     temperature: rawTemp, humidity: rawRh,
   };
   const pm25 = prev.pm25 * (1 - alpha) + rawPm25 * alpha;
   const pm10 = prev.pm10 * (1 - alpha) + rawPm10 * alpha;
   const co   = prev.co  * (1 - alpha) + rawCo  * alpha;
+  const so2  = prev.so2 * (1 - alpha) + rawSo2 * alpha;
+  const o3   = prev.o3  * (1 - alpha) + rawO3  * alpha;
+  const no2  = prev.no2 * (1 - alpha) + rawNo2 * alpha;
   const temperature = prev.temperature * (1 - alpha) + rawTemp * alpha;
   const humidity    = prev.humidity    * (1 - alpha) + rawRh   * alpha;
 
   // Update state (JANGAN feed anomali ke state — supaya spike transien 1 tick)
-  state.prevValues = { pm25, pm10, co, temperature, humidity };
+  state.prevValues = { pm25, pm10, co, so2, o3, no2, temperature, humidity };
   state.updateCounter++;
   state.last30SecondBlock = current30SecondBlock;
 
-  const anomalous = applyAnomaly(pm25, pm10, co, temperature, humidity);
+  const anomalous = applyAnomaly(pm25, pm10, co, so2, o3, no2, temperature, humidity);
 
-  // Hitung AQI
-  let finalAQI, finalCategory;
+  // Hitung AQI — konsisten dengan backend aqiCalculator.js
+  let finalAQI, finalCategory, dominant;
   if (anomalous.anomalyType === 'error') {
     finalAQI = -1;
     finalCategory = 'error';
+    dominant = null;
   } else {
     const ispuPM25 = calculateISPUFromPM25(anomalous.pm25);
     const ispuPM10 = calculateISPUFromPM10(anomalous.pm10);
-    finalAQI = Math.max(ispuPM25, ispuPM10);
+    const ispuCO   = calculateISPUFromCO(anomalous.co);
+    const ispuSO2  = calculateISPUFromSO2(anomalous.so2);
+    const ispuO3   = calculateISPUFromO3(anomalous.o3);
+    const ispuNO2  = calculateISPUFromNO2(anomalous.no2);
+
+    // Tie-breaker: CO → SO2 → O3 → NO2 → PM2.5 → PM10
+    const ordered = [
+      { name: 'co',   value: ispuCO   },
+      { name: 'so2',  value: ispuSO2  },
+      { name: 'o3',   value: ispuO3   },
+      { name: 'no2',  value: ispuNO2  },
+      { name: 'pm25', value: ispuPM25 },
+      { name: 'pm10', value: ispuPM10 },
+    ];
+
+    finalAQI = Math.max(...ordered.map((c) => c.value));
+    dominant = ordered.find((c) => c.value === finalAQI).name;
 
     if (finalAQI <= 50) finalCategory = 'baik';
     else if (finalAQI <= 100) finalCategory = 'sedang';
@@ -25034,9 +25598,13 @@ function generate30SecondBasedData(deviceId) {
     secondsInBlock: second % 30,
     updateCounter: state.updateCounter,
     aqi: finalAQI,
+    dominant,
     pm25: parseFloat(anomalous.pm25.toFixed(1)),
     pm10: parseFloat(anomalous.pm10.toFixed(1)),
     co: Math.round(anomalous.co),
+    so2: parseFloat(anomalous.so2.toFixed(1)),
+    o3: parseFloat(anomalous.o3.toFixed(1)),
+    no2: parseFloat(anomalous.no2.toFixed(1)),
     temperature: parseFloat(anomalous.temperature.toFixed(1)),
     humidity: Math.round(anomalous.humidity),
     category: finalCategory,
@@ -25055,11 +25623,11 @@ function generate30SecondBasedData(deviceId) {
 
   if (anomalous.isAnomaly) {
     console.log(
-      `🚨 ${deviceId} ANOMALY (${anomalous.anomalyType}): AQI=${finalAQI} (${finalCategory}), PM2.5=${sensorData.pm25}`
+      `🚨 ${deviceId} ANOMALY (${anomalous.anomalyType}): AQI=${finalAQI} (${finalCategory}), PM2.5=${sensorData.pm25}, dominant=${dominant}`
     );
   } else {
     console.log(
-      `🔄 ${deviceId} [${slot}] AQI=${finalAQI}, PM2.5=${sensorData.pm25}, PM10=${sensorData.pm10}, CO=${sensorData.co}`
+      `🔄 ${deviceId} [${slot}] AQI=${finalAQI} (${dominant}), PM2.5=${sensorData.pm25}, PM10=${sensorData.pm10}, CO=${sensorData.co}, SO2=${sensorData.so2}, O3=${sensorData.o3}, NO2=${sensorData.no2}`
     );
   }
 
@@ -25131,7 +25699,7 @@ const server = http.createServer((req, res) => {
         sendJson(res, 200, {
           status: 'ok',
           service: 'UNILA AQI IoT Simulator - 30 SECOND UPDATES',
-          version: '6.0.0',
+          version: '7.0.0',
           currentTime: now.toISOString(),
           current30SecondBlock,
           secondsInCurrentBlock: now.getSeconds() % 30,
@@ -25143,7 +25711,9 @@ const server = http.createServer((req, res) => {
             'Predictable patterns',
             'Anomaly simulation (5% spike, 3% error)',
             'Room type variations',
-            'Time-of-day patterns'
+            'Time-of-day patterns',
+            'Full ISPU parameters (PM2.5, PM10, CO, SO2, O3, NO2)',
+            'Dominant pollutant detection'
           ]
         });
         return;
@@ -25233,6 +25803,9 @@ const server = http.createServer((req, res) => {
               pm25: 'μg/m³',
               pm10: 'μg/m³',
               co: 'μg/m³',
+              so2: 'μg/m³',
+              o3: 'μg/m³',
+              no2: 'μg/m³',
               temperature: '°C',
               humidity: '%'
             }
@@ -25313,7 +25886,7 @@ const server = http.createServer((req, res) => {
 
       if (pathname.startsWith('/set-base/') && method === 'POST') {
         const deviceId = pathname.split('/')[2];
-        const { pm25, pm10, co, temperature, humidity, roomType } = requestData;
+        const { pm25, pm10, co, so2, o3, no2, temperature, humidity, roomType } = requestData;
 
         if (!deviceId) {
           return sendJson(res, 400, { success: false, message: 'Device ID is required' });
@@ -25322,6 +25895,7 @@ const server = http.createServer((req, res) => {
         if (!deviceStates.has(deviceId)) {
           deviceStates.set(deviceId, {
             basePM25: 20, basePM10: 40, baseCO: 1500,
+            baseSO2: 40, baseO3: 60, baseNO2: 50,
             baseTemp: 23, baseHumidity: 50, roomType: 0,
             trendPM25: 0, trendCO: 0, last30SecondBlock: -1, updateCounter: 0
           });
@@ -25332,6 +25906,9 @@ const server = http.createServer((req, res) => {
         if (pm25 !== undefined) state.basePM25 = pm25;
         if (pm10 !== undefined) state.basePM10 = pm10;
         if (co !== undefined) state.baseCO = co;
+        if (so2 !== undefined) state.baseSO2 = so2;
+        if (o3 !== undefined) state.baseO3 = o3;
+        if (no2 !== undefined) state.baseNO2 = no2;
         if (temperature !== undefined) state.baseTemp = temperature;
         if (humidity !== undefined) state.baseHumidity = humidity;
         if (roomType !== undefined) {
@@ -25351,6 +25928,9 @@ const server = http.createServer((req, res) => {
             basePM25: state.basePM25,
             basePM10: state.basePM10,
             baseCO: state.baseCO,
+            baseSO2: state.baseSO2,
+            baseO3: state.baseO3,
+            baseNO2: state.baseNO2,
             baseTemp: state.baseTemp,
             baseHumidity: state.baseHumidity,
             roomType: ['Kelas', 'Laboratorium', 'Perpustakaan', 'Aula'][state.roomType]
@@ -25389,19 +25969,29 @@ const server = http.createServer((req, res) => {
             const pm25 = state.basePM25 * timeFactor * (1 + Math.sin(updateOffset * 0.2) * 0.2);
             const pm10 = pm25 * 2;
             const co = state.baseCO * timeFactor;
+            const so2 = (state.baseSO2 ?? 40) * timeFactor;
+            const o3 = (state.baseO3 ?? 60) * timeFactor;
+            const no2 = (state.baseNO2 ?? 50) * timeFactor;
 
-            let aqi;
-            if (pm25 <= 12.0) aqi = Math.round((pm25 / 12.0) * 50);
-            else if (pm25 <= 35.4) aqi = Math.round(51 + ((pm25 - 12.1) / (35.4 - 12.1)) * 49);
-            else aqi = Math.round(101 + ((pm25 - 35.5) / (55.4 - 35.5)) * 49);
+            // AQI dihitung dari semua parameter (konsisten dgn backend)
+            const ispuPM25 = calculateISPUFromPM25(pm25);
+            const ispuPM10 = calculateISPUFromPM10(pm10);
+            const ispuCO   = calculateISPUFromCO(co);
+            const ispuSO2  = calculateISPUFromSO2(so2);
+            const ispuO3   = calculateISPUFromO3(o3);
+            const ispuNO2  = calculateISPUFromNO2(no2);
+            const aqi = Math.min(500, Math.max(ispuPM25, ispuPM10, ispuCO, ispuSO2, ispuO3, ispuNO2));
 
             history.push({
               timestamp: historyTime.toISOString(),
               block: historyBlock,
-              aqi: Math.min(500, aqi),
+              aqi,
               pm25: parseFloat(pm25.toFixed(1)),
               pm10: parseFloat(pm10.toFixed(1)),
               co: Math.round(co),
+              so2: parseFloat(so2.toFixed(1)),
+              o3: parseFloat(o3.toFixed(1)),
+              no2: parseFloat(no2.toFixed(1)),
               temperature: state.baseTemp + Math.sin(hour * 0.2618 + minute * 0.00436) * 3,
               humidity: state.baseHumidity + Math.cos(hour * 0.2618 + minute * 0.00436) * 10
             });
@@ -25491,6 +26081,8 @@ server.listen(PORT, HOST, () => {
   console.log('   ✅ Cache per 30 detik');
   console.log('   ✅ Room type variations');
   console.log('   ✅ EMA smoothing (alpha=0.4)');
+  console.log('   ✅ ISPU untuk 6 parameter: PM2.5, PM10, CO, SO2, O3, NO2');
+  console.log('   ✅ Dominant pollutant detection');
 
   console.log('\n💡 Contoh untuk Aplikasi AQI:');
   console.log(`  Endpoint: http://${HOST}:${PORT}/data/kelas-h101`);

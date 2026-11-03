@@ -7,6 +7,9 @@ class SensorData {
   final double pm25;
   final double pm10;
   final double co;
+  final double? so2;
+  final double? o3;
+  final double? no2;
   final double temperature;
   final double humidity;
   final String category;
@@ -23,6 +26,9 @@ class SensorData {
     required this.pm25,
     required this.pm10,
     required this.co,
+     this.so2,
+     this.o3,
+     this.no2,
     required this.temperature,
     required this.humidity,
     required this.category,
@@ -41,6 +47,9 @@ class SensorData {
       pm25: (json['pm25'] ?? 0).toDouble(),
       pm10: (json['pm10'] ?? 0).toDouble(),
       co: (json['co'] ?? 0).toDouble(),
+      so2: _nullableDouble(json['so2']),
+      o3: _nullableDouble(json['o3']),
+      no2: _nullableDouble(json['no2']),
       temperature: (json['temperature'] ?? 0).toDouble(),
       humidity: (json['humidity'] ?? 0).toDouble(),
       category: json['category']?.toString() ?? 'baik',
@@ -50,6 +59,12 @@ class SensorData {
       rawData: json['rawData'],
       timeLabel: json['timeLabel']?.toString(),
     );
+  }
+
+  static double? _nullableDouble(dynamic v) {
+    if (v == null) return null;
+    if (v is num) return v.toDouble();
+    return double.tryParse(v.toString());
   }
 
   Map<String, dynamic> toJson() {
@@ -62,6 +77,9 @@ class SensorData {
       'pm25': pm25,
       'pm10': pm10,
       'co': co,
+      'so2': so2,
+      'o3': o3,
+      'no2': no2,
       'temperature': temperature,
       'humidity': humidity,
       'category': category,

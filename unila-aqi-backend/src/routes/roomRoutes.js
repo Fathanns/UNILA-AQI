@@ -4,7 +4,13 @@ const Room = require('../models/Room');
 const Building = require('../models/Building');
 const SensorData = require('../models/SensorData');
 const { authMiddleware, adminMiddleware } = require('../middleware/authMiddleware');
-const { getAQICategory, aqiToPm25 } = require('../utils/aqiCalculator');
+const {
+  getAQICategory,
+  aqiToPm25,
+  aqiToSO2,
+  aqiToO3,
+  aqiToNO2,
+} = require('../utils/aqiCalculator');
 
 const broadcastRoomUpdate = (io, room, action, oldData = null) => {
   if (io) {
@@ -121,15 +127,22 @@ router.post('/demo-cycle', authMiddleware, adminMiddleware, async (req, res) => 
       const target = targets[i];
       const room = rooms[i];
 
-      const pm25 = aqiToPm25(target.aqi);
+       const pm25 = aqiToPm25(target.aqi);
       const pm10 = Math.round(pm25 * 1.5);
       const co = target.aqi > 200 ? 20000 : (target.aqi > 100 ? 12000 : 2000);
+      const so2 = aqiToSO2(target.aqi);
+      const o3 = aqiToO3(target.aqi);
+      const no2 = aqiToNO2(target.aqi);
       const temperature = target.aqi > 200 ? 33 : (target.aqi > 100 ? 30 : 26);
       const humidity = target.aqi > 200 ? 80 : (target.aqi > 100 ? 70 : 55);
 
       room.demoMode = true;
       room.currentAQI = target.aqi;
-      room.currentData = { pm25, pm10, co, temperature, humidity, updatedAt: new Date() };
+      room.currentData = {
+        pm25, pm10, co, so2, o3, no2,
+        temperature, humidity,
+        updatedAt: new Date()
+      };
       room.updatedAt = new Date();
       await room.save();
 
@@ -138,7 +151,8 @@ router.post('/demo-cycle', authMiddleware, adminMiddleware, async (req, res) => 
         roomName: room.name,
         buildingName: room.buildingName,
         aqi: target.aqi,
-        pm25, pm10, co, temperature, humidity,
+        pm25, pm10, co, so2, o3, no2,
+        temperature, humidity,
         category: getAQICategory(target.aqi).category,
         timestamp: new Date(),
       }).save();
@@ -192,16 +206,20 @@ router.post('/:id/demo-aqi', authMiddleware, adminMiddleware, async (req, res) =
       return res.status(404).json({ success: false, message: 'Room not found' });
     }
 
-    const pm25 = aqiToPm25(target);
+        const pm25 = aqiToPm25(target);
     const pm10 = Math.round(pm25 * 1.5);
-     const co = target > 200 ? 20000 : (target > 100 ? 12000 : 2000);
+    const co = target > 200 ? 20000 : (target > 100 ? 12000 : 2000);
+    const so2 = aqiToSO2(target);
+    const o3 = aqiToO3(target);
+    const no2 = aqiToNO2(target);
     const temperature = target > 200 ? 33 : (target > 100 ? 30 : 26);
     const humidity = target > 200 ? 80 : (target > 100 ? 70 : 55);
 
     room.demoMode = true;
     room.currentAQI = target;
     room.currentData = {
-      pm25, pm10, co, temperature, humidity,
+      pm25, pm10, co, so2, o3, no2,
+      temperature, humidity,
       updatedAt: new Date()
     };
     room.updatedAt = new Date();
@@ -212,7 +230,8 @@ router.post('/:id/demo-aqi', authMiddleware, adminMiddleware, async (req, res) =
       roomName: room.name,
       buildingName: room.buildingName,
       aqi: target,
-      pm25, pm10, co, temperature, humidity,
+      pm25, pm10, co, so2, o3, no2,
+      temperature, humidity,
       category: getAQICategory(target).category,
       timestamp: new Date(),
     }).save();
@@ -347,7 +366,9 @@ router.post('/', authMiddleware, adminMiddleware, async (req, res) => {
       iotDeviceId: dataSource === 'iot' ? iotDeviceId : null,
       currentAQI: 0,
       currentData: {
-        pm25: 0, pm10: 0, co: 0, temperature: 0, humidity: 0,
+        pm25: 0, pm10: 0, co: 0,
+        so2: null, o3: null, no2: null,
+        temperature: 0, humidity: 0,
         updatedAt: new Date()
       },
       createdAt: new Date(),
@@ -476,7 +497,9 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
     if (deviceChanged) {
       room.currentAQI = 0;
       room.currentData = {
-        pm25: 0, pm10: 0, co: 0, temperature: 0, humidity: 0,
+        pm25: 0, pm10: 0, co: 0,
+        so2: null, o3: null, no2: null,
+        temperature: 0, humidity: 0,
         updatedAt: new Date()
       };
       console.log(

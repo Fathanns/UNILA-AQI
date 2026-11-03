@@ -10,24 +10,12 @@ class AppColors {
   static const Color secondary = Color(0xFF00B894);
   static const Color secondaryDark = Color(0xFF00A085);
   static const Color secondaryLight = Color(0xFF55EFC4);
-
-  // ============================================================
-  // AQI Colors — PP No. 22 Tahun 2021
-  // Sumber kebenaran tunggal: dipakai oleh Helpers, AQIInfoRepository,
-  // dan seluruh widget. Selaras dengan backend aqiCalculator.js.
-  //
-  //   Baik                #00E400   ISPU   0 –  50
-  //   Sedang              #0000FF   ISPU  51 – 100
-  //   Tidak Sehat         #FFFF00   ISPU 101 – 200
-  //   Sangat Tidak Sehat  #FF0000   ISPU 201 – 300
-  //   Berbahaya           #000000   ISPU 301 – 500
-  //   Error               #9E9E9E   sensor/device error (aqi < 0)
-  // ============================================================
-  static const Color aqiGood = Color(0xFF28A745);               // Baik — soft green
-  static const Color aqiModerate = Color(0xFF2196F3);           // Sedang — soft blue
-  static const Color aqiUnhealthySensitive = Color(0xFFFFC107); // Tidak Sehat — soft amber
-  static const Color aqiUnhealthy = Color(0xFFDC3545);          // Sangat Tidak Sehat — soft red
-  static const Color aqiHazardous = Color(0xFF37474F);          // Berbahaya — soft dark slate
+ 
+  static const Color aqiGood = Color(0xFF28A745);              
+  static const Color aqiModerate = Color(0xFF2196F3);           
+  static const Color aqiUnhealthySensitive = Color(0xFFFFC107); 
+  static const Color aqiUnhealthy = Color(0xFFDC3545);         
+  static const Color aqiHazardous = Color(0xFF37474F);         
   static const Color aqiError = Color(0xFF9E9E9E);   
 
   // Neutral Colors

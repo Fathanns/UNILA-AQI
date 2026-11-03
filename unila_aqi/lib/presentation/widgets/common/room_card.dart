@@ -135,7 +135,6 @@ class RoomCard extends StatelessWidget {
                 crossAxisSpacing: 12,
                 childAspectRatio: 1.1,
                 children: [
-                  // PM2.5
                   _buildParameterCell(
                     label: 'PM2.5',
                     value: room.currentData.pm25.toStringAsFixed(1),
@@ -143,8 +142,6 @@ class RoomCard extends StatelessWidget {
                     status: Helpers.getPM25Status(room.currentData.pm25),
                     color: Helpers.getPM25Color(room.currentData.pm25),
                   ),
-
-                  // PM10
                   _buildParameterCell(
                     label: 'PM10',
                     value: room.currentData.pm10.toStringAsFixed(1),
@@ -152,17 +149,40 @@ class RoomCard extends StatelessWidget {
                     status: Helpers.getPM10Status(room.currentData.pm10),
                     color: Helpers.getPM10Color(room.currentData.pm10),
                   ),
-
-                  // CO
                   _buildParameterCell(
-                    label: 'CO', 
-                    value: room.currentData.co.round().toString(), 
-                    unit: 'µg/m³', 
-                    status: Helpers.getCOStatus(room.currentData.co), 
-                    color: Helpers.getCOColor(room.currentData.co), 
+                    label: 'CO',
+                    value: room.currentData.co.round().toString(),
+                    unit: 'µg/m³',
+                    status: Helpers.getCOStatus(room.currentData.co),
+                    color: Helpers.getCOColor(room.currentData.co),
                   ),
 
-                  // Temperature
+                  // PARTIKEL BARU — hanya tampil jika data tersedia
+                  if (room.currentData.so2 != null)
+                    _buildParameterCell(
+                      label: 'SO2',
+                      value: room.currentData.so2!.toStringAsFixed(1),
+                      unit: 'µg/m³',
+                      status: Helpers.getSO2Status(room.currentData.so2!),
+                      color: Helpers.getSO2Color(room.currentData.so2!),
+                    ),
+                  if (room.currentData.o3 != null)
+                    _buildParameterCell(
+                      label: 'O3',
+                      value: room.currentData.o3!.toStringAsFixed(1),
+                      unit: 'µg/m³',
+                      status: Helpers.getO3Status(room.currentData.o3!),
+                      color: Helpers.getO3Color(room.currentData.o3!),
+                    ),
+                  if (room.currentData.no2 != null)
+                    _buildParameterCell(
+                      label: 'NO2',
+                      value: room.currentData.no2!.toStringAsFixed(1),
+                      unit: 'µg/m³',
+                      status: Helpers.getNO2Status(room.currentData.no2!),
+                      color: Helpers.getNO2Color(room.currentData.no2!),
+                    ),
+
                   _buildParameterCell(
                     label: 'SUHU',
                     value: room.currentData.temperature.toStringAsFixed(1),
@@ -170,8 +190,6 @@ class RoomCard extends StatelessWidget {
                     status: Helpers.getTemperatureStatus(room.currentData.temperature),
                     color: Helpers.getTemperatureColor(room.currentData.temperature),
                   ),
-
-                  // Humidity
                   _buildParameterCell(
                     label: 'LEMBAB',
                     value: room.currentData.humidity.round().toString(),
@@ -179,63 +197,7 @@ class RoomCard extends StatelessWidget {
                     status: Helpers.getHumidityStatus(room.currentData.humidity),
                     color: Helpers.getHumidityColor(room.currentData.humidity),
                   ),
-
-                  // Last Update
-                    Container(
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF8F9FA),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: const Color(0xFFE9ECEF)),
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.all(10),
-                        child: Builder(
-                          builder: (context) {
-                            final updateInfo =
-                                Helpers.formatCompactLastUpdate(room.currentData.updatedAt);
-                            final label = updateInfo['label'] ?? '';
-                            final time = updateInfo['time'] ?? '';
-
-                            // Jika hari ini, tampilkan label "UPDATE" di atas jam.
-                            // Jika kemarin/tanggal, tampilkan label tanggal di atas jam.
-                            final topLabel = label == 'HARI INI' ? 'UPDATE' : label;
-
-                            return Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                const SizedBox(height: 4),
-                                // Label atas (UPDATE / KEMARIN / 17/01)
-                                Text(
-                                  topLabel,
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w600,
-                                    color: Colors.grey[700],
-                                    letterSpacing: 0.3,
-                                  ),
-                                  textAlign: TextAlign.center,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                const SizedBox(height: 4),
-                                // Jam
-                                Text(
-                                  time,
-                                  style: const TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w700,
-                                    color: Color(0xFF212529),
-                                  ),
-                                  textAlign: TextAlign.center,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ],
-                            );
-                          },
-                        ),
-                      ),
-                    ),
+                  _buildLastUpdateCell(room),
                 ],
               ),
 
@@ -307,6 +269,8 @@ class RoomCard extends StatelessWidget {
       ),
     );
   }
+
+
 
   Widget _buildParameterCell({
     required String label,
@@ -395,3 +359,56 @@ class RoomCard extends StatelessWidget {
     );
   }
 }
+
+ Widget _buildLastUpdateCell(Room room) {
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8F9FA),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE9ECEF)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(10),
+        child: Builder(
+          builder: (context) {
+            final updateInfo =
+                Helpers.formatCompactLastUpdate(room.currentData.updatedAt);
+            final label = updateInfo['label'] ?? '';
+            final time = updateInfo['time'] ?? '';
+            final topLabel = label == 'HARI INI' ? 'UPDATE' : label;
+
+            return Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const SizedBox(height: 4),
+                Text(
+                  topLabel,
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.grey[700],
+                    letterSpacing: 0.3,
+                  ),
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  time,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF212529),
+                  ),
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }

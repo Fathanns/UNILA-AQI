@@ -559,6 +559,18 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
             Helpers.getPM10Color(data.pm10)),
         _buildStatusChip(
             'CO: ${data.co.round()}', Helpers.getCOColor(data.co)),
+            if (data.so2 != null)
+          _buildStatusChip(
+              'SO2: ${data.so2!.toStringAsFixed(1)}',
+              Helpers.getSO2Color(data.so2!)),
+        if (data.o3 != null)
+          _buildStatusChip(
+              'O3: ${data.o3!.toStringAsFixed(1)}',
+              Helpers.getO3Color(data.o3!)),
+        if (data.no2 != null)
+          _buildStatusChip(
+              'NO2: ${data.no2!.toStringAsFixed(1)}',
+              Helpers.getNO2Color(data.no2!)),
         _buildStatusChip(
             'Suhu: ${data.temperature.toStringAsFixed(1)}°C',
             Helpers.getTemperatureColor(data.temperature)),
@@ -627,6 +639,31 @@ _RecSeverity _recommendationSeverity(String text) {
       if (data.co <= 8000) return _RecSeverity.warning; 
       return _RecSeverity.danger;
     }
+
+        if (text.startsWith('SO2:')) {
+      final v = data.so2;
+      if (v == null) return _RecSeverity.normal;
+      if (v <= 80) return _RecSeverity.normal;
+      if (v <= 365) return _RecSeverity.warning;
+      return _RecSeverity.danger;
+    }
+
+    if (text.startsWith('O3:')) {
+      final v = data.o3;
+      if (v == null) return _RecSeverity.normal;
+      if (v <= 120) return _RecSeverity.normal;
+      if (v <= 235) return _RecSeverity.warning;
+      return _RecSeverity.danger;
+    }
+
+    if (text.startsWith('NO2:')) {
+      final v = data.no2;
+      if (v == null) return _RecSeverity.normal;
+      if (v <= 80) return _RecSeverity.normal;
+      if (v <= 200) return _RecSeverity.warning;
+      return _RecSeverity.danger;
+    }
+    
 
     // --- Suhu ---
     if (text.startsWith('Suhu:')) {
@@ -806,6 +843,44 @@ _RecSeverity _recommendationSeverity(String text) {
     );
   }
 
+    Widget _buildOptionalPollutantRow() {
+    final data = _currentRoomData.currentData;
+    final cards = <Widget>[];
+
+    void addCard(Widget card) {
+      if (cards.isNotEmpty) cards.add(const SizedBox(width: 12));
+      cards.add(Expanded(child: card));
+    }
+
+    if (data.so2 != null) {
+      addCard(_buildParameterCard(
+        'SO2',
+        '${data.so2!.toStringAsFixed(1)}\nµg/m³',
+        Helpers.getSO2Status(data.so2!),
+        Helpers.getSO2Color(data.so2!),
+      ));
+    }
+    if (data.o3 != null) {
+      addCard(_buildParameterCard(
+        'O3',
+        '${data.o3!.toStringAsFixed(1)}\nµg/m³',
+        Helpers.getO3Status(data.o3!),
+        Helpers.getO3Color(data.o3!),
+      ));
+    }
+    if (data.no2 != null) {
+      addCard(_buildParameterCard(
+        'NO2',
+        '${data.no2!.toStringAsFixed(1)}\nµg/m³',
+        Helpers.getNO2Status(data.no2!),
+        Helpers.getNO2Color(data.no2!),
+      ));
+    }
+
+    if (cards.isEmpty) return const SizedBox.shrink();
+    return Row(children: cards);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -898,6 +973,8 @@ _RecSeverity _recommendationSeverity(String text) {
                 ),
               ],
             ),
+            const SizedBox(height: 12),
+            _buildOptionalPollutantRow(),
             const SizedBox(height: 12),
             Row(
               children: [

@@ -86,19 +86,24 @@ class SimulationService {
       }
 
       // ✅ AQI dihitung dari PM2.5, PM10, dan CO — ambil yang dominan
-      const aqiResult = calculateAQI(
+       const aqiResult = calculateAQI(
         sensorData.pm25,
         sensorData.pm10,
-        sensorData.co
+        sensorData.co,
+        sensorData.so2,
+        sensorData.o3,
+        sensorData.no2
       );
 
-      // Sinkronkan aqiResult ke sensorData supaya konsisten saat disimpan & di-broadcast
       sensorData.aqi = aqiResult.aqi;
       sensorData.category = aqiResult.category;
       sensorData.dominant = aqiResult.dominant;
       sensorData.ispuPM25 = aqiResult.ispuPM25;
       sensorData.ispuPM10 = aqiResult.ispuPM10;
       sensorData.ispuCO = aqiResult.ispuCO;
+      sensorData.ispuSO2 = aqiResult.ispuSO2;
+      sensorData.ispuO3 = aqiResult.ispuO3;
+      sensorData.ispuNO2 = aqiResult.ispuNO2;
 
       const hasChanged = this._hasDataChanged(room, sensorData);
 
@@ -108,10 +113,13 @@ class SimulationService {
       }
 
       room.currentAQI = sensorData.aqi;
-      room.currentData = {
+       room.currentData = {
         pm25: sensorData.pm25,
         pm10: sensorData.pm10,
         co: sensorData.co,
+        so2: sensorData.so2,
+        o3: sensorData.o3,
+        no2: sensorData.no2,
         temperature: sensorData.temperature,
         humidity: sensorData.humidity,
         updatedAt: new Date()
@@ -128,6 +136,9 @@ class SimulationService {
         pm25: sensorData.pm25,
         pm10: sensorData.pm10,
         co: sensorData.co,
+        so2: sensorData.so2,
+        o3: sensorData.o3,
+        no2: sensorData.no2,
         temperature: sensorData.temperature,
         humidity: sensorData.humidity,
         category: sensorData.category,
@@ -182,6 +193,9 @@ class SimulationService {
         pm25: -1,
         pm10: -1,
         co: -1,
+        so2: -1,
+        o3: -1,
+        no2: -1,
         temperature: -1,
         humidity: -1,
         category: 'error',
@@ -205,25 +219,25 @@ class SimulationService {
     }
   }
 
-  _hasDataChanged(room, newData) {
+    _hasDataChanged(room, newData) {
     const currentData = room.currentData;
 
-    const thresholds = {
-      aqi: 0,
-      pm25: 0,
-      pm10: 0,
-      co: 0,
-      temperature: 0,
-      humidity: 0
+    const changed = (oldV, newV) => {
+      if (oldV == null && newV == null) return false;
+      if (oldV == null || newV == null) return true;
+      return Math.abs(Number(newV) - Number(oldV)) > 0;
     };
 
     return (
-      Math.abs(newData.aqi - room.currentAQI) > thresholds.aqi ||
-      Math.abs(newData.pm25 - (currentData.pm25 || 0)) > thresholds.pm25 ||
-      Math.abs(newData.pm10 - (currentData.pm10 || 0)) > thresholds.pm10 ||
-      Math.abs(newData.co - (currentData.co || 0)) > thresholds.co ||
-      Math.abs(newData.temperature - (currentData.temperature || 0)) > thresholds.temperature ||
-      Math.abs(newData.humidity - (currentData.humidity || 0)) > thresholds.humidity
+      changed(room.currentAQI, newData.aqi) ||
+      changed(currentData.pm25, newData.pm25) ||
+      changed(currentData.pm10, newData.pm10) ||
+      changed(currentData.co, newData.co) ||
+      changed(currentData.so2, newData.so2) ||
+      changed(currentData.o3, newData.o3) ||
+      changed(currentData.no2, newData.no2) ||
+      changed(currentData.temperature, newData.temperature) ||
+      changed(currentData.humidity, newData.humidity)
     );
   }
 

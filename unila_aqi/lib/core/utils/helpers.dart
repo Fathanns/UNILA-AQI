@@ -202,6 +202,60 @@ class Helpers {
     return AppColors.aqiHazardous;
   }
 
+  static String getSO2Status(double value) {
+    if (value < 0) return 'ERROR';
+    if (value <= 80) return 'BAIK';
+    if (value <= 365) return 'SEDANG';
+    if (value <= 800) return 'TIDAK SEHAT';
+    if (value <= 1600) return 'SANGAT TIDAK SEHAT';
+    return 'BERBAHAYA';
+  }
+
+  static Color getSO2Color(double value) {
+    if (value < 0) return AppColors.aqiError;
+    if (value <= 80) return AppColors.aqiGood;
+    if (value <= 365) return AppColors.aqiModerate;
+    if (value <= 800) return AppColors.aqiUnhealthySensitive;
+    if (value <= 1600) return AppColors.aqiUnhealthy;
+    return AppColors.aqiHazardous;
+  }
+
+  static String getO3Status(double value) {
+    if (value < 0) return 'ERROR';
+    if (value <= 120) return 'BAIK';
+    if (value <= 235) return 'SEDANG';
+    if (value <= 400) return 'TIDAK SEHAT';
+    if (value <= 800) return 'SANGAT TIDAK SEHAT';
+    return 'BERBAHAYA';
+  }
+
+  static Color getO3Color(double value) {
+    if (value < 0) return AppColors.aqiError;
+    if (value <= 120) return AppColors.aqiGood;
+    if (value <= 235) return AppColors.aqiModerate;
+    if (value <= 400) return AppColors.aqiUnhealthySensitive;
+    if (value <= 800) return AppColors.aqiUnhealthy;
+    return AppColors.aqiHazardous;
+  }
+
+  static String getNO2Status(double value) {
+    if (value < 0) return 'ERROR';
+    if (value <= 80) return 'BAIK';
+    if (value <= 200) return 'SEDANG';
+    if (value <= 1130) return 'TIDAK SEHAT';
+    if (value <= 2260) return 'SANGAT TIDAK SEHAT';
+    return 'BERBAHAYA';
+  }
+
+  static Color getNO2Color(double value) {
+    if (value < 0) return AppColors.aqiError;
+    if (value <= 80) return AppColors.aqiGood;
+    if (value <= 200) return AppColors.aqiModerate;
+    if (value <= 1130) return AppColors.aqiUnhealthySensitive;
+    if (value <= 2260) return AppColors.aqiUnhealthy;
+    return AppColors.aqiHazardous;
+  }
+
   // ============================================================
   // DATE & TIME HELPERS
   // ============================================================
@@ -556,6 +610,66 @@ class Helpers {
       } else {
         recommendations.add(
             'CO: Evakuasi ruangan. Investigasi segera (sistem HVAC, kebocoran, ruangan tertutup terlalu lama).');
+      }
+    }
+
+    // 4b. SO2
+    final so2 = data.so2;
+    if (so2 != null && so2 >= 0) {
+      if (so2 <= 80) {
+        recommendations.add('SO2: Aman untuk perkuliahan normal.');
+      } else if (so2 <= 365) {
+        recommendations.add(
+            'SO2: Pastikan ventilasi ruangan baik. Hindari sumber pembakaran di sekitar ruangan.');
+      } else if (so2 <= 800) {
+        recommendations.add(
+            'SO2: Nyalakan ventilasi/exhaust. Masker disarankan. Kurangi aktivitas fisik berat.');
+      } else if (so2 <= 1600) {
+        recommendations.add(
+            'SO2: Masker wajib. Ventilasi maksimum. Pertimbangkan relokasi kelas atau daring.');
+      } else {
+        recommendations.add(
+            'SO2: Evakuasi ruangan. Investigasi sumber gas sulfur segera.');
+      }
+    }
+
+    // 4c. O3
+    final o3 = data.o3;
+    if (o3 != null && o3 >= 0) {
+      if (o3 <= 120) {
+        recommendations.add('O3: Aman untuk perkuliahan normal.');
+      } else if (o3 <= 235) {
+        recommendations.add(
+            'O3: Kelompok sensitif sebaiknya mengurangi aktivitas fisik berat. Pastikan ventilasi baik.');
+      } else if (o3 <= 400) {
+        recommendations.add(
+            'O3: Kurangi aktivitas fisik berat. Masker disarankan. Nyalakan air purifier bila ada.');
+      } else if (o3 <= 800) {
+        recommendations.add(
+            'O3: Masker wajib. Batasi durasi tatap muka. Pertimbangkan daring.');
+      } else {
+        recommendations.add(
+            'O3: Tidak ada aktivitas tatap muka. Evakuasi ruangan. Investigasi sumber ozon.');
+      }
+    }
+
+    // 4d. NO2
+    final no2 = data.no2;
+    if (no2 != null && no2 >= 0) {
+      if (no2 <= 80) {
+        recommendations.add('NO2: Aman untuk perkuliahan normal.');
+      } else if (no2 <= 200) {
+        recommendations.add(
+            'NO2: Pastikan ventilasi baik. Hindari sumber pembakaran di dalam ruangan.');
+      } else if (no2 <= 1130) {
+        recommendations.add(
+            'NO2: Nyalakan exhaust/ventilasi. Masker disarankan. Kurangi kapasitas ruangan.');
+      } else if (no2 <= 2260) {
+        recommendations.add(
+            'NO2: Masker wajib. Ventilasi darurat. Pertimbangkan mengosongkan ruangan sementara.');
+      } else {
+        recommendations.add(
+            'NO2: Evakuasi ruangan. Investigasi kebocoran gas/sistem HVAC segera.');
       }
     }
 

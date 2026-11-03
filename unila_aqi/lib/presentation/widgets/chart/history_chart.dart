@@ -35,19 +35,26 @@ class _HistoryChartState extends State<HistoryChart> {
   static const double _containerPadding = 16.0;
 
   // Parameter options
-  final List<String> _parameters = [
+  // Parameter opsional (so2, o3, no2) hanya dimasukkan bila ada data.
+  final List<String> _baseParameters = [
     'aqi',
     'pm25',
     'pm10',
     'co',
     'temperature',
-    'humidity'
+    'humidity',
   ];
+
+  final List<String> _optionalParameters = ['so2', 'o3', 'no2'];
+
   final Map<String, String> _parameterLabels = {
     'aqi': 'AQI',
     'pm25': 'PM2.5',
     'pm10': 'PM10',
     'co': 'CO',
+    'so2': 'SO2',
+    'o3': 'O3',
+    'no2': 'NO2',
     'temperature': 'Suhu',
     'humidity': 'Kelembaban',
   };
@@ -58,6 +65,9 @@ class _HistoryChartState extends State<HistoryChart> {
     'pm25': Colors.red,
     'pm10': Colors.orange,
     'co': Colors.green,
+    'so2': Colors.brown,
+    'o3': Colors.cyan,
+    'no2': Colors.indigo,
     'temperature': Colors.purple,
     'humidity': Colors.teal,
   };
@@ -83,6 +93,45 @@ class _HistoryChartState extends State<HistoryChart> {
   void dispose() {
     _scrollController.dispose();
     super.dispose();
+  }
+
+  // ============================================================
+  // HELPER: ambil nilai parameter dari satu titik data.
+  // Mengembalikan null bila parameter tidak tersedia (IoT parsial).
+  // ============================================================
+  double? _valueFor(SensorData data, String parameter) {
+    switch (parameter) {
+      case 'aqi':
+        return data.aqi.toDouble();
+      case 'pm25':
+        return data.pm25;
+      case 'pm10':
+        return data.pm10;
+      case 'co':
+        return data.co;
+      case 'so2':
+        return data.so2;
+      case 'o3':
+        return data.o3;
+      case 'no2':
+        return data.no2;
+      case 'temperature':
+        return data.temperature;
+      case 'humidity':
+        return data.humidity;
+      default:
+        return null;
+    }
+  }
+
+  // ============================================================
+  // Parameter yang boleh dipilih: base + optional (hanya yang ada data)
+  // ============================================================
+  List<String> get _availableParameters {
+    final optional = _optionalParameters.where((p) {
+      return _historyData.any((d) => _valueFor(d, p) != null);
+    }).toList();
+    return [..._baseParameters, ...optional];
   }
 
   Future<void> _loadHistoryData() async {
@@ -115,9 +164,15 @@ class _HistoryChartState extends State<HistoryChart> {
                 SensorData.fromJson(Map<String, dynamic>.from(json)))
             .toList();
 
-        // Jika backend balas sukses tapi kosong → kosongkan (tanggal memang tidak ada data)
         setState(() {
           _historyData = parsed;
+
+          // Pastikan parameter terpilih masih tersedia.
+          // Jika tidak (mis. sebelumnya user pilih SO2, lalu pindah
+          // tanggal yang datanya tidak punya SO2), fallback ke AQI.
+          if (!_availableParameters.contains(_selectedParameter)) {
+            _selectedParameter = 'aqi';
+          }
         });
       } else {
         failed = true;
@@ -194,33 +249,9 @@ class _HistoryChartState extends State<HistoryChart> {
 
     for (int i = 0; i < _historyData.length; i++) {
       final data = _historyData[i];
-      final x = i.toDouble();
-
-      double y;
-      switch (_selectedParameter) {
-        case 'aqi':
-          y = data.aqi.toDouble();
-          break;
-        case 'pm25':
-          y = data.pm25;
-          break;
-        case 'pm10':
-          y = data.pm10;
-          break;
-        case 'co':
-          y = data.co;
-          break;
-        case 'temperature':
-          y = data.temperature;
-          break;
-        case 'humidity':
-          y = data.humidity;
-          break;
-        default:
-          y = 0;
-      }
-
-      spots.add(FlSpot(x, y));
+      final y = _valueFor(data, _selectedParameter);
+      if (y == null) continue;
+      spots.add(FlSpot(i.toDouble(), y));
     }
 
     return spots;
@@ -471,7 +502,16 @@ class _HistoryChartState extends State<HistoryChart> {
                                   '${data.pm25.toStringAsFixed(1)} μg/m³',
                               'PM10':
                                   '${data.pm10.toStringAsFixed(1)} μg/m³',
-                               'CO': '${data.co.round()} μg/m³',
+                              'CO': '${data.co.round()} μg/m³',
+                              if (data.so2 != null)
+                                'SO2':
+                                    '${data.so2!.toStringAsFixed(1)} μg/m³',
+                              if (data.o3 != null)
+                                'O3':
+                                    '${data.o3!.toStringAsFixed(1)} μg/m³',
+                              if (data.no2 != null)
+                                'NO2':
+                                    '${data.no2!.toStringAsFixed(1)} μg/m³',
                               'Suhu':
                                   '${data.temperature.toStringAsFixed(1)}°C',
                               'Kelembaban': '${data.humidity.round()}%',
@@ -507,37 +547,19 @@ class _HistoryChartState extends State<HistoryChart> {
   // spike (lonjakan mendadak) tetap MUAT di dalam FOV chart.
   // Contoh: data normal AQI 40-60, spike 350 → maxY = 350 × 1.1 = 385,
   // sehingga spike terlihat penuh tanpa terpotong.
+  //
+  // Untuk parameter opsional (SO2/O3/NO2), nilai null dilewati.
   double _getMinY() {
     if (_historyData.isEmpty) return 0.0;
 
     double minValue = double.infinity;
     for (var data in _historyData) {
-      double value;
-      switch (_selectedParameter) {
-        case 'aqi':
-          value = data.aqi.toDouble();
-          break;
-        case 'pm25':
-          value = data.pm25;
-          break;
-        case 'pm10':
-          value = data.pm10;
-          break;
-        case 'co':
-          value = data.co;
-          break;
-        case 'temperature':
-          value = data.temperature;
-          break;
-        case 'humidity':
-          value = data.humidity;
-          break;
-        default:
-          value = 0.0;
-      }
+      final value = _valueFor(data, _selectedParameter);
+      if (value == null) continue;
       if (value < minValue) minValue = value;
     }
 
+    if (minValue == double.infinity) return 0.0;
     return minValue - (minValue * 0.1);
   }
 
@@ -546,44 +568,26 @@ class _HistoryChartState extends State<HistoryChart> {
 
     double maxValue = double.negativeInfinity;
     for (var data in _historyData) {
-      double value;
-      switch (_selectedParameter) {
-        case 'aqi':
-          value = data.aqi.toDouble();
-          break;
-        case 'pm25':
-          value = data.pm25;
-          break;
-        case 'pm10':
-          value = data.pm10;
-          break;
-        case 'co':
-          value = data.co;
-          break;
-        case 'temperature':
-          value = data.temperature;
-          break;
-        case 'humidity':
-          value = data.humidity;
-          break;
-        default:
-          value = 0.0;
-      }
+      final value = _valueFor(data, _selectedParameter);
+      if (value == null) continue;
       if (value > maxValue) maxValue = value;
     }
 
+    if (maxValue == double.negativeInfinity) return 100.0;
     return maxValue + (maxValue * 0.1);
   }
 
   Widget _buildParameterSelector() {
+    final available = _availableParameters;
+
     return Container(
       height: 50,
       margin: const EdgeInsets.only(bottom: 16),
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
-        itemCount: _parameters.length,
+        itemCount: available.length,
         itemBuilder: (context, index) {
-          final parameter = _parameters[index];
+          final parameter = available[index];
           final isSelected = _selectedParameter == parameter;
           final color = _parameterColors[parameter]!;
 
