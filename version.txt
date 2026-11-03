@@ -10209,7 +10209,7 @@ class AppColors {
   static const Color aqiUnhealthy = Color(0xFFDC3545);         
   static const Color aqiHazardous = Color(0xFF37474F);         
   static const Color aqiError = Color(0xFF9E9E9E);
-  static const Color aqiNoData = Color(0xFFBDBDBD);
+  static const Color aqiNoData = Color(0xFF9E9E9E);
 
   // Neutral Colors
   static const Color background = Color(0xFFF8F9FA);
@@ -25435,16 +25435,20 @@ function generate30SecondBasedData(deviceId) {
 function filterSensorData(data, fieldsQuery, excludeQuery) {
   const allFields = ['pm25','pm10','co','so2','o3','no2','temperature','humidity'];
 
-  let selected = new Set(allFields);
-  if (fieldsQuery) {
+  let selected;
+
+  // ✅ Gunakan !== undefined agar `?fields=` (string kosong) tetap dianggap filter
+  if (fieldsQuery !== undefined) {
     selected = new Set(
       fieldsQuery.split(',').map((f) => f.trim()).filter(Boolean)
     );
-  } else if (excludeQuery) {
+  } else if (excludeQuery !== undefined) {
     const excluded = new Set(
       excludeQuery.split(',').map((f) => f.trim()).filter(Boolean)
     );
     selected = new Set(allFields.filter((f) => !excluded.has(f)));
+  } else {
+    selected = new Set(allFields);
   }
 
   const result = { ...data };
@@ -25608,41 +25612,23 @@ const server = http.createServer((req, res) => {
           return sendJson(res, 400, { success: false, message: 'Device ID is required' });
         }
 
-        // ---- 1. Baca query param DULU ----
+        // ---- Baca query param DULU ----
         const fieldsQuery  = parsedUrl.query.fields;
         const excludeQuery = parsedUrl.query.exclude;
 
-        // ---- 2. Auto-register (kode lama, tidak berubah) ----
-        if (!registeredDevices.has(deviceId)) {
-          const hash = deviceId.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-          const roomType = hash % 4;
+        // ✅ Deteksi keberadaan query KEY, bukan truthiness value
+        const hasFieldsFilter  = fieldsQuery !== undefined;
+        const hasExcludeFilter = excludeQuery !== undefined;
 
-          registeredDevices.set(deviceId, {
-            deviceId,
-            deviceName: `Auto-${deviceId}`,
-            location: 'UNILA Campus',
-            roomType,
-            registeredAt: new Date(),
-            lastSeen: new Date(),
-            status: 'active',
-            updatePattern: '30-second-based-auto'
-          });
+        // ... auto-register, generate ...
 
-          console.log(`✅ Auto-registered: ${deviceId}`);
-        } else {
-          const device = registeredDevices.get(deviceId);
-          device.lastSeen = new Date();
-          registeredDevices.set(deviceId, device);
-        }
-
-        // ---- 3. Generate. WAJIB pakai `let` karena akan di-reassign filter ----
         let sensorData = generate30SecondBasedData(deviceId);
 
-        // ---- 4. Filter SETELAH generate, SEBELUM response ----
-        if (fieldsQuery || excludeQuery) {
+        // ---- Filter SETELAH generate ----
+        if (hasFieldsFilter || hasExcludeFilter) {
           sensorData = filterSensorData(sensorData, fieldsQuery, excludeQuery);
           console.log(
-            `🔎 Filtered ${deviceId}: fields=${fieldsQuery || '-'} exclude=${excludeQuery || '-'} → AQI=${sensorData.aqi}, dominant=${sensorData.dominant}`
+            `🔎 Filtered ${deviceId}: fields=${JSON.stringify(fieldsQuery)} exclude=${JSON.stringify(excludeQuery)} → AQI=${sensorData.aqi}, dominant=${sensorData.dominant}`
           );
         }
 
@@ -25663,9 +25649,9 @@ const server = http.createServer((req, res) => {
             nextUpdateInSeconds: secondsRemaining,
             isAnomaly: sensorData.isAnomaly,
             anomalyType: sensorData.anomalyType,
-            appliedFilter: {
-              fields: fieldsQuery || null,
-              exclude: excludeQuery || null,
+             appliedFilter: {
+              fields: hasFieldsFilter ? fieldsQuery : null,
+              exclude: hasExcludeFilter ? excludeQuery : null,
             },
             units: {
               pm25: 'μg/m³',
