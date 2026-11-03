@@ -218,12 +218,15 @@ class _AQIInfoScreenState extends State<AQIInfoScreen> {
         ),
         const SizedBox(height: 12),
         _paragraph(
-          'ISPU dipengaruhi oleh konsentrasi partikel polusi di udara, yaitu PM2.5 dan PM10. Semakin tinggi konsentrasi partikel, semakin tinggi nilai ISPU, dan semakin besar risiko kesehatan bagi penghuni ruangan.',
+          'ISPU dipengaruhi oleh konsentrasi partikel polusi di udara, yaitu PM2.5, PM10, '
+          'serta gas CO, SO2, O3, dan NO2. Semakin tinggi konsentrasi parameter tersebut, '
+          'semakin tinggi nilai ISPU, dan semakin besar risiko kesehatan bagi penghuni ruangan.',
         ),
         const SizedBox(height: 12),
         _paragraph(
-          'Setiap parameter (PM2.5 dan PM10) dihitung terpisah menggunakan '
-          'interpolasi linear terhadap tabel breakpoint PP 22/2021.',
+          'Setiap parameter (PM2.5, PM10, CO, SO2, O3, dan NO2) dihitung '
+          'terpisah menggunakan interpolasi linear terhadap tabel breakpoint '
+          'PP 22/2021. Nilai ISPU ruangan adalah nilai MAX dari keenam parameter.',
         ),
         const SizedBox(height: 16),
         _subheading('Tabel Breakpoint PM2.5'),
@@ -250,6 +253,62 @@ class _AQIInfoScreenState extends State<AQIInfoScreen> {
             ['101', '200', '151', '350'],
             ['201', '300', '351', '420'],
             ['301', '500', '421', '500'],
+          ],
+          unit: 'μg/m³',
+        ),
+        const SizedBox(height: 16),
+        _subheading('Tabel Breakpoint CO'),
+        const SizedBox(height: 16),
+        _breakpointTable(
+          headers: const ['ISPU Bawah', 'ISPU Atas', 'Kons. Bawah', 'Kons. Atas'],
+          rows: const [
+            ['0', '50', '0', '4.000'],
+            ['51', '100', '4.001', '8.000'],
+            ['101', '200', '8.001', '15.000'],
+            ['201', '300', '15.001', '30.000'],
+            ['301', '500', '30.001', '45.000'],
+          ],
+          unit: 'μg/m³',
+        ),
+        const SizedBox(height: 16),
+        _subheading('Tabel Breakpoint SO2'),
+        const SizedBox(height: 16),
+        _breakpointTable(
+          headers: const ['ISPU Bawah', 'ISPU Atas', 'Kons. Bawah', 'Kons. Atas'],
+          rows: const [
+            ['0', '50', '0', '80'],
+            ['51', '100', '81', '365'],
+            ['101', '200', '366', '800'],
+            ['201', '300', '801', '1.600'],
+            ['301', '500', '1.601', '3.000'],
+          ],
+          unit: 'μg/m³',
+        ),
+        const SizedBox(height: 16),
+        _subheading('Tabel Breakpoint O3'),
+        const SizedBox(height: 16),
+        _breakpointTable(
+          headers: const ['ISPU Bawah', 'ISPU Atas', 'Kons. Bawah', 'Kons. Atas'],
+          rows: const [
+            ['0', '50', '0', '120'],
+            ['51', '100', '121', '235'],
+            ['101', '200', '236', '400'],
+            ['201', '300', '401', '800'],
+            ['301', '500', '801', '1.000'],
+          ],
+          unit: 'μg/m³',
+        ),
+        const SizedBox(height: 16),
+        _subheading('Tabel Breakpoint NO2'),
+        const SizedBox(height: 16),
+        _breakpointTable(
+          headers: const ['ISPU Bawah', 'ISPU Atas', 'Kons. Bawah', 'Kons. Atas'],
+          rows: const [
+            ['0', '50', '0', '80'],
+            ['51', '100', '81', '200'],
+            ['101', '200', '201', '1.130'],
+            ['201', '300', '1.131', '2.260'],
+            ['301', '500', '2.261', '3.000'],
           ],
           unit: 'μg/m³',
         ),
@@ -365,7 +424,7 @@ class _AQIInfoScreenState extends State<AQIInfoScreen> {
         name: 'Karbon Monoksida',
         abbreviation: 'CO',
         description:
-            'Gas tidak berbau dan tidak berwarna hasil pembakaran tidak sempurna. ' // Teks diubah
+            'Gas tidak berbau dan tidak berwarna hasil pembakaran tidak sempurna. '
             'Di dalam ruangan, gas ini bisa berasal dari kompor, pemanas, atau masuknya asap kendaraan dari luar.',
         unit: 'µg/m³',
         impact:
@@ -374,6 +433,62 @@ class _AQIInfoScreenState extends State<AQIInfoScreen> {
             'Kompor gas, asap kendaraan masuk, sistem ventilasi yang buruk.',
         safeRange: '0 – 4.000 µg/m³ (ISPU ≤ 50)',
         icon: '☁️',
+      ),
+      AQIParameter(
+        name: 'Sulfur Dioksida',
+        abbreviation: 'SO2',
+        description:
+            'Gas tidak berwarna dengan bau menyengat yang dihasilkan dari '
+            'pembakaran bahan bakar fosil yang mengandung sulfur (batu bara, '
+            'minyak). Di dalam ruangan, SO2 dapat berasal dari asap kendaraan '
+            'yang masuk melalui ventilasi, kompor gas, atau pembakaran lilin.',
+        unit: 'μg/m³',
+        impact:
+            'Iritasi saluran pernapasan, memperburuk asma dan bronkitis, '
+            'iritasi mata dan tenggorokan, penurunan fungsi paru-paru.',
+        source:
+            'Pembakaran bahan bakar fosil, asap kendaraan, kompor gas, '
+            'pembakaran lilin, ventilasi dari luar.',
+        safeRange: '0 – 80 μg/m³ (ISPU ≤ 50)',
+        icon: '🏭',
+      ),
+      AQIParameter(
+        name: 'Ozon',
+        abbreviation: 'O3',
+        description:
+            'Gas yang terbentuk dari reaksi fotokimia antara nitrogen oksida '
+            '(NOx) dan senyawa organik volatil (VOC) dengan bantuan sinar '
+            'matahari. Di dalam ruangan, O3 dapat berasal dari peralatan '
+            'elektronik seperti printer, mesin fotokopi, dan air purifier '
+            'yang menghasilkan ozon, atau masuk dari luar.',
+        unit: 'μg/m³',
+        impact:
+            'Iritasi saluran pernapasan, penurunan fungsi paru-paru, '
+            'memperburuk asma, nyeri dada saat bernapas dalam.',
+        source:
+            'Reaksi fotokimia di luar ruangan, peralatan elektronik '
+            '(printer, fotokopi), air purifier tipe ozon, ventilasi dari luar.',
+        safeRange: '0 – 120 μg/m³ (ISPU ≤ 50)',
+        icon: '⚡',
+      ),
+      AQIParameter(
+        name: 'Nitrogen Dioksida',
+        abbreviation: 'NO2',
+        description:
+            'Gas cokelat kemerahan dengan bau menyengat yang dihasilkan dari '
+            'pembakaran pada suhu tinggi (mesin kendaraan, pembangkit listrik). '
+            'Di dalam ruangan, NO2 dapat berasal dari kompor gas, pemanas '
+            'ruangan, asap rokok, dan asap kendaraan yang masuk melalui '
+            'ventilasi.',
+        unit: 'μg/m³',
+        impact:
+            'Iritasi saluran pernapasan, memperburuk asma dan infeksi '
+            'pernapasan, penurunan fungsi paru-paru pada paparan jangka panjang.',
+        source:
+            'Kompor gas, pemanas ruangan berbahan bakar, asap rokok, '
+            'asap kendaraan, sistem ventilasi yang buruk.',
+        safeRange: '0 – 80 μg/m³ (ISPU ≤ 50)',
+        icon: '🚗',
       ),
       AQIParameter(
         name: 'Suhu',
@@ -413,10 +528,11 @@ class _AQIInfoScreenState extends State<AQIInfoScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _paragraph(
-          'Aplikasi memantau 5 parameter lingkungan di dalam ruangan. '
-          'Dua parameter partikel (PM2.5 & PM10) menentukan AQI dan '
-          'tiga parameter lainnya (CO, suhu, kelembaban) memberi konteks '
-          'kenyamanan & ventilasi ruangan.',
+          'Aplikasi memantau 8 parameter lingkungan di dalam ruangan. '
+          'Enam parameter polutan (PM2.5, PM10, CO, SO2, O3, dan NO2) '
+          'menentukan nilai AQI/ISPU ruangan (diambil nilai MAX dari '
+          'keenam parameter), sedangkan dua parameter lainnya (suhu dan '
+          'kelembaban) memberi konteks kenyamanan & ventilasi ruangan.',
         ),
         const SizedBox(height: 16),
         ...indoorParams.map(_buildParameterCard),
@@ -530,6 +646,36 @@ class _AQIInfoScreenState extends State<AQIInfoScreen> {
             {'range': '8.001 – 15.000', 'label': 'Tidak Sehat', 'color': AppColors.aqiUnhealthySensitive},
             {'range': '15.001 – 30.000', 'label': 'Sangat Tidak Sehat', 'color': AppColors.aqiUnhealthy},
             {'range': '> 30.000', 'label': 'Berbahaya', 'color': AppColors.aqiHazardous},
+          ],
+        ),
+        _parameterCategoryTable(
+          title: 'SO2 (μg/m³)',
+          rows: const [
+            {'range': '0 – 80', 'label': 'Baik', 'color': AppColors.aqiGood},
+            {'range': '81 – 365', 'label': 'Sedang', 'color': AppColors.aqiModerate},
+            {'range': '366 – 800', 'label': 'Tidak Sehat', 'color': AppColors.aqiUnhealthySensitive},
+            {'range': '801 – 1.600', 'label': 'Sangat Tidak Sehat', 'color': AppColors.aqiUnhealthy},
+            {'range': '1.601 – 3.000', 'label': 'Berbahaya', 'color': AppColors.aqiHazardous},
+          ],
+        ),
+        _parameterCategoryTable(
+          title: 'O3 (μg/m³)',
+          rows: const [
+            {'range': '0 – 120', 'label': 'Baik', 'color': AppColors.aqiGood},
+            {'range': '121 – 235', 'label': 'Sedang', 'color': AppColors.aqiModerate},
+            {'range': '236 – 400', 'label': 'Tidak Sehat', 'color': AppColors.aqiUnhealthySensitive},
+            {'range': '401 – 800', 'label': 'Sangat Tidak Sehat', 'color': AppColors.aqiUnhealthy},
+            {'range': '801 – 1.000', 'label': 'Berbahaya', 'color': AppColors.aqiHazardous},
+          ],
+        ),
+        _parameterCategoryTable(
+          title: 'NO2 (μg/m³)',
+          rows: const [
+            {'range': '0 – 80', 'label': 'Baik', 'color': AppColors.aqiGood},
+            {'range': '81 – 200', 'label': 'Sedang', 'color': AppColors.aqiModerate},
+            {'range': '201 – 1.130', 'label': 'Tidak Sehat', 'color': AppColors.aqiUnhealthySensitive},
+            {'range': '1.131 – 2.260', 'label': 'Sangat Tidak Sehat', 'color': AppColors.aqiUnhealthy},
+            {'range': '2.261 – 3.000', 'label': 'Berbahaya', 'color': AppColors.aqiHazardous},
           ],
         ),
         _parameterCategoryTable(
@@ -926,6 +1072,126 @@ class _AQIInfoScreenState extends State<AQIInfoScreen> {
           ],
         ),
         _buildParameterRecommendationCard(
+          title: 'SO2 (μg/m³)',
+          rows: const [
+            {
+              'range': '0 – 80',
+              'color': AppColors.aqiGood,
+              'rec': 'Aman untuk perkuliahan normal.',
+            },
+            {
+              'range': '81 – 365',
+              'color': AppColors.aqiModerate,
+              'rec':
+                  'Pastikan ventilasi ruangan baik. Hindari sumber pembakaran '
+                      'di sekitar ruangan (kompor gas, lilin, asap kendaraan).',
+            },
+            {
+              'range': '366 – 800',
+              'color': AppColors.aqiUnhealthySensitive,
+              'rec':
+                  'Nyalakan ventilasi/exhaust. Masker disarankan. Kurangi '
+                      'aktivitas fisik berat dan tutup jendela bila luar berasap.',
+            },
+            {
+              'range': '801 – 1.600',
+              'color': AppColors.aqiUnhealthy,
+              'rec':
+                  'Masker wajib. Ventilasi maksimum. Pertimbangkan relokasi '
+                      'kelas atau alihkan ke daring sampai kadar SO2 turun.',
+            },
+            {
+              'range': '1.601 – 3.000',
+              'color': AppColors.aqiHazardous,
+              'rec':
+                  'Evakuasi ruangan. Investigasi sumber gas sulfur segera '
+                      '(kompor, pemanas, kebocoran gas, ventilasi luar).',
+            },
+          ],
+        ),
+        _buildParameterRecommendationCard(
+          title: 'O3 (μg/m³)',
+          rows: const [
+            {
+              'range': '0 – 120',
+              'color': AppColors.aqiGood,
+              'rec': 'Aman untuk perkuliahan normal.',
+            },
+            {
+              'range': '121 – 235',
+              'color': AppColors.aqiModerate,
+              'rec':
+                  'Kelompok sensitif (asma, lansia) sebaiknya mengurangi '
+                      'aktivitas fisik berat. Matikan printer/fotokopi yang tidak '
+                      'terpakai bila memungkinkan.',
+            },
+            {
+              'range': '236 – 400',
+              'color': AppColors.aqiUnhealthySensitive,
+              'rec':
+                  'Kurangi aktivitas fisik berat. Masker disarankan. Nyalakan '
+                      'air purifier bila ada. Batasi penggunaan peralatan '
+                      'elektronik yang menghasilkan ozon.',
+            },
+            {
+              'range': '401 – 800',
+              'color': AppColors.aqiUnhealthy,
+              'rec':
+                  'Masker wajib. Batasi durasi tatap muka. Pertimbangkan '
+                      'daring. Matikan sumber ozon (printer, fotokopi, air '
+                      'purifier tipe ozon).',
+            },
+            {
+              'range': '801 – 1.000',
+              'color': AppColors.aqiHazardous,
+              'rec':
+                  'Tidak ada aktivitas tatap muka. Evakuasi ruangan. '
+                      'Investigasi sumber ozon segera (peralatan elektronik, '
+                      'ventilasi dari luar).',
+            },
+          ],
+        ),
+        _buildParameterRecommendationCard(
+          title: 'NO2 (μg/m³)',
+          rows: const [
+            {
+              'range': '0 – 80',
+              'color': AppColors.aqiGood,
+              'rec': 'Aman untuk perkuliahan normal.',
+            },
+            {
+              'range': '81 – 200',
+              'color': AppColors.aqiModerate,
+              'rec':
+                  'Pastikan ventilasi baik. Hindari sumber pembakaran di dalam '
+                      'ruangan (kompor gas, pemanas, asap rokok).',
+            },
+            {
+              'range': '201 – 1.130',
+              'color': AppColors.aqiUnhealthySensitive,
+              'rec':
+                  'Nyalakan exhaust/ventilasi. Masker disarankan. Kurangi '
+                      'kapasitas ruangan dan hindari penggunaan kompor gas '
+                      'di dalam ruangan.',
+            },
+            {
+              'range': '1.131 – 2.260',
+              'color': AppColors.aqiUnhealthy,
+              'rec':
+                  'Masker wajib. Ventilasi darurat — buka semua akses udara, '
+                      'exhaust maksimum. Pertimbangkan mengosongkan ruangan '
+                      'sementara.',
+            },
+            {
+              'range': '2.261 – 3.000',
+              'color': AppColors.aqiHazardous,
+              'rec':
+                  'Evakuasi ruangan. Investigasi kebocoran gas / sistem HVAC / '
+                      'sumber pembakaran dalam ruangan segera. Hubungi teknisi.',
+            },
+          ],
+        ),
+        _buildParameterRecommendationCard(
           title: 'Suhu (°C)',
           rows: const [
             {
@@ -1136,7 +1402,7 @@ class _AQIInfoScreenState extends State<AQIInfoScreen> {
         _miniHeading('Kartu Parameter'),
         const SizedBox(height: 6),
         _paragraph(
-          'Kartu PM2.5, PM10, CO, Suhu, dan Kelembaban menampilkan nilai '
+          'Kartu PM2.5, PM10, CO, SO2, O3, NO2, Suhu, dan Kelembaban menampilkan nilai '
           'terkini beserta warna kategori masing-masing parameter. Angka di '
           'kartu ini adalah nilai mentah dari sensor, bukan AQI.',
         ),
@@ -1535,20 +1801,6 @@ class _AQIInfoScreenState extends State<AQIInfoScreen> {
 
 // ============================================================
 // EXPANDABLE SECTION WIDGET
-//
-// ✅ FIXED: menambahkan `AutomaticKeepAliveClientMixin` + `wantKeepAlive`
-// sehingga state `_expanded` TETAP dipertahankan meskipun widget
-// scroll off-screen dan masuk kembali ke viewport.
-//
-// Sebelumnya: ketika user membuka section A, lalu scroll untuk membuka
-// section B (di atas A), section A yang keluar dari cache extent
-// ListView akan di-dispose. Saat user scroll balik, `_ExpandableSection`
-// di-rebuild dan `initState` mengeset `_expanded = false` lagi —
-// sehingga A tampak "tertutup sendiri".
-//
-// Dengan mixin ini, SliverChildListDelegate (default addAutomaticKeepAlives
-// = true) akan mempertahankan widget dan state-nya selama widget tersebut
-// menandai `wantKeepAlive = true`.
 // ============================================================
 class _ExpandableSection extends StatefulWidget {
   final String emoji;
@@ -1572,8 +1824,6 @@ class _ExpandableSectionState extends State<_ExpandableSection>
     with AutomaticKeepAliveClientMixin {
   late bool _expanded;
 
-  // ✅ FIXED: beri tahu parent (SliverChildListDelegate) agar widget ini
-  // tidak di-dispose saat scroll off-screen.
   @override
   bool get wantKeepAlive => true;
 
@@ -1585,7 +1835,6 @@ class _ExpandableSectionState extends State<_ExpandableSection>
 
   @override
   Widget build(BuildContext context) {
-    // ✅ WAJIB dipanggil agar mixin bekerja.
     super.build(context);
 
     return Container(
