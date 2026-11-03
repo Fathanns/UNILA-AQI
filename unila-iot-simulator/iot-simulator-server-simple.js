@@ -354,6 +354,57 @@ function generate30SecondBasedData(deviceId) {
   return sensorData;
 }
 
+function filterSensorData(data, fieldsQuery, excludeQuery) {
+  const allFields = ['pm25','pm10','co','so2','o3','no2','temperature','humidity'];
+
+  let selected = new Set(allFields);
+  if (fieldsQuery) {
+    selected = new Set(
+      fieldsQuery.split(',').map((f) => f.trim()).filter(Boolean)
+    );
+  } else if (excludeQuery) {
+    const excluded = new Set(
+      excludeQuery.split(',').map((f) => f.trim()).filter(Boolean)
+    );
+    selected = new Set(allFields.filter((f) => !excluded.has(f)));
+  }
+
+  const result = { ...data };
+  allFields.forEach((f) => {
+    if (!selected.has(f)) result[f] = null;
+  });
+
+  // Recompute AQI dari field yang tersisa
+  const has = (v) => typeof v === 'number' && !isNaN(v) && v >= 0;
+  const ispus = [];
+  if (has(result.pm25)) ispus.push({ name: 'pm25', value: calculateISPUFromPM25(result.pm25) });
+  if (has(result.pm10)) ispus.push({ name: 'pm10', value: calculateISPUFromPM10(result.pm10) });
+  if (has(result.co))   ispus.push({ name: 'co',   value: calculateISPUFromCO(result.co)   });
+  if (has(result.so2))  ispus.push({ name: 'so2',  value: calculateISPUFromSO2(result.so2)  });
+  if (has(result.o3))   ispus.push({ name: 'o3',   value: calculateISPUFromO3(result.o3)   });
+  if (has(result.no2))  ispus.push({ name: 'no2',  value: calculateISPUFromNO2(result.no2)  });
+
+  if (ispus.length === 0) {
+    result.aqi = null;
+    result.dominant = null;
+    result.category = 'no_data';
+  } else {
+    const order = ['co', 'so2', 'o3', 'no2', 'pm25', 'pm10'];
+    ispus.sort((a, b) => order.indexOf(a.name) - order.indexOf(b.name));
+    const maxVal = Math.max(...ispus.map((i) => i.value));
+    const dom = ispus.find((i) => i.value === maxVal);
+    result.aqi = maxVal;
+    result.dominant = dom.name;
+    if (maxVal <= 50) result.category = 'baik';
+    else if (maxVal <= 100) result.category = 'sedang';
+    else if (maxVal <= 200) result.category = 'tidak_sehat';
+    else if (maxVal <= 300) result.category = 'sangat_tidak_sehat';
+    else result.category = 'berbahaya';
+  }
+
+  return result;
+}
+
 // Clean old cache setiap 30 detik
 setInterval(() => {
   const now = Date.now();
@@ -472,13 +523,18 @@ const server = http.createServer((req, res) => {
         return;
       }
 
-      if (pathname.startsWith('/data/') && method === 'GET') {
+            if (pathname.startsWith('/data/') && method === 'GET') {
         const deviceId = pathname.split('/')[2];
 
         if (!deviceId) {
           return sendJson(res, 400, { success: false, message: 'Device ID is required' });
         }
 
+        // ---- 1. Baca query param DULU ----
+        const fieldsQuery  = parsedUrl.query.fields;
+        const excludeQuery = parsedUrl.query.exclude;
+
+        // ---- 2. Auto-register (kode lama, tidak berubah) ----
         if (!registeredDevices.has(deviceId)) {
           const hash = deviceId.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
           const roomType = hash % 4;
@@ -501,8 +557,18 @@ const server = http.createServer((req, res) => {
           registeredDevices.set(deviceId, device);
         }
 
-        const sensorData = generate30SecondBasedData(deviceId);
+        // ---- 3. Generate. WAJIB pakai `let` karena akan di-reassign filter ----
+        let sensorData = generate30SecondBasedData(deviceId);
 
+        // ---- 4. Filter SETELAH generate, SEBELUM response ----
+        if (fieldsQuery || excludeQuery) {
+          sensorData = filterSensorData(sensorData, fieldsQuery, excludeQuery);
+          console.log(
+            `🔎 Filtered ${deviceId}: fields=${fieldsQuery || '-'} exclude=${excludeQuery || '-'} → AQI=${sensorData.aqi}, dominant=${sensorData.dominant}`
+          );
+        }
+
+        // ---- 5. Bangun response (variabel `now` dst. seperti sebelumnya) ----
         const now = new Date();
         const secondsRemaining = 30 - (now.getSeconds() % 30);
 
@@ -519,6 +585,10 @@ const server = http.createServer((req, res) => {
             nextUpdateInSeconds: secondsRemaining,
             isAnomaly: sensorData.isAnomaly,
             anomalyType: sensorData.anomalyType,
+            appliedFilter: {
+              fields: fieldsQuery || null,
+              exclude: excludeQuery || null,
+            },
             units: {
               pm25: 'μg/m³',
               pm10: 'μg/m³',

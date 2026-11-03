@@ -549,8 +549,9 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
   }
 
   Widget _buildRoomCard(Room room) {
-    final aqiColor = Helpers.getAQIColor(room.currentAQI);
-    final aqiLabel = Helpers.getAQILabel(room.currentAQI);
+    final aqi = room.currentAQI;
+    final aqiColor = Helpers.getAQIColor(aqi);
+    final aqiLabel = Helpers.getAQILabel(aqi);
     final staleDuration = _getStaleDurationText(room);
     final isIot = room.dataSource == 'iot';
 
@@ -615,19 +616,17 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
                   ),
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 10, vertical: 4),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
                     color: aqiColor.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(12),
-                    border:
-                        Border.all(color: aqiColor.withOpacity(0.4)),
+                    border: Border.all(color: aqiColor.withOpacity(0.4)),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
                       Text(
-                        '${room.currentAQI}',
+                        aqi?.toString() ?? '—',
                         style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w800,

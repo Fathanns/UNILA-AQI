@@ -14,15 +14,15 @@ class RoomCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final aqiColor = Helpers.getAQIColor(room.currentAQI);
-    final aqiLabel = Helpers.getAQILabel(room.currentAQI);
+    final aqi = room.currentAQI;
+    final aqiColor = Helpers.getAQIColor(aqi);
+    final aqiLabel = Helpers.getAQILabel(aqi);
+    final hasAnyData = room.hasAnyData;
 
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 0),
       elevation: 2,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(16),
@@ -31,7 +31,7 @@ class RoomCard extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Header Row - Room name and building
+              // Header
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -60,9 +60,9 @@ class RoomCard extends StatelessWidget {
                       ],
                     ),
                   ),
-                  // Status indicator
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
                       color: aqiColor.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(20),
@@ -82,7 +82,7 @@ class RoomCard extends StatelessWidget {
 
               const SizedBox(height: 16),
 
-              // AQI Large Display - dengan background warna AQI
+              // AQI Display — no_data & error jadi grey
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(16),
@@ -92,9 +92,8 @@ class RoomCard extends StatelessWidget {
                 ),
                 child: Column(
                   children: [
-                    // Large AQI number
                     Text(
-                      room.currentAQI.toString(),
+                      aqi?.toString() ?? '—',
                       style: const TextStyle(
                         fontSize: 64,
                         fontWeight: FontWeight.w800,
@@ -103,16 +102,16 @@ class RoomCard extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 4),
-                    // AQI Label
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 20, vertical: 6),
                       decoration: BoxDecoration(
                         color: Colors.white.withOpacity(0.2),
                         borderRadius: BorderRadius.circular(20),
                       ),
-                      child: const Text(
-                        'INDEKS KUALITAS UDARA',
-                        style: TextStyle(
+                      child: Text(
+                        aqi == null ? 'TIDAK ADA DATA' : 'INDEKS KUALITAS UDARA',
+                        style: const TextStyle(
                           color: Colors.white,
                           fontWeight: FontWeight.w700,
                           fontSize: 12,
@@ -126,7 +125,7 @@ class RoomCard extends StatelessWidget {
 
               const SizedBox(height: 20),
 
-              // Parameter Grid - 2 rows, 3 columns
+              // Grid param dinamis — card yang null otomatis hilang
               GridView.count(
                 physics: const NeverScrollableScrollPhysics(),
                 shrinkWrap: true,
@@ -135,81 +134,88 @@ class RoomCard extends StatelessWidget {
                 crossAxisSpacing: 12,
                 childAspectRatio: 1.1,
                 children: [
-                  _buildParameterCell(
-                    label: 'PM2.5',
-                    value: room.currentData.pm25.toStringAsFixed(1),
-                    unit: 'µg/m³',
-                    status: Helpers.getPM25Status(room.currentData.pm25),
-                    color: Helpers.getPM25Color(room.currentData.pm25),
-                  ),
-                  _buildParameterCell(
-                    label: 'PM10',
-                    value: room.currentData.pm10.toStringAsFixed(1),
-                    unit: 'µg/m³',
-                    status: Helpers.getPM10Status(room.currentData.pm10),
-                    color: Helpers.getPM10Color(room.currentData.pm10),
-                  ),
-                  _buildParameterCell(
-                    label: 'CO',
-                    value: room.currentData.co.round().toString(),
-                    unit: 'µg/m³',
-                    status: Helpers.getCOStatus(room.currentData.co),
-                    color: Helpers.getCOColor(room.currentData.co),
-                  ),
-
-                  // PARTIKEL BARU — hanya tampil jika data tersedia
-                  if (room.currentData.so2 != null)
+                  if (room.currentData.hasPM25)
+                    _buildParameterCell(
+                      label: 'PM2.5',
+                      value: room.currentData.pm25!.toStringAsFixed(1),
+                      unit: 'µg/m³',
+                      status: Helpers.getPM25Status(room.currentData.pm25),
+                      color: Helpers.getPM25Color(room.currentData.pm25),
+                    ),
+                  if (room.currentData.hasPM10)
+                    _buildParameterCell(
+                      label: 'PM10',
+                      value: room.currentData.pm10!.toStringAsFixed(1),
+                      unit: 'µg/m³',
+                      status: Helpers.getPM10Status(room.currentData.pm10),
+                      color: Helpers.getPM10Color(room.currentData.pm10),
+                    ),
+                  if (room.currentData.hasCO)
+                    _buildParameterCell(
+                      label: 'CO',
+                      value: room.currentData.co!.round().toString(),
+                      unit: 'µg/m³',
+                      status: Helpers.getCOStatus(room.currentData.co),
+                      color: Helpers.getCOColor(room.currentData.co),
+                    ),
+                  if (room.currentData.hasSO2)
                     _buildParameterCell(
                       label: 'SO2',
                       value: room.currentData.so2!.toStringAsFixed(1),
                       unit: 'µg/m³',
-                      status: Helpers.getSO2Status(room.currentData.so2!),
-                      color: Helpers.getSO2Color(room.currentData.so2!),
+                      status: Helpers.getSO2Status(room.currentData.so2),
+                      color: Helpers.getSO2Color(room.currentData.so2),
                     ),
-                  if (room.currentData.o3 != null)
+                  if (room.currentData.hasO3)
                     _buildParameterCell(
                       label: 'O3',
                       value: room.currentData.o3!.toStringAsFixed(1),
                       unit: 'µg/m³',
-                      status: Helpers.getO3Status(room.currentData.o3!),
-                      color: Helpers.getO3Color(room.currentData.o3!),
+                      status: Helpers.getO3Status(room.currentData.o3),
+                      color: Helpers.getO3Color(room.currentData.o3),
                     ),
-                  if (room.currentData.no2 != null)
+                  if (room.currentData.hasNO2)
                     _buildParameterCell(
                       label: 'NO2',
                       value: room.currentData.no2!.toStringAsFixed(1),
                       unit: 'µg/m³',
-                      status: Helpers.getNO2Status(room.currentData.no2!),
-                      color: Helpers.getNO2Color(room.currentData.no2!),
+                      status: Helpers.getNO2Status(room.currentData.no2),
+                      color: Helpers.getNO2Color(room.currentData.no2),
                     ),
-
-                  _buildParameterCell(
-                    label: 'SUHU',
-                    value: room.currentData.temperature.toStringAsFixed(1),
-                    unit: '°C',
-                    status: Helpers.getTemperatureStatus(room.currentData.temperature),
-                    color: Helpers.getTemperatureColor(room.currentData.temperature),
-                  ),
-                  _buildParameterCell(
-                    label: 'LEMBAB',
-                    value: room.currentData.humidity.round().toString(),
-                    unit: '%',
-                    status: Helpers.getHumidityStatus(room.currentData.humidity),
-                    color: Helpers.getHumidityColor(room.currentData.humidity),
-                  ),
+                  if (room.currentData.hasTemperature)
+                    _buildParameterCell(
+                      label: 'SUHU',
+                      value: room.currentData.temperature!.toStringAsFixed(1),
+                      unit: '°C',
+                      status: Helpers.getTemperatureStatus(
+                          room.currentData.temperature),
+                      color: Helpers.getTemperatureColor(
+                          room.currentData.temperature),
+                    ),
+                  if (room.currentData.hasHumidity)
+                    _buildParameterCell(
+                      label: 'LEMBAB',
+                      value: room.currentData.humidity!.round().toString(),
+                      unit: '%',
+                      status: Helpers.getHumidityStatus(
+                          room.currentData.humidity),
+                      color: Helpers.getHumidityColor(
+                          room.currentData.humidity),
+                    ),
                   _buildLastUpdateCell(room),
                 ],
               ),
 
               const SizedBox(height: 12),
 
-              // Footer - Data source
+              // Footer
               Row(
                 mainAxisAlignment: MainAxisAlignment.start,
                 children: [
                   if (room.isIot)
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 4),
                       decoration: BoxDecoration(
                         color: const Color(0xFFE3F2FD),
                         borderRadius: BorderRadius.circular(12),
@@ -217,11 +223,7 @@ class RoomCard extends StatelessWidget {
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(
-                            Icons.sensors,
-                            size: 12,
-                            color: Colors.blue[700],
-                          ),
+                          Icon(Icons.sensors, size: 12, color: Colors.blue[700]),
                           const SizedBox(width: 4),
                           Text(
                             'Device IoT',
@@ -236,7 +238,8 @@ class RoomCard extends StatelessWidget {
                     )
                   else
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 4),
                       decoration: BoxDecoration(
                         color: const Color(0xFFF3E5F5),
                         borderRadius: BorderRadius.circular(12),
@@ -244,11 +247,8 @@ class RoomCard extends StatelessWidget {
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(
-                            Icons.auto_awesome,
-                            size: 12,
-                            color: Colors.purple[700],
-                          ),
+                          Icon(Icons.auto_awesome,
+                              size: 12, color: Colors.purple[700]),
                           const SizedBox(width: 4),
                           Text(
                             'Simulasi',
@@ -261,6 +261,18 @@ class RoomCard extends StatelessWidget {
                         ],
                       ),
                     ),
+                  if (!hasAnyData && aqi == null)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 8),
+                      child: Text(
+                        'Belum ada data dari perangkat',
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: Colors.grey[600],
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                    ),
                 ],
               ),
             ],
@@ -269,8 +281,6 @@ class RoomCard extends StatelessWidget {
       ),
     );
   }
-
-
 
   Widget _buildParameterCell({
     required String label,
@@ -284,11 +294,7 @@ class RoomCard extends StatelessWidget {
         color: color,
         borderRadius: BorderRadius.circular(12),
         boxShadow: const [
-          BoxShadow(
-            color: Colors.black12,
-            blurRadius: 4,
-            offset: Offset(0, 2),
-          ),
+          BoxShadow(color: Colors.black12, blurRadius: 4, offset: Offset(0, 2)),
         ],
       ),
       child: Padding(
@@ -296,7 +302,6 @@ class RoomCard extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // Label
             Text(
               label,
               style: TextStyle(
@@ -305,10 +310,7 @@ class RoomCard extends StatelessWidget {
                 color: Colors.white.withOpacity(0.9),
               ),
             ),
-
             const SizedBox(height: 4),
-
-            // Value and Unit
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.baseline,
@@ -332,10 +334,7 @@ class RoomCard extends StatelessWidget {
                 ),
               ],
             ),
-
             const SizedBox(height: 6),
-
-            // Status chip
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
               decoration: BoxDecoration(
@@ -358,9 +357,8 @@ class RoomCard extends StatelessWidget {
       ),
     );
   }
-}
 
- Widget _buildLastUpdateCell(Room room) {
+  Widget _buildLastUpdateCell(Room room) {
     return Container(
       decoration: BoxDecoration(
         color: const Color(0xFFF8F9FA),
@@ -412,3 +410,4 @@ class RoomCard extends StatelessWidget {
       ),
     );
   }
+}

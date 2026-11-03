@@ -876,24 +876,25 @@ const roomSchema = new mongoose.Schema({
     type: String,
     default: null
   },
+  // FIXED: currentAQI nullable — null berarti "belum ada data valid".
+  //   - null  → UI tampilkan card abu-abu "Tidak Ada Data"
+  //   - 0..500 → nilai AQI normal
   currentAQI: {
     type: Number,
-    default: 0
+    default: null
   },
-    currentData: {
-    pm25: { type: Number, default: 0 },
-    pm10: { type: Number, default: 0 },
-    co: { type: Number, default: 0 },
+  // FIXED: semua field nullable. null berarti "tidak dikirim device".
+  currentData: {
+    pm25: { type: Number, default: null },
+    pm10: { type: Number, default: null },
+    co: { type: Number, default: null },
     so2: { type: Number, default: null },
     o3: { type: Number, default: null },
     no2: { type: Number, default: null },
-    temperature: { type: Number, default: 0 },
-    humidity: { type: Number, default: 0 },
+    temperature: { type: Number, default: null },
+    humidity: { type: Number, default: null },
     updatedAt: { type: Date }
   },
-  // FIXED: flag untuk demo mode — kalau true, simulationService & iotService
-  // TIDAK akan menimpa nilai currentAQI. Dipakai untuk sidang/demo
-  // agar dosen bisa melihat kategori AQI ekstrem secara deterministik.
   demoMode: {
     type: Boolean,
     default: false
@@ -921,53 +922,22 @@ const sensorDataSchema = new mongoose.Schema({
     ref: 'Room',
     required: true
   },
-  roomName: {
-    type: String,
-    required: true
-  },
-  buildingName: {
-    type: String,
-    required: true
-  },
-  aqi: {
-    type: Number,
-    required: true
-  },
-  pm25: {
-    type: Number,
-    required: true
-  },
-  pm10: {
-    type: Number,
-    required: true
-  },
-  co: {
-    type: Number,
-    required: true
-  },
-  so2: {
-    type: Number,
-    default: null
-  },
-  o3: {
-    type: Number,
-    default: null
-  },
-  no2: {
-    type: Number,
-    default: null
-  },
-  temperature: {
-    type: Number,
-    required: true
-  },
-  humidity: {
-    type: Number,
-    required: true
-  },
+  roomName: { type: String, required: true },
+  buildingName: { type: String, required: true },
+  // FIXED: semua field nullable
+  aqi: { type: Number, default: null },
+  pm25: { type: Number, default: null },
+  pm10: { type: Number, default: null },
+  co: { type: Number, default: null },
+  so2: { type: Number, default: null },
+  o3: { type: Number, default: null },
+  no2: { type: Number, default: null },
+  temperature: { type: Number, default: null },
+  humidity: { type: Number, default: null },
   category: {
     type: String,
-    enum: ['baik', 'sedang', 'tidak_sehat', 'sangat_tidak_sehat', 'berbahaya', 'error'], // TAMBAH 'error'
+    // FIXED: tambah 'no_data'
+    enum: ['baik', 'sedang', 'tidak_sehat', 'sangat_tidak_sehat', 'berbahaya', 'error', 'no_data'],
     required: true
   },
   timestamp: {
@@ -977,7 +947,6 @@ const sensorDataSchema = new mongoose.Schema({
   }
 });
 
-// Create index untuk query yang cepat
 sensorDataSchema.index({ roomId: 1, timestamp: -1 });
 sensorDataSchema.index({ timestamp: -1 });
 
@@ -2009,11 +1978,11 @@ router.post('/', authMiddleware, adminMiddleware, async (req, res) => {
       buildingName: building.name,
       dataSource: dataSource || 'simulation',
       iotDeviceId: dataSource === 'iot' ? iotDeviceId : null,
-      currentAQI: 0,
+      currentAQI: null,        // ✅ no_data sampai poll pertama
       currentData: {
-        pm25: 0, pm10: 0, co: 0,
+        pm25: null, pm10: null, co: null,
         so2: null, o3: null, no2: null,
-        temperature: 0, humidity: 0,
+        temperature: null, humidity: null,
         updatedAt: new Date()
       },
       createdAt: new Date(),
@@ -2140,15 +2109,15 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
       (prevIotDeviceId !== (room.iotDeviceId || null));
 
     if (deviceChanged) {
-      room.currentAQI = 0;
+      room.currentAQI = null;
       room.currentData = {
-        pm25: 0, pm10: 0, co: 0,
+        pm25: null, pm10: null, co: null,
         so2: null, o3: null, no2: null,
-        temperature: 0, humidity: 0,
+        temperature: null, humidity: null,
         updatedAt: new Date()
       };
       console.log(
-        `🔄 Room "${room.name}" device changed (${prevIotDeviceId} → ${room.iotDeviceId}). Data partikel direset.`
+        `🔄 Room "${room.name}" device changed (${prevIotDeviceId} → ${room.iotDeviceId}). Data direset.`
       );
     }
 
@@ -2613,8 +2582,6 @@ router.get('/:roomId/history', async (req, res) => {
             hour: { $hour: "$timestamp" },
             interval: "$timeInterval"
           },
-          // FIXED: $first (bukan $last) agar titik merepresentasikan
-          // nilai pada awal slot — cocok dengan label "14:00", "14:30".
           timestamp: { $first: "$timestamp" },
           aqi: { $first: "$aqi" },
           pm25: { $first: "$pm25" },
@@ -2626,7 +2593,6 @@ router.get('/:roomId/history', async (req, res) => {
           temperature: { $first: "$temperature" },
           humidity: { $first: "$humidity" },
           category: { $first: "$category" },
-          // Simpan semua data mentah slot (untuk tooltip / audit)
           rawData: { $push: "$$ROOT" }
         }
       },
@@ -2663,7 +2629,6 @@ router.get('/:roomId/history', async (req, res) => {
           temperature: 1,
           humidity: 1,
           category: 1,
-          rawData: 1
         }
       }
     ];
@@ -2957,16 +2922,14 @@ class IoTService {
     return updates;
   }
 
-    isValidIoTData(data) {
-    if (!data) return false;
-
-    const required = ['aqi', 'pm25', 'pm10', 'co', 'temperature', 'humidity'];
-    if (!required.every((k) => typeof data[k] === 'number')) return false;
-
-    const optional = ['so2', 'o3', 'no2'];
-    return optional.every(
-      (k) => data[k] === undefined || data[k] === null || typeof data[k] === 'number'
-    );
+     isValidIoTData(data) {
+    if (!data || typeof data !== 'object') return false;
+    
+    const knownFields = [
+      'aqi', 'pm25', 'pm10', 'co', 'so2', 'o3', 'no2',
+      'temperature', 'humidity'
+    ];
+    return knownFields.some((k) => k in data);
   }
 
    _hasDataChanged(oldData, newData) {
@@ -2998,45 +2961,35 @@ class IoTService {
         return;
       }
 
-      const optionalNum = (v) =>
-        typeof v === 'number' && Number.isFinite(v) && !Number.isNaN(v) ? v : null;
+      const optNum = (v) =>
+        typeof v === 'number' && Number.isFinite(v) && !Number.isNaN(v)
+          ? v
+          : null;
 
-      const so2 = optionalNum(iotData.so2);
-      const o3 = optionalNum(iotData.o3);
-      const no2 = optionalNum(iotData.no2);
+      const pm25 = optNum(iotData.pm25);
+      const pm10 = optNum(iotData.pm10);
+      const co   = optNum(iotData.co);
+      const so2  = optNum(iotData.so2);
+      const o3   = optNum(iotData.o3);
+      const no2  = optNum(iotData.no2);
+      const temperature = optNum(iotData.temperature);
+      const humidity    = optNum(iotData.humidity);
 
-      // Deteksi error pada field yang tersedia
-      if (
-        iotData.aqi < 0 ||
-        iotData.pm25 < 0 ||
-        iotData.pm10 < 0 ||
-        (so2 != null && so2 < 0) ||
-        (o3 != null && o3 < 0) ||
-        (no2 != null && no2 < 0)
-      ) {
+      // Deteksi error hanya untuk field yang ADA dan negatif.
+      const hasError = [pm25, pm10, co, so2, o3, no2, temperature, humidity]
+        .some((v) => v !== null && v < 0);
+
+      if (hasError) {
         await this.handleDeviceError(room, deviceName);
         return;
       }
 
-      const aqiResult = calculateAQI(
-        iotData.pm25,
-        iotData.pm10,
-        iotData.co,
-        so2,
-        o3,
-        no2
-      );
+      const aqiResult = calculateAQI(pm25, pm10, co, so2, o3, no2);
 
       const normalizedData = {
-        pm25: iotData.pm25,
-        pm10: iotData.pm10,
-        co: iotData.co,
-        so2,
-        o3,
-        no2,
-        temperature: iotData.temperature,
-        humidity: iotData.humidity,
         aqi: aqiResult.aqi,
+        pm25, pm10, co, so2, o3, no2,
+        temperature, humidity,
         category: aqiResult.category,
         dominant: aqiResult.dominant,
       };
@@ -3058,183 +3011,142 @@ class IoTService {
       );
 
       if (!hasRoomDataChanged) {
-        console.log('┌───────────────────────────────────────────────────────────────────────');
-        console.log(`ℹ️  Room ${room.name} data unchanged (exact match), skipping update`);
-        console.log('└───────────────────────────────────────────────────────────────────────');
+        console.log(
+          `ℹ️ Room ${room.name} data unchanged (exact match), skipping update`
+        );
         return;
       }
 
       room.currentAQI = normalizedData.aqi;
       room.currentData = {
-        pm25: normalizedData.pm25,
-        pm10: normalizedData.pm10,
-        co: normalizedData.co,
-        so2: normalizedData.so2,
-        o3: normalizedData.o3,
-        no2: normalizedData.no2,
-        temperature: normalizedData.temperature,
-        humidity: normalizedData.humidity,
+        pm25, pm10, co, so2, o3, no2,
+        temperature, humidity,
         updatedAt: new Date(),
       };
       room.updatedAt = new Date();
       await room.save();
 
-      const historicalData = new SensorData({
+      await new SensorData({
         roomId: room._id,
         roomName: room.name,
         buildingName: room.buildingName,
         aqi: normalizedData.aqi,
-        pm25: normalizedData.pm25,
-        pm10: normalizedData.pm10,
-        co: normalizedData.co,
-        so2: normalizedData.so2,
-        o3: normalizedData.o3,
-        no2: normalizedData.no2,
-        temperature: normalizedData.temperature,
-        humidity: normalizedData.humidity,
+        pm25, pm10, co, so2, o3, no2,
+        temperature, humidity,
         category: aqiResult.category,
         timestamp: new Date(),
-      });
-      await historicalData.save();
-
-      console.log('┌────────────────────────────────────────────────────────────────────────────────────');
+      }).save();
 
       this.broadcastRoomUpdate(room, normalizedData, 'iot', deviceName);
 
-      if (aqiResult.aqi > 100) {
+      if (normalizedData.aqi == null) {
         console.log(
-          `🚨 HIGH AQI in ${room.name} (IoT ${deviceName}): ${aqiResult.aqi} (${aqiResult.category})`
+          `ℹ️ IoT room ${room.name} (device ${deviceName}): tidak ada data valid — status no_data`
+        );
+      } else if (normalizedData.aqi > 100) {
+        console.log(
+          `🚨 HIGH AQI in ${room.name} (IoT ${deviceName}): ${normalizedData.aqi} (${aqiResult.category})`
         );
       } else {
         console.log(
-          `✅ IoT room ${room.name}: AQI ${normalizedData.aqi}, ` +
-          `PM2.5=${normalizedData.pm25}, PM10=${normalizedData.pm10}, ` +
-          `CO=${normalizedData.co}, SO2=${normalizedData.so2}, O3=${normalizedData.o3}, NO2=${normalizedData.no2}, ` +
-          `Suhu=${normalizedData.temperature}, RH=${normalizedData.humidity}`
+          `✅ IoT room ${room.name}: AQI ${normalizedData.aqi} (${aqiResult.dominant}), ` +
+          `PM2.5=${pm25}, PM10=${pm10}, CO=${co}, SO2=${so2}, O3=${o3}, NO2=${no2}, ` +
+          `Suhu=${temperature}, RH=${humidity}`
         );
       }
 
-      const dominantLabel = {
-        pm25: `PM2.5 (ISPU=${aqiResult.ispuPM25})`,
-        pm10: `PM10 (ISPU=${aqiResult.ispuPM10})`,
-        co:   `CO (ISPU=${aqiResult.ispuCO})`,
-        so2:  `SO2 (ISPU=${aqiResult.ispuSO2})`,
-        o3:   `O3 (ISPU=${aqiResult.ispuO3})`,
-        no2:  `NO2 (ISPU=${aqiResult.ispuNO2})`,
-      }[aqiResult.dominant] || aqiResult.dominant;
+      if (aqiResult.dominant) {
+        const dominantLabel = {
+          pm25: `PM2.5 (ISPU=${aqiResult.ispuPM25})`,
+          pm10: `PM10 (ISPU=${aqiResult.ispuPM10})`,
+          co:   `CO (ISPU=${aqiResult.ispuCO})`,
+          so2:  `SO2 (ISPU=${aqiResult.ispuSO2})`,
+          o3:   `O3 (ISPU=${aqiResult.ispuO3})`,
+          no2:  `NO2 (ISPU=${aqiResult.ispuNO2})`,
+        }[aqiResult.dominant] || aqiResult.dominant;
 
-      console.log(
-        `⚠️  DOMINAN ${aqiResult.dominant.toUpperCase()} in ${room.name}: AQI ${aqiResult.aqi} (${dominantLabel})`
-      );
-      console.log('└────────────────────────────────────────────────────────────────────────────────────');
+        console.log(
+          `⚠️  DOMINAN ${aqiResult.dominant.toUpperCase()} in ${room.name}: AQI ${aqiResult.aqi} (${dominantLabel})`
+        );
+      }
     } catch (error) {
-      console.log('┌────────────────────────────────────────────────────────────────────────────────────');
       console.error(`❌ Error updating IoT room ${room.name}:`, error.message);
-      console.log('└────────────────────────────────────────────────────────────────────────────────────');
     }
   }
+
   
 
-    async updateRoomFromIoTForce(room, iotData, deviceName) {
+      async updateRoomFromIoTForce(room, iotData, deviceName) {
     try {
       if (room.demoMode) {
         console.log(`ℹ️ Skipping force update ${room.name} (demoMode active)`);
         return;
       }
 
-      const optionalNum = (v) =>
-        typeof v === 'number' && Number.isFinite(v) && !Number.isNaN(v) ? v : null;
+      const optNum = (v) =>
+        typeof v === 'number' && Number.isFinite(v) && !Number.isNaN(v)
+          ? v
+          : null;
 
-      const so2 = optionalNum(iotData.so2);
-      const o3 = optionalNum(iotData.o3);
-      const no2 = optionalNum(iotData.no2);
+      const pm25 = optNum(iotData.pm25);
+      const pm10 = optNum(iotData.pm10);
+      const co   = optNum(iotData.co);
+      const so2  = optNum(iotData.so2);
+      const o3   = optNum(iotData.o3);
+      const no2  = optNum(iotData.no2);
+      const temperature = optNum(iotData.temperature);
+      const humidity    = optNum(iotData.humidity);
 
-      if (
-        iotData.aqi < 0 ||
-        iotData.pm25 < 0 ||
-        iotData.pm10 < 0 ||
-        (so2 != null && so2 < 0) ||
-        (o3 != null && o3 < 0) ||
-        (no2 != null && no2 < 0)
-      ) {
+      const hasError = [pm25, pm10, co, so2, o3, no2, temperature, humidity]
+        .some((v) => v !== null && v < 0);
+
+      if (hasError) {
         await this.handleDeviceError(room, deviceName);
         return;
       }
 
-      const aqiResult = calculateAQI(
-        iotData.pm25,
-        iotData.pm10,
-        iotData.co,
-        so2,
-        o3,
-        no2
-      );
+      const aqiResult = calculateAQI(pm25, pm10, co, so2, o3, no2);
 
       room.currentAQI = aqiResult.aqi;
       room.currentData = {
-        pm25: iotData.pm25,
-        pm10: iotData.pm10,
-        co: iotData.co,
-        so2,
-        o3,
-        no2,
-        temperature: iotData.temperature,
-        humidity: iotData.humidity,
+        pm25, pm10, co, so2, o3, no2,
+        temperature, humidity,
         updatedAt: new Date(),
       };
       room.updatedAt = new Date();
       await room.save();
 
-      const historicalData = new SensorData({
+      await new SensorData({
         roomId: room._id,
         roomName: room.name,
         buildingName: room.buildingName,
         aqi: aqiResult.aqi,
-        pm25: iotData.pm25,
-        pm10: iotData.pm10,
-        co: iotData.co,
-        so2,
-        o3,
-        no2,
-        temperature: iotData.temperature,
-        humidity: iotData.humidity,
+        pm25, pm10, co, so2, o3, no2,
+        temperature, humidity,
         category: aqiResult.category,
         timestamp: new Date(),
-      });
-      await historicalData.save();
+      }).save();
 
       this.broadcastRoomUpdate(room, iotData, 'iot', deviceName);
 
       console.log(
-        `✅ FORCE-updated IoT room ${room.name}: AQI ${aqiResult.aqi} (${aqiResult.dominant.toUpperCase()})`
+        `✅ FORCE-updated IoT room ${room.name}: AQI ${aqiResult.aqi ?? 'null'} (${aqiResult.dominant ?? 'none'})`
       );
     } catch (error) {
       console.error(`❌ Error force-updating room ${room.name}:`, error.message);
     }
   }
 
-  /**
-   * FIXED: handle device error (aqi=-1, pm<0).
-   * Strategi SAMA dengan simulationService:
-   *  - Catat ke SensorData (untuk history)
-   *  - JANGAN overwrite room.currentAQI/currentData
-   *  - Broadcast notification ke dashboard
-   */
   async handleDeviceError(room, deviceName) {
     try {
-       await new SensorData({
+      // Catat sebagai error (-1) untuk history
+      await new SensorData({
         roomId: room._id,
         roomName: room.name,
         buildingName: room.buildingName,
         aqi: -1,
-        pm25: -1,
-        pm10: -1,
-        co: -1,
-        so2: -1,
-        o3: -1,
-        no2: -1,
-        temperature: -1,
-        humidity: -1,
+        pm25: -1, pm10: -1, co: -1, so2: -1, o3: -1, no2: -1,
+        temperature: -1, humidity: -1,
         category: 'error',
         timestamp: new Date(),
       }).save();
@@ -3246,15 +3158,11 @@ class IoTService {
           timestamp: new Date(),
         });
       }
-      console.log('┌──────────────────────────────────────────────────────────────────────────────');
       console.log(
         `⚠️ IoT SENSOR ERROR in ${room.name} (device: ${deviceName}) — room retained last good value`
       );
-      console.log('└──────────────────────────────────────────────────────────────────────────────');
     } catch (err) {
-      console.log('┌────────────────────────────────────────────────────────────────────────────────────');
       console.error(`❌ Error handling device error for ${room.name}:`, err.message);
-      console.log('└────────────────────────────────────────────────────────────────────────────────────');
     }
   }
 
@@ -3594,14 +3502,8 @@ class SimulationService {
         roomName: room.name,
         buildingName: room.buildingName,
         aqi: -1,
-        pm25: -1,
-        pm10: -1,
-        co: -1,
-        so2: -1,
-        o3: -1,
-        no2: -1,
-        temperature: -1,
-        humidity: -1,
+        pm25: -1, pm10: -1, co: -1, so2: -1, o3: -1, no2: -1,
+        temperature: -1, humidity: -1,
         category: 'error',
         timestamp: new Date()
       }).save();
@@ -3614,16 +3516,18 @@ class SimulationService {
         });
       }
       console.log('┌────────────────────────────────────────────────────────────────────────────────────');
-      console.log(`⚠️ SENSOR ERROR in ${room.name} (data invalid, room retained last good value)`);
+      console.log(
+        `⚠️ SENSOR ERROR in ${room.name} (data invalid, room retained last good value)`
+      );
       console.log('└────────────────────────────────────────────────────────────────────────────────────');
     } catch (err) {
       console.log('┌────────────────────────────────────────────────────────────────────────────────────');
       console.error(`❌ Error handling sensor error for ${room.name}:`, err.message);
-      console.log('└────────────────────────────────────────────────────────────────────────────────────');
+       console.log('└────────────────────────────────────────────────────────────────────────────────────');
     }
   }
 
-    _hasDataChanged(room, newData) {
+  _hasDataChanged(room, newData) {
     const currentData = room.currentData;
 
     const changed = (oldV, newV) => {
@@ -4055,12 +3959,9 @@ describe('getAQICategory — batas kategori sesuai PP 22/2021', () => {
 src/utils/aqiCalculator.js:
 
 /**
- * ISPU (Indeks Standar Pencemar Udara) Calculator
- * PP No. 22 Tahun 2021 + breakpoint SO2/O3/NO2 sesuai tabel ISPU.
- *
- * AQI = MAX dari ISPU parameter yang tersedia:
- * PM2.5, PM10, CO, SO2, O3, NO2.
- * Parameter opsional yang null/undefined TIDAK diikutkan.
+ * ISPU Calculator — PP No. 22 Tahun 2021
+ * AQI = MAX dari semua parameter yang TERSEDIA (non-null).
+ * Jika semua null → aqi = null, category = 'no_data'.
  */
 
 const PM25_BREAKPOINTS = [
@@ -4070,7 +3971,6 @@ const PM25_BREAKPOINTS = [
   { ispuLow: 201, ispuHigh: 300, concLow: 251, concHigh: 350 },
   { ispuLow: 301, ispuHigh: 500, concLow: 351, concHigh: 500 },
 ];
-
 const PM10_BREAKPOINTS = [
   { ispuLow: 0,   ispuHigh: 50,  concLow: 0,   concHigh: 50  },
   { ispuLow: 51,  ispuHigh: 100, concLow: 51,  concHigh: 150 },
@@ -4078,7 +3978,6 @@ const PM10_BREAKPOINTS = [
   { ispuLow: 201, ispuHigh: 300, concLow: 351, concHigh: 420 },
   { ispuLow: 301, ispuHigh: 500, concLow: 421, concHigh: 500 },
 ];
-
 const CO_BREAKPOINTS = [
   { ispuLow: 0,   ispuHigh: 50,  concLow: 0,     concHigh: 4000  },
   { ispuLow: 51,  ispuHigh: 100, concLow: 4001,  concHigh: 8000  },
@@ -4086,8 +3985,6 @@ const CO_BREAKPOINTS = [
   { ispuLow: 201, ispuHigh: 300, concLow: 15001, concHigh: 30000 },
   { ispuLow: 301, ispuHigh: 500, concLow: 30001, concHigh: 45000 },
 ];
-
-// Tabel baru: SO2 (24 jam), O3 (1 jam), NO2 (1 jam), satuan µg/m³
 const SO2_BREAKPOINTS = [
   { ispuLow: 0,   ispuHigh: 50,  concLow: 0,    concHigh: 80   },
   { ispuLow: 51,  ispuHigh: 100, concLow: 81,   concHigh: 365  },
@@ -4095,7 +3992,6 @@ const SO2_BREAKPOINTS = [
   { ispuLow: 201, ispuHigh: 300, concLow: 801,  concHigh: 1600 },
   { ispuLow: 301, ispuHigh: 500, concLow: 1601, concHigh: 3000 },
 ];
-
 const O3_BREAKPOINTS = [
   { ispuLow: 0,   ispuHigh: 50,  concLow: 0,   concHigh: 120  },
   { ispuLow: 51,  ispuHigh: 100, concLow: 121, concHigh: 235  },
@@ -4103,7 +3999,6 @@ const O3_BREAKPOINTS = [
   { ispuLow: 201, ispuHigh: 300, concLow: 401, concHigh: 800  },
   { ispuLow: 301, ispuHigh: 500, concLow: 801, concHigh: 1000 },
 ];
-
 const NO2_BREAKPOINTS = [
   { ispuLow: 0,   ispuHigh: 50,  concLow: 0,    concHigh: 80   },
   { ispuLow: 51,  ispuHigh: 100, concLow: 81,   concHigh: 200  },
@@ -4116,89 +4011,79 @@ const isValidNumber = (v) =>
   typeof v === 'number' && Number.isFinite(v) && !Number.isNaN(v);
 
 function calculateISPUFromConcentration(concentration, breakpoints) {
-  if (!isValidNumber(concentration) || concentration < 0) return 0;
+  if (!isValidNumber(concentration) || concentration < 0) return null;
 
   for (const bp of breakpoints) {
     if (concentration <= bp.concHigh) {
       const concRange = bp.concHigh - bp.concLow;
       if (concRange === 0) return bp.ispuHigh;
-
       const ispu =
         ((bp.ispuHigh - bp.ispuLow) / concRange) *
           (concentration - bp.concLow) +
         bp.ispuLow;
-
       return Math.round(Math.max(0, Math.min(500, ispu)));
     }
   }
-
   return 500;
 }
 
-function calculateISPUFromPM25(pm25) {
-  return calculateISPUFromConcentration(pm25, PM25_BREAKPOINTS);
-}
-function calculateISPUFromPM10(pm10) {
-  return calculateISPUFromConcentration(pm10, PM10_BREAKPOINTS);
-}
-function calculateISPUFromCO(co) {
-  return calculateISPUFromConcentration(co, CO_BREAKPOINTS);
-}
-function calculateISPUFromSO2(so2) {
-  return calculateISPUFromConcentration(so2, SO2_BREAKPOINTS);
-}
-function calculateISPUFromO3(o3) {
-  return calculateISPUFromConcentration(o3, O3_BREAKPOINTS);
-}
-function calculateISPUFromNO2(no2) {
-  return calculateISPUFromConcentration(no2, NO2_BREAKPOINTS);
-}
+const calculateISPUFromPM25 = (v) => calculateISPUFromConcentration(v, PM25_BREAKPOINTS);
+const calculateISPUFromPM10 = (v) => calculateISPUFromConcentration(v, PM10_BREAKPOINTS);
+const calculateISPUFromCO   = (v) => calculateISPUFromConcentration(v, CO_BREAKPOINTS);
+const calculateISPUFromSO2  = (v) => calculateISPUFromConcentration(v, SO2_BREAKPOINTS);
+const calculateISPUFromO3   = (v) => calculateISPUFromConcentration(v, O3_BREAKPOINTS);
+const calculateISPUFromNO2  = (v) => calculateISPUFromConcentration(v, NO2_BREAKPOINTS);
 
 /**
  * AQI = MAX dari parameter yang tersedia.
- * Parameter SO2/O3/NO2 hanya diikutkan bila berupa angka valid.
- * CO selalu dianggap tersedia (default 0) agar kompatibel dengan kode lama.
+ * Semua parameter nullable. Bila SEMUA null → aqi: null, category: 'no_data'.
+ * Tie-breaker: CO → SO2 → O3 → NO2 → PM2.5 → PM10
  */
-function calculateAQI(pm25, pm10, co = 0, so2 = null, o3 = null, no2 = null) {
-  const coValue = co == null ? 0 : co;
+function calculateAQI(pm25 = null, pm10 = null, co = null, so2 = null, o3 = null, no2 = null) {
+  const hasPM25 = isValidNumber(pm25);
+  const hasPM10 = isValidNumber(pm10);
+  const hasCO   = isValidNumber(co);
+  const hasSO2  = isValidNumber(so2);
+  const hasO3   = isValidNumber(o3);
+  const hasNO2  = isValidNumber(no2);
 
-  const ispuPM25 = calculateISPUFromPM25(pm25);
-  const ispuPM10 = calculateISPUFromPM10(pm10);
-  const ispuCO = calculateISPUFromCO(coValue);
+  if (!hasPM25 && !hasPM10 && !hasCO && !hasSO2 && !hasO3 && !hasNO2) {
+    const cat = getAQICategory(null);
+    return {
+      aqi: null,
+      ispuPM25: null, ispuPM10: null, ispuCO: null,
+      ispuSO2: null, ispuO3: null, ispuNO2: null,
+      dominant: null,
+      category: cat.category,
+      color: cat.color,
+      label: cat.label,
+    };
+  }
 
-  const hasSO2 = isValidNumber(so2);
-  const hasO3 = isValidNumber(o3);
-  const hasNO2 = isValidNumber(no2);
+  const ispuPM25 = hasPM25 ? calculateISPUFromPM25(pm25) : null;
+  const ispuPM10 = hasPM10 ? calculateISPUFromPM10(pm10) : null;
+  const ispuCO   = hasCO   ? calculateISPUFromCO(co)     : null;
+  const ispuSO2  = hasSO2  ? calculateISPUFromSO2(so2)   : null;
+  const ispuO3   = hasO3   ? calculateISPUFromO3(o3)     : null;
+  const ispuNO2  = hasNO2  ? calculateISPUFromNO2(no2)   : null;
 
-  const ispuSO2 = hasSO2 ? calculateISPUFromSO2(so2) : null;
-  const ispuO3 = hasO3 ? calculateISPUFromO3(o3) : null;
-  const ispuNO2 = hasNO2 ? calculateISPUFromNO2(no2) : null;
-
-  // Urutan tie-breaker: CO -> SO2 -> O3 -> NO2 -> PM2.5 -> PM10.
-  // Ini mempertahankan perilaku lama: tie PM2.5 vs PM10 => PM2.5;
-  // tie semua nol dengan CO => CO.
   const ordered = [
-    { name: 'co', value: ispuCO },
-    ...(hasSO2 ? [{ name: 'so2', value: ispuSO2 }] : []),
-    ...(hasO3 ? [{ name: 'o3', value: ispuO3 }] : []),
-    ...(hasNO2 ? [{ name: 'no2', value: ispuNO2 }] : []),
-    { name: 'pm25', value: ispuPM25 },
-    { name: 'pm10', value: ispuPM10 },
+    ...(hasCO   ? [{ name: 'co',   value: ispuCO   }] : []),
+    ...(hasSO2  ? [{ name: 'so2',  value: ispuSO2  }] : []),
+    ...(hasO3   ? [{ name: 'o3',   value: ispuO3   }] : []),
+    ...(hasNO2  ? [{ name: 'no2',  value: ispuNO2  }] : []),
+    ...(hasPM25 ? [{ name: 'pm25', value: ispuPM25 }] : []),
+    ...(hasPM10 ? [{ name: 'pm10', value: ispuPM10 }] : []),
   ];
 
   const aqi = Math.max(...ordered.map((c) => c.value));
-  const dominant = ordered.find((c) => c.value === aqi)?.name || 'pm10';
+  const dominant = ordered.find((c) => c.value === aqi)?.name || null;
 
   const cat = getAQICategory(aqi);
 
   return {
     aqi,
-    ispuPM25,
-    ispuPM10,
-    ispuCO,
-    ispuSO2,
-    ispuO3,
-    ispuNO2,
+    ispuPM25, ispuPM10, ispuCO, ispuSO2, ispuO3, ispuNO2,
     dominant,
     category: cat.category,
     color: cat.color,
@@ -4207,6 +4092,9 @@ function calculateAQI(pm25, pm10, co = 0, so2 = null, o3 = null, no2 = null) {
 }
 
 function getAQICategory(aqi) {
+  if (aqi == null || Number.isNaN(aqi)) {
+    return { category: 'no_data', color: '#BDBDBD', label: 'Tidak Ada Data' };
+  }
   if (aqi <= 50)  return { category: 'baik',               color: '#00E400', label: 'Baik' };
   if (aqi <= 100) return { category: 'sedang',             color: '#0000FF', label: 'Sedang' };
   if (aqi <= 200) return { category: 'tidak_sehat',        color: '#FFFF00', label: 'Tidak Sehat' };
@@ -4217,7 +4105,6 @@ function getAQICategory(aqi) {
 function aqiToConcentration(aqi, breakpoints) {
   if (!isValidNumber(aqi) || aqi <= 0) return 0;
   const target = Math.min(500, aqi);
-
   for (const bp of breakpoints) {
     if (target <= bp.ispuHigh) {
       const ispuRange = bp.ispuHigh - bp.ispuLow;
@@ -4229,63 +4116,32 @@ function aqiToConcentration(aqi, breakpoints) {
   return 500;
 }
 
-function aqiToPm25(aqi) {
-  return aqiToConcentration(aqi, PM25_BREAKPOINTS);
-}
-function aqiToSO2(aqi) {
-  return aqiToConcentration(aqi, SO2_BREAKPOINTS);
-}
-function aqiToO3(aqi) {
-  return aqiToConcentration(aqi, O3_BREAKPOINTS);
-}
-function aqiToNO2(aqi) {
-  return aqiToConcentration(aqi, NO2_BREAKPOINTS);
-}
+const aqiToPm25 = (v) => aqiToConcentration(v, PM25_BREAKPOINTS);
+const aqiToSO2  = (v) => aqiToConcentration(v, SO2_BREAKPOINTS);
+const aqiToO3   = (v) => aqiToConcentration(v, O3_BREAKPOINTS);
+const aqiToNO2  = (v) => aqiToConcentration(v, NO2_BREAKPOINTS);
 
 const evaluateParameter = (type, value) => {
+  const catFor = (ispu) => getAQICategory(ispu);
   switch (type) {
-    case 'pm25': {
-      const ispu = calculateISPUFromPM25(value);
-      const cat = getAQICategory(ispu);
-      return { status: cat.category, color: cat.color, ispu };
-    }
-    case 'pm10': {
-      const ispu = calculateISPUFromPM10(value);
-      const cat = getAQICategory(ispu);
-      return { status: cat.category, color: cat.color, ispu };
-    }
-    case 'co': {
-      const ispu = calculateISPUFromCO(value);
-      const cat = getAQICategory(ispu);
-      return { status: cat.category, color: cat.color, ispu };
-    }
-    case 'so2': {
-      const ispu = calculateISPUFromSO2(value);
-      const cat = getAQICategory(ispu);
-      return { status: cat.category, color: cat.color, ispu };
-    }
-    case 'o3': {
-      const ispu = calculateISPUFromO3(value);
-      const cat = getAQICategory(ispu);
-      return { status: cat.category, color: cat.color, ispu };
-    }
-    case 'no2': {
-      const ispu = calculateISPUFromNO2(value);
-      const cat = getAQICategory(ispu);
-      return { status: cat.category, color: cat.color, ispu };
-    }
+    case 'pm25': { const i = calculateISPUFromPM25(value); const c = catFor(i); return { status: c.category, color: c.color, ispu: i }; }
+    case 'pm10': { const i = calculateISPUFromPM10(value); const c = catFor(i); return { status: c.category, color: c.color, ispu: i }; }
+    case 'co':   { const i = calculateISPUFromCO(value);   const c = catFor(i); return { status: c.category, color: c.color, ispu: i }; }
+    case 'so2':  { const i = calculateISPUFromSO2(value);  const c = catFor(i); return { status: c.category, color: c.color, ispu: i }; }
+    case 'o3':   { const i = calculateISPUFromO3(value);   const c = catFor(i); return { status: c.category, color: c.color, ispu: i }; }
+    case 'no2':  { const i = calculateISPUFromNO2(value);  const c = catFor(i); return { status: c.category, color: c.color, ispu: i }; }
     case 'temperature':
+      if (value == null) return { status: 'unknown', color: '#CCCCCC' };
       if (value >= 24 && value <= 26) return { status: 'ideal', color: '#0066CC' };
       if (value >= 20 && value <= 28) return { status: 'normal', color: '#00E400' };
       if (value >= 18 && value <= 30) return { status: 'sedang', color: '#FFFF00' };
       return { status: 'tidak_ideal', color: '#FF7E00' };
-
     case 'humidity':
+      if (value == null) return { status: 'unknown', color: '#CCCCCC' };
       if (value >= 40 && value <= 60) return { status: 'ideal', color: '#0066CC' };
       if (value >= 30 && value <= 70) return { status: 'normal', color: '#00E400' };
       if (value >= 20 && value <= 80) return { status: 'sedang', color: '#FFFF00' };
       return { status: 'tidak_ideal', color: '#FF7E00' };
-
     default:
       return { status: 'unknown', color: '#CCCCCC' };
   }
@@ -4307,6 +4163,10 @@ module.exports = {
   aqiToNO2,
   calculateAQIFromPM25: (pm25) => {
     const ispu = calculateISPUFromPM25(pm25);
+    if (ispu == null) {
+      const cat = getAQICategory(null);
+      return { aqi: null, category: cat.category, color: cat.color };
+    }
     const cat = getAQICategory(ispu);
     return { aqi: ispu, category: cat.category, color: cat.color };
   },
@@ -10348,7 +10208,8 @@ class AppColors {
   static const Color aqiUnhealthySensitive = Color(0xFFFFC107); 
   static const Color aqiUnhealthy = Color(0xFFDC3545);         
   static const Color aqiHazardous = Color(0xFF37474F);         
-  static const Color aqiError = Color(0xFF9E9E9E);   
+  static const Color aqiError = Color(0xFF9E9E9E);
+  static const Color aqiNoData = Color(0xFFBDBDBD);
 
   // Neutral Colors
   static const Color background = Color(0xFFF8F9FA);
@@ -11970,9 +11831,10 @@ class Helpers {
   // ============================================================
   // AQI HELPERS — PP 22/2021
   // ============================================================
-  static bool isErrorAQI(int aqi) => aqi < 0;
+  static bool isErrorAQI(int? aqi) => aqi != null && aqi < 0;
 
-  static Color getAQIColor(int aqi) {
+   static Color getAQIColor(int? aqi) {
+    if (aqi == null) return AppColors.aqiNoData;
     if (aqi < 0) return AppColors.aqiError;
     if (aqi <= 50) return AppColors.aqiGood;
     if (aqi <= 100) return AppColors.aqiModerate;
@@ -11981,7 +11843,8 @@ class Helpers {
     return AppColors.aqiHazardous;
   }
 
-  static String getAQILabel(int aqi) {
+  static String getAQILabel(int? aqi) {
+    if (aqi == null) return 'TIDAK ADA DATA';
     if (aqi < 0) return 'ERROR';
     if (aqi <= 50) return 'BAIK';
     if (aqi <= 100) return 'SEDANG';
@@ -11990,7 +11853,10 @@ class Helpers {
     return 'BERBAHAYA';
   }
 
-  static String getAQIHealthMessage(int aqi) {
+  static String getAQIHealthMessage(int? aqi) {
+    if (aqi == null) {
+      return 'Belum ada data valid dari perangkat.';
+    }
     if (aqi < 0) {
       return 'Sensor ruangan melaporkan error. Nilai AQI yang ditampilkan adalah nilai valid terakhir.';
     }
@@ -12002,148 +11868,159 @@ class Helpers {
   }
 
   // PM2.5
-  static String getPM25Status(double value) {
-    if (value < 0) return 'ERROR';
-    if (value <= 55) return 'BAIK';
-    if (value <= 150) return 'SEDANG';
-    if (value <= 250) return 'TIDAK SEHAT';
-    if (value <= 350) return 'SANGAT TIDAK SEHAT';
+  static String getPM25Status(double? v) {
+    if (v == null) return 'DATA TIDAK DITERIMA';
+    if (v < 0) return 'ERROR';
+    if (v <= 55) return 'BAIK';
+    if (v <= 150) return 'SEDANG';
+    if (v <= 250) return 'TIDAK SEHAT';
+    if (v <= 350) return 'SANGAT TIDAK SEHAT';
     return 'BERBAHAYA';
   }
-
-  static Color getPM25Color(double value) {
-    if (value < 0) return AppColors.aqiError;
-    if (value <= 55) return AppColors.aqiGood;
-    if (value <= 150) return AppColors.aqiModerate;
-    if (value <= 250) return AppColors.aqiUnhealthySensitive;
-    if (value <= 350) return AppColors.aqiUnhealthy;
+  static Color getPM25Color(double? v) {
+    if (v == null) return AppColors.aqiNoData;
+    if (v < 0) return AppColors.aqiError;
+    if (v <= 55) return AppColors.aqiGood;
+    if (v <= 150) return AppColors.aqiModerate;
+    if (v <= 250) return AppColors.aqiUnhealthySensitive;
+    if (v <= 350) return AppColors.aqiUnhealthy;
     return AppColors.aqiHazardous;
   }
 
   // PM10
-  static String getPM10Status(double value) {
-    if (value < 0) return 'ERROR';
-    if (value <= 50) return 'BAIK';
-    if (value <= 150) return 'SEDANG';
-    if (value <= 350) return 'TIDAK SEHAT';
-    if (value <= 420) return 'SANGAT TIDAK SEHAT';
+  static String getPM10Status(double? v) {
+    if (v == null) return 'DATA TIDAK DITERIMA';
+    if (v < 0) return 'ERROR';
+    if (v <= 50) return 'BAIK';
+    if (v <= 150) return 'SEDANG';
+    if (v <= 350) return 'TIDAK SEHAT';
+    if (v <= 420) return 'SANGAT TIDAK SEHAT';
     return 'BERBAHAYA';
   }
+  static Color getPM10Color(double? v) {
+    if (v == null) return AppColors.aqiNoData;
+    if (v < 0) return AppColors.aqiError;
+    if (v <= 50) return AppColors.aqiGood;
+    if (v <= 150) return AppColors.aqiModerate;
+    if (v <= 350) return AppColors.aqiUnhealthySensitive;
+    if (v <= 420) return AppColors.aqiUnhealthy;
+    return AppColors.aqiHazardous;
+  }
 
-  static Color getPM10Color(double value) {
-    if (value < 0) return AppColors.aqiError;
-    if (value <= 50) return AppColors.aqiGood;
-    if (value <= 150) return AppColors.aqiModerate;
-    if (value <= 350) return AppColors.aqiUnhealthySensitive;
-    if (value <= 420) return AppColors.aqiUnhealthy;
+  // CO
+  static String getCOStatus(double? v) {
+    if (v == null) return 'DATA TIDAK DITERIMA';
+    if (v < 0) return 'ERROR';
+    if (v <= 4000) return 'BAIK';
+    if (v <= 8000) return 'SEDANG';
+    if (v <= 15000) return 'TIDAK SEHAT';
+    if (v <= 30000) return 'SANGAT TIDAK SEHAT';
+    return 'BERBAHAYA';
+  }
+  static Color getCOColor(double? v) {
+    if (v == null) return AppColors.aqiNoData;
+    if (v < 0) return AppColors.aqiError;
+    if (v <= 4000) return AppColors.aqiGood;
+    if (v <= 8000) return AppColors.aqiModerate;
+    if (v <= 15000) return AppColors.aqiUnhealthySensitive;
+    if (v <= 30000) return AppColors.aqiUnhealthy;
+    return AppColors.aqiHazardous;
+  }
+
+  // SO2
+  static String getSO2Status(double? v) {
+    if (v == null) return 'DATA TIDAK DITERIMA';
+    if (v < 0) return 'ERROR';
+    if (v <= 80) return 'BAIK';
+    if (v <= 365) return 'SEDANG';
+    if (v <= 800) return 'TIDAK SEHAT';
+    if (v <= 1600) return 'SANGAT TIDAK SEHAT';
+    return 'BERBAHAYA';
+  }
+  static Color getSO2Color(double? v) {
+    if (v == null) return AppColors.aqiNoData;
+    if (v < 0) return AppColors.aqiError;
+    if (v <= 80) return AppColors.aqiGood;
+    if (v <= 365) return AppColors.aqiModerate;
+    if (v <= 800) return AppColors.aqiUnhealthySensitive;
+    if (v <= 1600) return AppColors.aqiUnhealthy;
+    return AppColors.aqiHazardous;
+  }
+
+  // O3
+  static String getO3Status(double? v) {
+    if (v == null) return 'DATA TIDAK DITERIMA';
+    if (v < 0) return 'ERROR';
+    if (v <= 120) return 'BAIK';
+    if (v <= 235) return 'SEDANG';
+    if (v <= 400) return 'TIDAK SEHAT';
+    if (v <= 800) return 'SANGAT TIDAK SEHAT';
+    return 'BERBAHAYA';
+  }
+  static Color getO3Color(double? v) {
+    if (v == null) return AppColors.aqiNoData;
+    if (v < 0) return AppColors.aqiError;
+    if (v <= 120) return AppColors.aqiGood;
+    if (v <= 235) return AppColors.aqiModerate;
+    if (v <= 400) return AppColors.aqiUnhealthySensitive;
+    if (v <= 800) return AppColors.aqiUnhealthy;
+    return AppColors.aqiHazardous;
+  }
+
+  // NO2
+  static String getNO2Status(double? v) {
+    if (v == null) return 'DATA TIDAK DITERIMA';
+    if (v < 0) return 'ERROR';
+    if (v <= 80) return 'BAIK';
+    if (v <= 200) return 'SEDANG';
+    if (v <= 1130) return 'TIDAK SEHAT';
+    if (v <= 2260) return 'SANGAT TIDAK SEHAT';
+    return 'BERBAHAYA';
+  }
+  static Color getNO2Color(double? v) {
+    if (v == null) return AppColors.aqiNoData;
+    if (v < 0) return AppColors.aqiError;
+    if (v <= 80) return AppColors.aqiGood;
+    if (v <= 200) return AppColors.aqiModerate;
+    if (v <= 1130) return AppColors.aqiUnhealthySensitive;
+    if (v <= 2260) return AppColors.aqiUnhealthy;
     return AppColors.aqiHazardous;
   }
 
   // Temperature
-  static String getTemperatureStatus(double value) {
-    if (value < 0) return 'ERROR';
-    if (value < 24) return 'DINGIN';
-    if (value <= 27) return 'IDEAL';
-    if (value <= 30) return 'HANGAT';
+  static String getTemperatureStatus(double? v) {
+    if (v == null) return 'DATA TIDAK DITERIMA';
+    if (v < 0) return 'ERROR';
+    if (v < 24) return 'DINGIN';
+    if (v <= 27) return 'IDEAL';
+    if (v <= 30) return 'HANGAT';
     return 'PANAS';
   }
-
-  static Color getTemperatureColor(double value) {
-    if (value < 0) return AppColors.aqiError;
-    if (value < 24) return Colors.blue;
-    if (value <= 27) return AppColors.success;
-    if (value <= 30) return AppColors.warning;
+  static Color getTemperatureColor(double? v) {
+    if (v == null) return AppColors.aqiNoData;
+    if (v < 0) return AppColors.aqiError;
+    if (v < 24) return Colors.blue;
+    if (v <= 27) return AppColors.success;
+    if (v <= 30) return AppColors.warning;
     return AppColors.error;
   }
 
   // Humidity
-  static String getHumidityStatus(double value) {
-    if (value < 0) return 'ERROR';
-    if (value < 40) return 'KERING';
-    if (value <= 60) return 'IDEAL';
-    if (value <= 70) return 'LEMBAB';
+  static String getHumidityStatus(double? v) {
+    if (v == null) return 'DATA TIDAK DITERIMA';
+    if (v < 0) return 'ERROR';
+    if (v < 40) return 'KERING';
+    if (v <= 60) return 'IDEAL';
+    if (v <= 70) return 'LEMBAB';
     return 'TIDAK NYAMAN';
   }
-
-  static Color getHumidityColor(double value) {
-    if (value < 0) return AppColors.aqiError;
-    if (value < 40) return AppColors.aqiUnhealthySensitive;
-    if (value <= 60) return AppColors.aqiGood;
-    if (value <= 70) return AppColors.aqiModerate;
+  static Color getHumidityColor(double? v) {
+    if (v == null) return AppColors.aqiNoData;
+    if (v < 0) return AppColors.aqiError;
+    if (v < 40) return AppColors.aqiUnhealthySensitive;
+    if (v <= 60) return AppColors.aqiGood;
+    if (v <= 70) return AppColors.aqiModerate;
     return AppColors.aqiUnhealthy;
-  }
-
-   // CO
-  static String getCOStatus(double value) { 
-    if (value < 0) return 'ERROR';
-    if (value <= 4000) return 'BAIK';
-    if (value <= 8000) return 'SEDANG';
-    if (value <= 15000) return 'TIDAK SEHAT';
-    if (value <= 30000) return 'SANGAT TIDAK SEHAT';
-    return 'BERBAHAYA';
-  }
-
-   static Color getCOColor(double value) { 
-    if (value < 0) return AppColors.aqiError;
-    if (value <= 4000) return AppColors.aqiGood;
-    if (value <= 8000) return AppColors.aqiModerate;
-    if (value <= 15000) return AppColors.aqiUnhealthySensitive;
-    if (value <= 30000) return AppColors.aqiUnhealthy;
-    return AppColors.aqiHazardous;
-  }
-
-  static String getSO2Status(double value) {
-    if (value < 0) return 'ERROR';
-    if (value <= 80) return 'BAIK';
-    if (value <= 365) return 'SEDANG';
-    if (value <= 800) return 'TIDAK SEHAT';
-    if (value <= 1600) return 'SANGAT TIDAK SEHAT';
-    return 'BERBAHAYA';
-  }
-
-  static Color getSO2Color(double value) {
-    if (value < 0) return AppColors.aqiError;
-    if (value <= 80) return AppColors.aqiGood;
-    if (value <= 365) return AppColors.aqiModerate;
-    if (value <= 800) return AppColors.aqiUnhealthySensitive;
-    if (value <= 1600) return AppColors.aqiUnhealthy;
-    return AppColors.aqiHazardous;
-  }
-
-  static String getO3Status(double value) {
-    if (value < 0) return 'ERROR';
-    if (value <= 120) return 'BAIK';
-    if (value <= 235) return 'SEDANG';
-    if (value <= 400) return 'TIDAK SEHAT';
-    if (value <= 800) return 'SANGAT TIDAK SEHAT';
-    return 'BERBAHAYA';
-  }
-
-  static Color getO3Color(double value) {
-    if (value < 0) return AppColors.aqiError;
-    if (value <= 120) return AppColors.aqiGood;
-    if (value <= 235) return AppColors.aqiModerate;
-    if (value <= 400) return AppColors.aqiUnhealthySensitive;
-    if (value <= 800) return AppColors.aqiUnhealthy;
-    return AppColors.aqiHazardous;
-  }
-
-  static String getNO2Status(double value) {
-    if (value < 0) return 'ERROR';
-    if (value <= 80) return 'BAIK';
-    if (value <= 200) return 'SEDANG';
-    if (value <= 1130) return 'TIDAK SEHAT';
-    if (value <= 2260) return 'SANGAT TIDAK SEHAT';
-    return 'BERBAHAYA';
-  }
-
-  static Color getNO2Color(double value) {
-    if (value < 0) return AppColors.aqiError;
-    if (value <= 80) return AppColors.aqiGood;
-    if (value <= 200) return AppColors.aqiModerate;
-    if (value <= 1130) return AppColors.aqiUnhealthySensitive;
-    if (value <= 2260) return AppColors.aqiUnhealthy;
-    return AppColors.aqiHazardous;
   }
 
   // ============================================================
@@ -12412,98 +12289,105 @@ class Helpers {
     final data = room.currentData;
     final aqi = room.currentAQI;
 
-    // 0. SENSOR ERROR
+    // 0. NO DATA
+    if (aqi == null) {
+      recommendations.add('BELUM ADA DATA');
+      recommendations.add(
+          'Perangkat belum mengirimkan data yang valid. Data akan muncul setelah polling berhasil.');
+      recommendations.add(
+          'Jika kondisi ini berlangsung lama, hubungi admin untuk memeriksa perangkat.');
+      return recommendations;
+    }
+
+    // 0b. SENSOR ERROR
     if (aqi < 0) {
       recommendations.add('SENSOR RUANGAN MELAPORKAN ERROR');
       recommendations.add(
           'Nilai AQI yang ditampilkan adalah nilai valid terakhir sebelum sensor bermasalah');
-      recommendations
-          .add('Hubungi admin untuk memeriksa perangkat sensor pada ruangan ini');
+      recommendations.add(
+          'Hubungi admin untuk memeriksa perangkat sensor pada ruangan ini');
       return recommendations;
     }
 
-    // 1. AQI / ISPU — PP 22/2021
+    // 1. AQI
     if (aqi <= 50) {
       recommendations.add(
           'AQI: Aman untuk perkuliahan normal dengan durasi berapa pun. Tidak perlu tindakan khusus.');
     } else if (aqi <= 100) {
       recommendations.add(
-          'AQI: Perkuliahan tatap muka tetap aman. Pastikan ruangan bebas debu berlebih di lantai, meja, dan filter AC. Kelompok sensitif (asma, ibu hamil, lansia) sebaiknya tidak duduk dekat jendela/sumber polusi.');
+          'AQI: Perkuliahan tatap muka tetap aman. Pastikan ruangan bebas debu berlebih. Kelompok sensitif sebaiknya tidak duduk dekat jendela/sumber polusi.');
     } else if (aqi <= 200) {
       recommendations.add(
-          'AQI: Kurangi aktivitas fisik berat di ruangan. Nyalakan air purifier bila tersedia. Mahasiswa dengan riwayat pernapasan disarankan memakai masker. Pertimbangkan memindahkan kelas ke ruangan dengan ventilasi lebih baik.');
+          'AQI: Kurangi aktivitas fisik berat di ruangan. Nyalakan air purifier bila tersedia. Pertimbangkan memindahkan kelas ke ruangan dengan ventilasi lebih baik.');
     } else if (aqi <= 300) {
       recommendations.add(
-          'AQI: Wajib memakai masker di dalam ruangan. Nyalakan air purifier kecepatan maksimum. Batasi durasi tatap muka. Pertimbangkan mengalihkan kelas ke daring/async atau pindah ke ruangan ber-AC terpusat dengan filtrasi HEPA.');
+          'AQI: Wajib memakai masker di dalam ruangan. Nyalakan air purifier kecepatan maksimum. Batasi durasi tatap muka.');
     } else {
       recommendations.add(
-          'AQI: Tidak ada aktivitas akademik tatap muka. Alihkan seluruhnya ke daring. Tim gedung pantau AQI setiap jam. Air purifier kecepatan maksimum 24 jam non-stop sampai AQI turun.');
+          'AQI: Tidak ada aktivitas akademik tatap muka. Alihkan seluruhnya ke daring.');
     }
 
-    // 2. PM2.5 — PP 22/2021 ISPU
+    // 2. PM2.5
     final pm25 = data.pm25;
-    if (pm25 >= 0) {
+    if (pm25 != null && pm25 >= 0) {
       if (pm25 <= 55) {
-        recommendations.add(
-            'PM2.5: Aman untuk perkuliahan. Jaga kebersihan lantai dan meja.');
+        recommendations.add('PM2.5: Aman untuk perkuliahan. Jaga kebersihan lantai dan meja.');
       } else if (pm25 <= 150) {
         recommendations.add(
-            'PM2.5: Nyalakan air purifier bila ada. Hindari aktivitas berdebu (menyapu kering, buka jendela saat lalu lintas padat).');
+            'PM2.5: Nyalakan air purifier bila ada. Hindari aktivitas berdebu.');
       } else if (pm25 <= 250) {
         recommendations.add(
-            'PM2.5: Wajib nyalakan air purifier. Masker disarankan. Tutup jendela. Bersihkan filter AC/purifier.');
+            'PM2.5: Wajib nyalakan air purifier. Masker disarankan. Tutup jendela.');
       } else if (pm25 <= 350) {
         recommendations.add(
-            'PM2.5: Masker wajib (surgical/N95). Air purifier kecepatan maksimum. Pertimbangkan relokasi kelas atau daring.');
+            'PM2.5: Masker wajib (surgical/N95). Air purifier kecepatan maksimum.');
       } else {
         recommendations.add(
-            'PM2.5: Tidak ada aktivitas tatap muka. Evakuasi ruangan bila perlu. Air purifier 24 jam. Investigasi sumber polusi.');
+            'PM2.5: Tidak ada aktivitas tatap muka. Evakuasi ruangan bila perlu.');
       }
     }
 
-    // 3. PM10 — PP 22/2021 ISPU
+    // 3. PM10
     final pm10 = data.pm10;
-    if (pm10 >= 0) {
+    if (pm10 != null && pm10 >= 0) {
       if (pm10 <= 50) {
-        recommendations.add(
-            'PM10: Aman. Jaga kebersihan lantai dan meja.');
+        recommendations.add('PM10: Aman. Jaga kebersihan lantai dan meja.');
       } else if (pm10 <= 150) {
         recommendations.add(
-            'PM10: Bersihkan kelas secara basah (pel basah) sebelum perkuliahan. Hindari menyapu kering. Pastikan filter AC bersih.');
+            'PM10: Bersihkan kelas secara basah (pel basah) sebelum perkuliahan.');
       } else if (pm10 <= 350) {
         recommendations.add(
-            'PM10: Masker disarankan. Nyalakan air purifier. Tutup jendela. Pel basah lebih sering.');
+            'PM10: Masker disarankan. Nyalakan air purifier. Tutup jendela.');
       } else if (pm10 <= 420) {
         recommendations.add(
-            'PM10: Masker wajib. Air purifier kecepatan maksimum. Batasi aktivitas fisik. Pertimbangkan daring.');
+            'PM10: Masker wajib. Air purifier kecepatan maksimum. Batasi aktivitas fisik.');
       } else {
         recommendations.add(
-            'PM10: Tidak ada aktivitas tatap muka. Evakuasi. Investigasi sumber debu (renovasi/jalan raya/gudang).');
+            'PM10: Tidak ada aktivitas tatap muka. Evakuasi. Investigasi sumber debu.');
       }
     }
 
     // 4. CO
-    final co = data.co; 
-    if (co >= 0) {
+    final co = data.co;
+    if (co != null && co >= 0) {
       if (co <= 4000) {
-        recommendations.add(
-            'CO: Aman untuk perkuliahan normal.');
+        recommendations.add('CO: Aman untuk perkuliahan normal.');
       } else if (co <= 8000) {
         recommendations.add(
-            'CO: Pastikan ventilasi mekanis/AC fresh air berjalan. Bila memungkinkan buka pintu/jendela sesaat.');
+            'CO: Pastikan ventilasi mekanis/AC fresh air berjalan.');
       } else if (co <= 15000) {
         recommendations.add(
-            'CO: Buka jendela/pintu untuk ventilasi silang. Nyalakan exhaust fan. Kurangi kapasitas mahasiswa di ruangan.');
+            'CO: Buka jendela/pintu untuk ventilasi silang. Nyalakan exhaust fan.');
       } else if (co <= 30000) {
         recommendations.add(
-            'CO: Ventilasi darurat — buka semua akses udara, exhaust maksimum. Pertimbangkan mengosongkan ruangan sementara.');
+            'CO: Ventilasi darurat — buka semua akses udara, exhaust maksimum.');
       } else {
         recommendations.add(
-            'CO: Evakuasi ruangan. Investigasi segera (sistem HVAC, kebocoran, ruangan tertutup terlalu lama).');
+            'CO: Evakuasi ruangan. Investigasi segera (sistem HVAC, kebocoran).');
       }
     }
 
-    // 4b. SO2
+    // 5. SO2
     final so2 = data.so2;
     if (so2 != null && so2 >= 0) {
       if (so2 <= 80) {
@@ -12523,14 +12407,14 @@ class Helpers {
       }
     }
 
-    // 4c. O3
+    // 6. O3
     final o3 = data.o3;
     if (o3 != null && o3 >= 0) {
       if (o3 <= 120) {
         recommendations.add('O3: Aman untuk perkuliahan normal.');
       } else if (o3 <= 235) {
         recommendations.add(
-            'O3: Kelompok sensitif sebaiknya mengurangi aktivitas fisik berat. Pastikan ventilasi baik.');
+            'O3: Kelompok sensitif sebaiknya mengurangi aktivitas fisik berat.');
       } else if (o3 <= 400) {
         recommendations.add(
             'O3: Kurangi aktivitas fisik berat. Masker disarankan. Nyalakan air purifier bila ada.');
@@ -12543,7 +12427,7 @@ class Helpers {
       }
     }
 
-    // 4d. NO2
+    // 7. NO2
     final no2 = data.no2;
     if (no2 != null && no2 >= 0) {
       if (no2 <= 80) {
@@ -12563,39 +12447,37 @@ class Helpers {
       }
     }
 
-    // 5. Suhu — SNI 03-6572-2001 & Permenaker 5/2018
+    // 8. Suhu
     final temp = data.temperature;
-    if (temp >= 0) {
+    if (temp != null && temp >= 0) {
       if (temp < 24) {
         recommendations.add(
-            'Suhu: Nyalakan pemanas ruangan bila tersedia. Pakai pakaian hangat. Hindari duduk dekat AC/ventilasi dingin.');
+            'Suhu: Nyalakan pemanas ruangan bila tersedia. Pakai pakaian hangat.');
       } else if (temp <= 27) {
-        recommendations.add(
-            'Suhu: Kondisi optimal untuk belajar. Tidak perlu tindakan.');
+        recommendations.add('Suhu: Kondisi optimal untuk belajar. Tidak perlu tindakan.');
       } else if (temp <= 30) {
         recommendations.add(
-            'Suhu: Nyalakan AC atau kipas. Pastikan sirkulasi udara baik. Sediakan air minum.');
+            'Suhu: Nyalakan AC atau kipas. Pastikan sirkulasi udara baik.');
       } else {
         recommendations.add(
-            'Suhu: AC/kipas wajib. Buka ventilasi bila AC tidak tersedia. Sediakan air minum. Pertimbangkan relokasi ke ruangan ber-AC.');
+            'Suhu: AC/kipas wajib. Buka ventilasi bila AC tidak tersedia. Sediakan air minum.');
       }
     }
 
-    // 6. Kelembaban — SNI 03-6572-2001 & Permenaker 5/2018
+    // 9. Kelembaban
     final humidity = data.humidity;
-    if (humidity >= 0) {
+    if (humidity != null && humidity >= 0) {
       if (humidity < 40) {
         recommendations.add(
-            'Kelembaban: Gunakan humidifier. Sediakan air minum. Hindari AC terlalu dingin yang mengeringkan udara.');
+            'Kelembaban: Gunakan humidifier. Sediakan air minum.');
       } else if (humidity <= 60) {
-        recommendations.add(
-            'Kelembaban: Kondisi optimal. Tidak perlu tindakan.');
+        recommendations.add('Kelembaban: Kondisi optimal. Tidak perlu tindakan.');
       } else if (humidity <= 70) {
         recommendations.add(
-            'Kelembaban: Nyalakan dehumidifier atau AC mode dry. Pastikan ventilasi baik. Waspada jamur pada dinding/AC.');
+            'Kelembaban: Nyalakan dehumidifier atau AC mode dry. Pastikan ventilasi baik.');
       } else {
         recommendations.add(
-            'Kelembaban: Dehumidifier wajib. Tingkatkan ventilasi. Periksa kebocoran/kelembaban dinding. Risiko jamur & tungau meningkat.');
+            'Kelembaban: Dehumidifier wajib. Tingkatkan ventilasi. Risiko jamur & tungau meningkat.');
       }
     }
 
@@ -12901,7 +12783,7 @@ class Room {
   final String buildingName;
   final String dataSource;
   final String? iotDeviceId;
-  final int currentAQI;
+  final int? currentAQI;   // ✅ nullable — null = no_data
   final RoomData currentData;
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -12913,7 +12795,7 @@ class Room {
     required this.buildingName,
     required this.dataSource,
     this.iotDeviceId,
-    required this.currentAQI,
+    this.currentAQI,
     required this.currentData,
     required this.createdAt,
     required this.updatedAt,
@@ -12930,7 +12812,9 @@ class Room {
           (json['building'] is Map ? json['building']['name'] : 'Unknown'),
       dataSource: json['dataSource'] ?? 'simulation',
       iotDeviceId: json['iotDeviceId'],
-      currentAQI: json['currentAQI'] ?? 0,
+      currentAQI: json['currentAQI'] == null
+          ? null
+          : (json['currentAQI'] as num).toInt(),
       currentData: RoomData.fromJson(json['currentData'] ?? {}),
       createdAt: DateTime.parse(json['createdAt']),
       updatedAt: DateTime.parse(json['updatedAt']),
@@ -12955,47 +12839,57 @@ class Room {
   String get displayName => '$name - $buildingName';
   bool get isSimulation => dataSource == 'simulation';
   bool get isIot => dataSource == 'iot';
+  bool get hasAnyData =>
+      currentData.hasPM25 ||
+      currentData.hasPM10 ||
+      currentData.hasCO ||
+      currentData.hasSO2 ||
+      currentData.hasO3 ||
+      currentData.hasNO2 ||
+      currentData.hasTemperature ||
+      currentData.hasHumidity;
 }
 
 class RoomData {
-  final double pm25;
-  final double pm10;
-  final double co;
+  final double? pm25;
+  final double? pm10;
+  final double? co;
   final double? so2;
   final double? o3;
   final double? no2;
-  final double temperature;
-  final double humidity;
+  final double? temperature;
+  final double? humidity;
   final DateTime updatedAt;
 
   RoomData({
-    required this.pm25,
-    required this.pm10,
-    required this.co,
+    this.pm25,
+    this.pm10,
+    this.co,
     this.so2,
     this.o3,
     this.no2,
-    required this.temperature,
-    required this.humidity,
+    this.temperature,
+    this.humidity,
     required this.updatedAt,
   });
 
-  static double? _nullableDouble(dynamic v) {
+  static double? _n(dynamic v) {
     if (v == null) return null;
     if (v is num) return v.toDouble();
-    return double.tryParse(v.toString());
+    final parsed = double.tryParse(v.toString());
+    return parsed;
   }
 
   factory RoomData.fromJson(Map<String, dynamic> json) {
     return RoomData(
-      pm25: (json['pm25'] ?? 0).toDouble(),
-      pm10: (json['pm10'] ?? 0).toDouble(),
-      co: (json['co'] ?? 0).toDouble(),
-      so2: _nullableDouble(json['so2']),
-      o3: _nullableDouble(json['o3']),
-      no2: _nullableDouble(json['no2']),
-      temperature: (json['temperature'] ?? 0).toDouble(),
-      humidity: (json['humidity'] ?? 0).toDouble(),
+      pm25: _n(json['pm25']),
+      pm10: _n(json['pm10']),
+      co: _n(json['co']),
+      so2: _n(json['so2']),
+      o3: _n(json['o3']),
+      no2: _n(json['no2']),
+      temperature: _n(json['temperature']),
+      humidity: _n(json['humidity']),
       updatedAt: json['updatedAt'] != null
           ? DateTime.parse(json['updatedAt'])
           : DateTime.now(),
@@ -13016,9 +12910,14 @@ class RoomData {
     };
   }
 
-  bool get hasSO2 => so2 != null;
-  bool get hasO3 => o3 != null;
-  bool get hasNO2 => no2 != null;
+  bool get hasPM25        => pm25 != null;
+  bool get hasPM10        => pm10 != null;
+  bool get hasCO          => co != null;
+  bool get hasSO2         => so2 != null;
+  bool get hasO3          => o3 != null;
+  bool get hasNO2         => no2 != null;
+  bool get hasTemperature => temperature != null;
+  bool get hasHumidity    => humidity != null;
 }
 
 ---------------------------------------------------------------------------------------------------------------------------------------
@@ -13029,68 +12928,76 @@ class SensorData {
   final String roomId;
   final String roomName;
   final String buildingName;
-  final int aqi;
-  final double pm25;
-  final double pm10;
-  final double co;
+  final int? aqi;
+  final double? pm25;
+  final double? pm10;
+  final double? co;
   final double? so2;
   final double? o3;
   final double? no2;
-  final double temperature;
-  final double humidity;
+  final double? temperature;
+  final double? humidity;
   final String category;
   final DateTime timestamp;
-  final List<dynamic>? rawData; // Untuk data agregasi
-  final String? timeLabel; // Untuk label waktu
+  final List<dynamic>? rawData;
+  final String? timeLabel;
 
   SensorData({
     required this.id,
     required this.roomId,
     required this.roomName,
     required this.buildingName,
-    required this.aqi,
-    required this.pm25,
-    required this.pm10,
-    required this.co,
-     this.so2,
-     this.o3,
-     this.no2,
-    required this.temperature,
-    required this.humidity,
+    this.aqi,
+    this.pm25,
+    this.pm10,
+    this.co,
+    this.so2,
+    this.o3,
+    this.no2,
+    this.temperature,
+    this.humidity,
     required this.category,
     required this.timestamp,
     this.rawData,
     this.timeLabel,
   });
 
+  static double? _n(dynamic v) {
+    if (v == null) return null;
+    if (v is num) return v.toDouble();
+    return double.tryParse(v.toString());
+  }
+
+  static int? _i(dynamic v) {
+    if (v == null) return null;
+    if (v is num) return v.toInt();
+    return int.tryParse(v.toString());
+  }
+
   factory SensorData.fromJson(Map<String, dynamic> json) {
     return SensorData(
-      id: json['_id']?.toString() ?? json['id']?.toString() ?? DateTime.now().millisecondsSinceEpoch.toString(),
+      id: json['_id']?.toString() ??
+          json['id']?.toString() ??
+          DateTime.now().millisecondsSinceEpoch.toString(),
       roomId: json['roomId']?.toString() ?? '',
       roomName: json['roomName']?.toString() ?? '',
       buildingName: json['buildingName']?.toString() ?? '',
-      aqi: (json['aqi'] ?? 0).toInt(),
-      pm25: (json['pm25'] ?? 0).toDouble(),
-      pm10: (json['pm10'] ?? 0).toDouble(),
-      co: (json['co'] ?? 0).toDouble(),
-      so2: _nullableDouble(json['so2']),
-      o3: _nullableDouble(json['o3']),
-      no2: _nullableDouble(json['no2']),
-      temperature: (json['temperature'] ?? 0).toDouble(),
-      humidity: (json['humidity'] ?? 0).toDouble(),
-      category: json['category']?.toString() ?? 'baik',
-      timestamp: json['timestamp'] != null 
+      aqi: _i(json['aqi']),
+      pm25: _n(json['pm25']),
+      pm10: _n(json['pm10']),
+      co: _n(json['co']),
+      so2: _n(json['so2']),
+      o3: _n(json['o3']),
+      no2: _n(json['no2']),
+      temperature: _n(json['temperature']),
+      humidity: _n(json['humidity']),
+      category: json['category']?.toString() ?? 'no_data',
+      timestamp: json['timestamp'] != null
           ? DateTime.parse(json['timestamp'].toString()).toLocal()
           : DateTime.now(),
       rawData: json['rawData'],
       timeLabel: json['timeLabel']?.toString(),
     );
-  }
-
-  static double? _nullableDouble(dynamic v) {
-    if (v == null) return null;
-    if (v is num) return v.toDouble();
-    return double.tryParse(v.toString());
   }
 
   Map<String, dynamic> toJson() {
@@ -17755,8 +17662,9 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
   }
 
   Widget _buildRoomCard(Room room) {
-    final aqiColor = Helpers.getAQIColor(room.currentAQI);
-    final aqiLabel = Helpers.getAQILabel(room.currentAQI);
+    final aqi = room.currentAQI;
+    final aqiColor = Helpers.getAQIColor(aqi);
+    final aqiLabel = Helpers.getAQILabel(aqi);
     final staleDuration = _getStaleDurationText(room);
     final isIot = room.dataSource == 'iot';
 
@@ -17821,19 +17729,17 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
                   ),
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 10, vertical: 4),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
                     color: aqiColor.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(12),
-                    border:
-                        Border.all(color: aqiColor.withOpacity(0.4)),
+                    border: Border.all(color: aqiColor.withOpacity(0.4)),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
                       Text(
-                        '${room.currentAQI}',
+                        aqi?.toString() ?? '—',
                         style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w800,
@@ -21851,7 +21757,7 @@ class _ExpandableSectionState extends State<_ExpandableSection>
 }
 
 ---------------------------------------------------------------------------------------------------------------------------------------
-lib/presentation/pages/room/room_detail_screen.dart: 
+lib/presentation/pages/room/
 
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -21862,6 +21768,7 @@ import 'package:unila_aqi/data/models/room.dart';
 import 'package:unila_aqi/data/repositories/room_repository.dart';
 import 'package:unila_aqi/presentation/widgets/chart/history_chart.dart';
 import '../../widgets/common/server_status_indicator.dart';
+
 enum _RecSeverity { normal, warning, danger }
 
 class RoomDetailScreen extends StatefulWidget {
@@ -21883,7 +21790,7 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
   String? _lastNotificationMessage;
   DateTime? _lastNotificationTime;
 
-  // FIXED: auto-refresh 1 menit (sebelumnya live socket tiap 10 detik)
+  // Auto-refresh 1 menit
   static const Duration _autoRefreshInterval = Duration(minutes: 1);
 
   bool _isRefreshing = false;
@@ -21921,7 +21828,7 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
     return null;
   }
 
-  // FIXED: auto-refresh 60 detik — fetch ulang dari API.
+  // Auto-refresh 60 detik — fetch ulang dari API.
   void _startAutoRefreshTimer() {
     _autoRefreshTimer?.cancel();
     _autoRefreshTimer = Timer.periodic(_autoRefreshInterval, (_) async {
@@ -22057,9 +21964,6 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
     _socketService.joinRoom(widget.room.id);
   }
 
-  // FIXED: hanya listen 'notification' dari socket.
-  // 'room-update' (data tiap 10 detik) TIDAK di-listen lagi —
-  // data di-refresh via _autoRefreshTimer (60 detik) atau tombol refresh.
   void _setupRealtimeListener() {
     _socketService.on('notification', (data) {
       if (!_isMounted) return;
@@ -22076,7 +21980,7 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
   void _showNotification(String message, String type) {
     if (!_isMounted) return;
 
-    // 1. Throttling: Cegah pesan yang sama muncul berulang dalam 10 detik
+    // Throttling: cegah pesan yang sama muncul berulang dalam 10 detik
     final now = DateTime.now();
     if (_lastNotificationMessage == message &&
         _lastNotificationTime != null &&
@@ -22108,10 +22012,7 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
     }
 
     final messenger = ScaffoldMessenger.of(context);
-    
-    // 2. Hapus snackbar yang sedang tampil agar tidak menumpuk (queue)
-    messenger.hideCurrentSnackBar(); 
-    
+    messenger.hideCurrentSnackBar();
     messenger.showSnackBar(
       SnackBar(
         content: Row(
@@ -22172,12 +22073,13 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
   }
 
   // ------------------------------------------------------------
-  // UI BUILDING METHODS (tidak berubah)
+  // UI BUILDING METHODS
   // ------------------------------------------------------------
 
   Widget _buildAQICard() {
-    final aqiColor = Helpers.getAQIColor(_currentRoomData.currentAQI);
-    final aqiLabel = Helpers.getAQILabel(_currentRoomData.currentAQI);
+    final aqi = _currentRoomData.currentAQI;
+    final aqiColor = Helpers.getAQIColor(aqi);
+    final aqiLabel = Helpers.getAQILabel(aqi);
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -22257,7 +22159,7 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
           Row(
             children: [
               Text(
-                _currentRoomData.currentAQI.toString(),
+                aqi?.toString() ?? '—',
                 style: const TextStyle(
                   fontSize: 32,
                   fontWeight: FontWeight.w800,
@@ -22352,7 +22254,98 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
     );
   }
 
-      Widget _buildHealthRecommendations() {
+  /// Baris parameter dinamis — hanya parameter yang tersedia (non-null)
+  /// yang ditampilkan. Cell disusun 3-kolom, dengan filler untuk menjaga
+  /// alignment tetap konsisten meski jumlahnya bukan kelipatan 3.
+  Widget _buildParameterRows() {
+    final data = _currentRoomData.currentData;
+    final cells = <Widget>[];
+
+    if (data.hasPM25) {
+      cells.add(_buildParameterCard(
+        'PM2.5',
+        '${data.pm25!.toStringAsFixed(1)}\nμg/m³',
+        Helpers.getPM25Status(data.pm25),
+        Helpers.getPM25Color(data.pm25),
+      ));
+    }
+    if (data.hasPM10) {
+      cells.add(_buildParameterCard(
+        'PM10',
+        '${data.pm10!.toStringAsFixed(1)}\nμg/m³',
+        Helpers.getPM10Status(data.pm10),
+        Helpers.getPM10Color(data.pm10),
+      ));
+    }
+    if (data.hasCO) {
+      cells.add(_buildParameterCard(
+        'CO',
+        '${data.co!.round()}\nµg/m³',
+        Helpers.getCOStatus(data.co),
+        Helpers.getCOColor(data.co),
+      ));
+    }
+    if (data.hasSO2) {
+      cells.add(_buildParameterCard(
+        'SO2',
+        '${data.so2!.toStringAsFixed(1)}\nµg/m³',
+        Helpers.getSO2Status(data.so2),
+        Helpers.getSO2Color(data.so2),
+      ));
+    }
+    if (data.hasO3) {
+      cells.add(_buildParameterCard(
+        'O3',
+        '${data.o3!.toStringAsFixed(1)}\nµg/m³',
+        Helpers.getO3Status(data.o3),
+        Helpers.getO3Color(data.o3),
+      ));
+    }
+    if (data.hasNO2) {
+      cells.add(_buildParameterCard(
+        'NO2',
+        '${data.no2!.toStringAsFixed(1)}\nµg/m³',
+        Helpers.getNO2Status(data.no2),
+        Helpers.getNO2Color(data.no2),
+      ));
+    }
+    if (data.hasTemperature) {
+      cells.add(_buildParameterCard(
+        'SUHU',
+        '${data.temperature!.toStringAsFixed(1)}°C',
+        Helpers.getTemperatureStatus(data.temperature),
+        Helpers.getTemperatureColor(data.temperature),
+      ));
+    }
+    if (data.hasHumidity) {
+      cells.add(_buildParameterCard(
+        'KELEMBABAN',
+        '${data.humidity!.round()}%',
+        Helpers.getHumidityStatus(data.humidity),
+        Helpers.getHumidityColor(data.humidity),
+      ));
+    }
+
+    if (cells.isEmpty) return const SizedBox.shrink();
+
+    final rows = <Widget>[];
+    for (int i = 0; i < cells.length; i += 3) {
+      final rowChildren = <Widget>[];
+      for (int j = 0; j < 3; j++) {
+        if (j > 0) rowChildren.add(const SizedBox(width: 12));
+        if (i + j < cells.length) {
+          rowChildren.add(Expanded(child: cells[i + j]));
+        } else {
+          rowChildren.add(const Expanded(child: SizedBox()));
+        }
+      }
+      rows.add(Row(children: rowChildren));
+      if (i + 3 < cells.length) rows.add(const SizedBox(height: 12));
+    }
+    return Column(children: rows);
+  }
+
+  Widget _buildHealthRecommendations() {
     final recommendations =
         Helpers.getDetailedRecommendations(_currentRoomData);
 
@@ -22399,7 +22392,7 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
     );
   }
 
-   Widget _buildParameterStatus() {
+  Widget _buildParameterStatus() {
     final data = _currentRoomData.currentData;
     final aqi = _currentRoomData.currentAQI;
 
@@ -22407,31 +22400,32 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
       spacing: 10,
       runSpacing: 10,
       children: [
-        _buildStatusChip('AQI: $aqi', Helpers.getAQIColor(aqi)),
-        _buildStatusChip('PM2.5: ${data.pm25.toStringAsFixed(1)}',
-            Helpers.getPM25Color(data.pm25)),
-        _buildStatusChip('PM10: ${data.pm10.toStringAsFixed(1)}',
-            Helpers.getPM10Color(data.pm10)),
         _buildStatusChip(
-            'CO: ${data.co.round()}', Helpers.getCOColor(data.co)),
-            if (data.so2 != null)
+            'AQI: ${aqi?.toString() ?? '—'}', Helpers.getAQIColor(aqi)),
+        if (data.hasPM25)
+          _buildStatusChip('PM2.5: ${data.pm25!.toStringAsFixed(1)}',
+              Helpers.getPM25Color(data.pm25)),
+        if (data.hasPM10)
+          _buildStatusChip('PM10: ${data.pm10!.toStringAsFixed(1)}',
+              Helpers.getPM10Color(data.pm10)),
+        if (data.hasCO)
           _buildStatusChip(
-              'SO2: ${data.so2!.toStringAsFixed(1)}',
-              Helpers.getSO2Color(data.so2!)),
-        if (data.o3 != null)
-          _buildStatusChip(
-              'O3: ${data.o3!.toStringAsFixed(1)}',
-              Helpers.getO3Color(data.o3!)),
-        if (data.no2 != null)
-          _buildStatusChip(
-              'NO2: ${data.no2!.toStringAsFixed(1)}',
-              Helpers.getNO2Color(data.no2!)),
-        _buildStatusChip(
-            'Suhu: ${data.temperature.toStringAsFixed(1)}°C',
-            Helpers.getTemperatureColor(data.temperature)),
-        _buildStatusChip(
-            'Lembab: ${data.humidity.round()}%',
-            Helpers.getHumidityColor(data.humidity)),
+              'CO: ${data.co!.round()}', Helpers.getCOColor(data.co)),
+        if (data.hasSO2)
+          _buildStatusChip('SO2: ${data.so2!.toStringAsFixed(1)}',
+              Helpers.getSO2Color(data.so2)),
+        if (data.hasO3)
+          _buildStatusChip('O3: ${data.o3!.toStringAsFixed(1)}',
+              Helpers.getO3Color(data.o3)),
+        if (data.hasNO2)
+          _buildStatusChip('NO2: ${data.no2!.toStringAsFixed(1)}',
+              Helpers.getNO2Color(data.no2)),
+        if (data.hasTemperature)
+          _buildStatusChip('Suhu: ${data.temperature!.toStringAsFixed(1)}°C',
+              Helpers.getTemperatureColor(data.temperature)),
+        if (data.hasHumidity)
+          _buildStatusChip('Lembab: ${data.humidity!.round()}%',
+              Helpers.getHumidityColor(data.humidity)),
       ],
     );
   }
@@ -22454,92 +22448,110 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
     );
   }
 
-    Widget _buildRecommendationItem(String text) {
+  Widget _buildRecommendationItem(String text) {
+    _RecSeverity _recommendationSeverity(String text) {
+      final data = _currentRoomData.currentData;
+      final aqi = _currentRoomData.currentAQI;
 
-_RecSeverity _recommendationSeverity(String text) {
-    final data = _currentRoomData.currentData;
-    final aqi = _currentRoomData.currentAQI;
+      // --- NO DATA ---
+      if (text.startsWith('BELUM ADA DATA') ||
+          text.startsWith('Perangkat belum mengirimkan') ||
+          text.startsWith('Jika kondisi ini berlangsung lama')) {
+        return _RecSeverity.warning;
+      }
 
-    // --- Sensor error: semua baris error dianggap danger ---
-    if (text.startsWith('SENSOR RUANGAN MELAPORKAN ERROR') ||
-        text.startsWith('Nilai AQI yang ditampilkan') ||
-        text.startsWith('Hubungi admin')) {
-      return _RecSeverity.danger;
+      // --- SENSOR ERROR ---
+      if (text.startsWith('SENSOR RUANGAN MELAPORKAN ERROR') ||
+          text.startsWith('Nilai AQI yang ditampilkan') ||
+          text.startsWith('Hubungi admin')) {
+        return _RecSeverity.danger;
+      }
+
+      // --- AQI ---
+      if (text.startsWith('AQI:')) {
+        if (aqi == null) return _RecSeverity.warning;
+        if (aqi < 0) return _RecSeverity.danger;
+        if (aqi <= 50) return _RecSeverity.normal;
+        if (aqi <= 100) return _RecSeverity.warning;
+        return _RecSeverity.danger;
+      }
+
+      // --- PM2.5 ---
+      if (text.startsWith('PM2.5:')) {
+        final v = data.pm25;
+        if (v == null || v < 0) return _RecSeverity.normal;
+        if (v <= 55) return _RecSeverity.normal;
+        if (v <= 150) return _RecSeverity.warning;
+        return _RecSeverity.danger;
+      }
+
+      // --- PM10 ---
+      if (text.startsWith('PM10:')) {
+        final v = data.pm10;
+        if (v == null || v < 0) return _RecSeverity.normal;
+        if (v <= 50) return _RecSeverity.normal;
+        if (v <= 150) return _RecSeverity.warning;
+        return _RecSeverity.danger;
+      }
+
+      // --- CO ---
+      if (text.startsWith('CO:')) {
+        final v = data.co;
+        if (v == null || v < 0) return _RecSeverity.normal;
+        if (v <= 4000) return _RecSeverity.normal;
+        if (v <= 8000) return _RecSeverity.warning;
+        return _RecSeverity.danger;
+      }
+
+      // --- SO2 ---
+      if (text.startsWith('SO2:')) {
+        final v = data.so2;
+        if (v == null || v < 0) return _RecSeverity.normal;
+        if (v <= 80) return _RecSeverity.normal;
+        if (v <= 365) return _RecSeverity.warning;
+        return _RecSeverity.danger;
+      }
+
+      // --- O3 ---
+      if (text.startsWith('O3:')) {
+        final v = data.o3;
+        if (v == null || v < 0) return _RecSeverity.normal;
+        if (v <= 120) return _RecSeverity.normal;
+        if (v <= 235) return _RecSeverity.warning;
+        return _RecSeverity.danger;
+      }
+
+      // --- NO2 ---
+      if (text.startsWith('NO2:')) {
+        final v = data.no2;
+        if (v == null || v < 0) return _RecSeverity.normal;
+        if (v <= 80) return _RecSeverity.normal;
+        if (v <= 200) return _RecSeverity.warning;
+        return _RecSeverity.danger;
+      }
+
+      // --- Suhu ---
+      if (text.startsWith('Suhu:')) {
+        final t = data.temperature;
+        if (t == null) return _RecSeverity.normal;
+        if (t < 24) return _RecSeverity.danger;
+        if (t <= 27) return _RecSeverity.normal;
+        if (t <= 30) return _RecSeverity.warning;
+        return _RecSeverity.danger;
+      }
+
+      // --- Kelembaban ---
+      if (text.startsWith('Kelembaban:')) {
+        final h = data.humidity;
+        if (h == null) return _RecSeverity.normal;
+        if (h < 40) return _RecSeverity.warning;
+        if (h <= 60) return _RecSeverity.normal;
+        if (h <= 70) return _RecSeverity.warning;
+        return _RecSeverity.danger;
+      }
+
+      return _RecSeverity.normal;
     }
-
-    // --- AQI ---
-    if (text.startsWith('AQI:')) {
-      if (aqi <= 50) return _RecSeverity.normal;
-      if (aqi <= 100) return _RecSeverity.warning;
-      return _RecSeverity.danger;
-    }
-
-    // --- PM2.5 ---
-    if (text.startsWith('PM2.5:')) {
-      if (data.pm25 <= 55) return _RecSeverity.normal;
-      if (data.pm25 <= 150) return _RecSeverity.warning;
-      return _RecSeverity.danger;
-    }
-
-    // --- PM10 ---
-    if (text.startsWith('PM10:')) {
-      if (data.pm10 <= 50) return _RecSeverity.normal;
-      if (data.pm10 <= 150) return _RecSeverity.warning;
-      return _RecSeverity.danger;
-    }
-
-    // --- CO ---
-    if (text.startsWith('CO:')) { 
-      if (data.co <= 4000) return _RecSeverity.normal; 
-      if (data.co <= 8000) return _RecSeverity.warning; 
-      return _RecSeverity.danger;
-    }
-
-        if (text.startsWith('SO2:')) {
-      final v = data.so2;
-      if (v == null) return _RecSeverity.normal;
-      if (v <= 80) return _RecSeverity.normal;
-      if (v <= 365) return _RecSeverity.warning;
-      return _RecSeverity.danger;
-    }
-
-    if (text.startsWith('O3:')) {
-      final v = data.o3;
-      if (v == null) return _RecSeverity.normal;
-      if (v <= 120) return _RecSeverity.normal;
-      if (v <= 235) return _RecSeverity.warning;
-      return _RecSeverity.danger;
-    }
-
-    if (text.startsWith('NO2:')) {
-      final v = data.no2;
-      if (v == null) return _RecSeverity.normal;
-      if (v <= 80) return _RecSeverity.normal;
-      if (v <= 200) return _RecSeverity.warning;
-      return _RecSeverity.danger;
-    }
-    
-
-    // --- Suhu ---
-    if (text.startsWith('Suhu:')) {
-      final t = data.temperature;
-      if (t < 24) return _RecSeverity.danger; // DINGIN → merah
-      if (t <= 27) return _RecSeverity.normal; // IDEAL
-      if (t <= 30) return _RecSeverity.warning; // HANGAT → kuning
-      return _RecSeverity.danger; // PANAS → merah
-    }
-
-    // --- Kelembaban ---
-    if (text.startsWith('Kelembaban:')) {
-      final h = data.humidity;
-      if (h < 40) return _RecSeverity.warning; // KERING → kuning
-      if (h <= 60) return _RecSeverity.normal; // IDEAL
-      if (h <= 70) return _RecSeverity.warning; // LEMBAB → kuning
-      return _RecSeverity.danger; // TIDAK NYAMAN → merah
-    }
-
-    return _RecSeverity.normal;
-  }
 
     final severity = _recommendationSeverity(text);
 
@@ -22698,44 +22710,6 @@ _RecSeverity _recommendationSeverity(String text) {
     );
   }
 
-    Widget _buildOptionalPollutantRow() {
-    final data = _currentRoomData.currentData;
-    final cards = <Widget>[];
-
-    void addCard(Widget card) {
-      if (cards.isNotEmpty) cards.add(const SizedBox(width: 12));
-      cards.add(Expanded(child: card));
-    }
-
-    if (data.so2 != null) {
-      addCard(_buildParameterCard(
-        'SO2',
-        '${data.so2!.toStringAsFixed(1)}\nµg/m³',
-        Helpers.getSO2Status(data.so2!),
-        Helpers.getSO2Color(data.so2!),
-      ));
-    }
-    if (data.o3 != null) {
-      addCard(_buildParameterCard(
-        'O3',
-        '${data.o3!.toStringAsFixed(1)}\nµg/m³',
-        Helpers.getO3Status(data.o3!),
-        Helpers.getO3Color(data.o3!),
-      ));
-    }
-    if (data.no2 != null) {
-      addCard(_buildParameterCard(
-        'NO2',
-        '${data.no2!.toStringAsFixed(1)}\nµg/m³',
-        Helpers.getNO2Status(data.no2!),
-        Helpers.getNO2Color(data.no2!),
-      ));
-    }
-
-    if (cards.isEmpty) return const SizedBox.shrink();
-    return Row(children: cards);
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -22791,77 +22765,10 @@ _RecSeverity _recommendationSeverity(String text) {
             const SizedBox(height: 16),
             _buildAQICard(),
             const SizedBox(height: 16),
-
-            Row(
-              children: [
-                Expanded(
-                  child: _buildParameterCard(
-                    'PM2.5',
-                    '${_currentRoomData.currentData.pm25.toStringAsFixed(1)}\nμg/m³', 
-                    Helpers.getPM25Status(
-                        _currentRoomData.currentData.pm25),
-                    Helpers.getPM25Color(
-                        _currentRoomData.currentData.pm25),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _buildParameterCard(
-                    'PM10',
-                    '${_currentRoomData.currentData.pm10.toStringAsFixed(1)}\nμg/m³', 
-                    Helpers.getPM10Status(
-                        _currentRoomData.currentData.pm10),
-                    Helpers.getPM10Color(
-                        _currentRoomData.currentData.pm10),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _buildParameterCard(
-                    'CO', 
-                    '${_currentRoomData.currentData.co.round()}\nµg/m³', 
-                    Helpers.getCOStatus(
-                        _currentRoomData.currentData.co), 
-                    Helpers.getCOColor(
-                        _currentRoomData.currentData.co), 
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            _buildOptionalPollutantRow(),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: _buildParameterCard(
-                    'SUHU',
-                    '${_currentRoomData.currentData.temperature.toStringAsFixed(1)}°C',
-                    Helpers.getTemperatureStatus(
-                        _currentRoomData.currentData.temperature),
-                    Helpers.getTemperatureColor(
-                        _currentRoomData.currentData.temperature),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _buildParameterCard(
-                    'KELEMBABAN',
-                    '${_currentRoomData.currentData.humidity.round()}%',
-                    Helpers.getHumidityStatus(
-                        _currentRoomData.currentData.humidity),
-                    Helpers.getHumidityColor(
-                        _currentRoomData.currentData.humidity),
-                  ),
-                ),
-                const Spacer(),
-              ],
-            ),
+            _buildParameterRows(),
             const SizedBox(height: 24),
-
             _buildHealthRecommendations(),
             const SizedBox(height: 24),
-
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(12),
@@ -23469,10 +23376,24 @@ class RoomProvider with ChangeNotifier {
         result.sort((a, b) => a.name.compareTo(b.name));
         break;
       case 'AQI Terbaik':
-        result.sort((a, b) => a.currentAQI.compareTo(b.currentAQI));
+        result.sort((a, b) {
+          final aV = a.currentAQI;
+          final bV = b.currentAQI;
+          if (aV == null && bV == null) return 0;
+          if (aV == null) return 1; // null ditaruh di akhir
+          if (bV == null) return -1;
+          return aV.compareTo(bV);
+        });
         break;
       case 'AQI Terburuk':
-        result.sort((a, b) => b.currentAQI.compareTo(a.currentAQI));
+        result.sort((a, b) {
+          final aV = a.currentAQI;
+          final bV = b.currentAQI;
+          if (aV == null && bV == null) return 0;
+          if (aV == null) return 1;
+          if (bV == null) return -1;
+          return bV.compareTo(aV);
+        });
         break;
     }
 
@@ -23653,7 +23574,6 @@ class HistoryChart extends StatefulWidget {
 }
 
 class _HistoryChartState extends State<HistoryChart> {
-  // State variables
   List<SensorData> _historyData = [];
   DateTime _selectedDate = DateTime.now();
   String _selectedParameter = 'aqi';
@@ -23661,22 +23581,12 @@ class _HistoryChartState extends State<HistoryChart> {
   String _error = '';
   final ScrollController _scrollController = ScrollController();
 
-  // FOV config — 8 titik per viewport
   static const int _pointsInView = 8;
   static const double _containerPadding = 16.0;
 
-  // Parameter options
-  // Parameter opsional (so2, o3, no2) hanya dimasukkan bila ada data.
-  final List<String> _baseParameters = [
-    'aqi',
-    'pm25',
-    'pm10',
-    'co',
-    'temperature',
-    'humidity',
+  static const List<String> _allParameters = [
+    'aqi', 'pm25', 'pm10', 'co', 'so2', 'o3', 'no2', 'temperature', 'humidity',
   ];
-
-  final List<String> _optionalParameters = ['so2', 'o3', 'no2'];
 
   final Map<String, String> _parameterLabels = {
     'aqi': 'AQI',
@@ -23690,7 +23600,6 @@ class _HistoryChartState extends State<HistoryChart> {
     'humidity': 'Kelembaban',
   };
 
-  // Color for each parameter
   final Map<String, Color> _parameterColors = {
     'aqi': Colors.blue,
     'pm25': Colors.red,
@@ -23726,43 +23635,26 @@ class _HistoryChartState extends State<HistoryChart> {
     super.dispose();
   }
 
-  // ============================================================
-  // HELPER: ambil nilai parameter dari satu titik data.
-  // Mengembalikan null bila parameter tidak tersedia (IoT parsial).
-  // ============================================================
   double? _valueFor(SensorData data, String parameter) {
     switch (parameter) {
-      case 'aqi':
-        return data.aqi.toDouble();
-      case 'pm25':
-        return data.pm25;
-      case 'pm10':
-        return data.pm10;
-      case 'co':
-        return data.co;
-      case 'so2':
-        return data.so2;
-      case 'o3':
-        return data.o3;
-      case 'no2':
-        return data.no2;
-      case 'temperature':
-        return data.temperature;
-      case 'humidity':
-        return data.humidity;
-      default:
-        return null;
+      case 'aqi':         return data.aqi?.toDouble();
+      case 'pm25':        return data.pm25;
+      case 'pm10':        return data.pm10;
+      case 'co':          return data.co;
+      case 'so2':         return data.so2;
+      case 'o3':          return data.o3;
+      case 'no2':         return data.no2;
+      case 'temperature': return data.temperature;
+      case 'humidity':    return data.humidity;
+      default:            return null;
     }
   }
 
-  // ============================================================
-  // Parameter yang boleh dipilih: base + optional (hanya yang ada data)
-  // ============================================================
+  /// Hanya parameter yang punya minimal satu nilai non-null di history.
   List<String> get _availableParameters {
-    final optional = _optionalParameters.where((p) {
+    return _allParameters.where((p) {
       return _historyData.any((d) => _valueFor(d, p) != null);
     }).toList();
-    return [..._baseParameters, ...optional];
   }
 
   Future<void> _loadHistoryData() async {
@@ -23771,7 +23663,6 @@ class _HistoryChartState extends State<HistoryChart> {
     final hadData = _historyData.isNotEmpty;
 
     setState(() {
-      // Spinner hanya saat belum ada data sama sekali
       _isLoading = !hadData;
       _error = '';
     });
@@ -23791,18 +23682,14 @@ class _HistoryChartState extends State<HistoryChart> {
       if (response is Map && response['success'] == true) {
         final List<dynamic> data = response['data'] ?? [];
         final parsed = data
-            .map((json) =>
-                SensorData.fromJson(Map<String, dynamic>.from(json)))
+            .map((json) => SensorData.fromJson(Map<String, dynamic>.from(json)))
             .toList();
 
         setState(() {
           _historyData = parsed;
-
-          // Pastikan parameter terpilih masih tersedia.
-          // Jika tidak (mis. sebelumnya user pilih SO2, lalu pindah
-          // tanggal yang datanya tidak punya SO2), fallback ke AQI.
           if (!_availableParameters.contains(_selectedParameter)) {
-            _selectedParameter = 'aqi';
+            _selectedParameter =
+                _availableParameters.isNotEmpty ? _availableParameters.first : 'aqi';
           }
         });
       } else {
@@ -23819,9 +23706,6 @@ class _HistoryChartState extends State<HistoryChart> {
     if (!mounted) return;
 
     if (failed) {
-      // ❗ TIDAK generate sample baru.
-      // Data lama (_historyData) tetap dipakai.
-      // UI error penuh hanya muncul kalau memang belum pernah ada data.
       if (!hadData) {
         setState(() {
           _error = isNetworkFailure
@@ -23833,21 +23717,13 @@ class _HistoryChartState extends State<HistoryChart> {
       if (isNetworkFailure) {
         Helpers.showServerError(context);
       } else {
-        Helpers.showSnackBar(
-          context,
-          'Gagal memuat data grafik',
-          isError: true,
-        );
+        Helpers.showSnackBar(context, 'Gagal memuat data grafik', isError: true);
       }
     }
 
-    if (mounted) {
-      setState(() => _isLoading = false);
-    }
+    if (mounted) setState(() => _isLoading = false);
   }
 
-  // FIXED: bungkus dengan try-catch. showDatePicker dapat melempar
-  // (mis. context tidak valid saat widget sudah unmounted).
   Future<void> _selectDate(BuildContext context) async {
     try {
       final DateTime? picked = await showDatePicker(
@@ -23856,75 +23732,49 @@ class _HistoryChartState extends State<HistoryChart> {
         firstDate: DateTime.now().subtract(const Duration(days: 30)),
         lastDate: DateTime.now(),
       );
-
       if (picked != null && picked != _selectedDate) {
-        setState(() {
-          _selectedDate = picked;
-        });
+        setState(() => _selectedDate = picked);
         await _loadHistoryData();
       }
     } catch (e) {
       debugPrint('❌ Date picker error: $e');
       if (mounted) {
-        Helpers.showSnackBar(
-          context,
-          'Gagal membuka pemilih tanggal',
-          isError: true,
-        );
+        Helpers.showSnackBar(context, 'Gagal membuka pemilih tanggal',
+            isError: true);
       }
     }
   }
 
   List<FlSpot> _getDataPoints() {
     final spots = <FlSpot>[];
-
     for (int i = 0; i < _historyData.length; i++) {
-      final data = _historyData[i];
-      final y = _valueFor(data, _selectedParameter);
+      final y = _valueFor(_historyData[i], _selectedParameter);
       if (y == null) continue;
       spots.add(FlSpot(i.toDouble(), y));
     }
-
     return spots;
   }
 
-  // FIXED: interval diubah dari 2 → 1 agar getTitlesWidget dipanggil
-  // untuk SETIAP titik. Penyaringan label dilakukan di dalam widget
-  // berdasarkan minute == 0 (jam genap: 14:00, 15:00, 16:00).
-  //
-  // Dengan cara ini, label tetap muncul dengan benar meskipun titik
-  // pertama bukan berada di menit :00 (mis. chart dibuka saat 14:30,
-  // maka titik pertama adalah 14:30 → label pertama di 15:00).
   SideTitles _getBottomTitles() {
     return SideTitles(
       showTitles: true,
       reservedSize: 30,
       interval: 1,
       getTitlesWidget: (value, meta) {
-        // Hanya untuk nilai x yang berupa bilangan bulat (indeks valid)
         final index = value.toInt();
         if (value != index.toDouble()) return const SizedBox.shrink();
         if (index < 0 || index >= _historyData.length) {
           return const SizedBox.shrink();
         }
-
         final data = _historyData[index];
-        final hour = data.timestamp.hour;
-        final minute = data.timestamp.minute;
+        if (data.timestamp.minute != 0) return const SizedBox.shrink();
 
-        // FIXED: hanya tampilkan label di jam genap (minute == 0).
-        // Titik di menit :30 (14:30, 15:30, ...) tidak diberi label.
-        if (minute != 0) return const SizedBox.shrink();
-
-        final hourLabel = hour.toString().padLeft(2, '0');
+        final hourLabel = data.timestamp.hour.toString().padLeft(2, '0');
         return Padding(
           padding: const EdgeInsets.only(top: 8.0),
           child: Text(
             '$hourLabel:00',
-            style: const TextStyle(
-              fontSize: 10,
-              color: Colors.grey,
-            ),
+            style: const TextStyle(fontSize: 10, color: Colors.grey),
           ),
         );
       },
@@ -23935,21 +23785,9 @@ class _HistoryChartState extends State<HistoryChart> {
     final spots = _getDataPoints();
     final color = _parameterColors[_selectedParameter]!;
 
-    // FIXED: FOV 8 titik per viewport.
-    //   pointSpacing = (lebar layar − padding container) / 8
-    //   chartWidth   = jumlah titik × pointSpacing
-    //   minimal      = lebar viewport (agar chart tidak lebih sempit dari layar)
-    //
-    // Contoh pada layar 400px:
-    //   availableViewport = 400 − 32 = 368
-    //   pointSpacing      = 368 / 8 = 46px
-    //   48 titik (24 jam) → chartWidth = 48 × 46 = 2208px
-    //   viewport 368px    → menampilkan 368/46 = 8 titik
     final screenWidth = MediaQuery.of(context).size.width;
-    final availableViewport =
-        screenWidth - (_containerPadding * 2);
+    final availableViewport = screenWidth - (_containerPadding * 2);
     final pointSpacing = availableViewport / _pointsInView;
-
     final calculatedWidth = _historyData.length * pointSpacing;
     final actualChartWidth = calculatedWidth > availableViewport
         ? calculatedWidth
@@ -23976,10 +23814,8 @@ class _HistoryChartState extends State<HistoryChart> {
             children: [
               Text(
                 'Grafik ${_parameterLabels[_selectedParameter]}',
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                ),
+                style:
+                    const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
               ),
               Container(
                 padding:
@@ -23993,10 +23829,8 @@ class _HistoryChartState extends State<HistoryChart> {
                     Container(
                       width: 12,
                       height: 12,
-                      decoration: BoxDecoration(
-                        color: color,
-                        shape: BoxShape.circle,
-                      ),
+                      decoration:
+                          BoxDecoration(color: color, shape: BoxShape.circle),
                     ),
                     const SizedBox(width: 4),
                     Text(
@@ -24026,12 +23860,10 @@ class _HistoryChartState extends State<HistoryChart> {
                       drawVerticalLine: true,
                       drawHorizontalLine: false,
                       horizontalInterval: 20,
-                      getDrawingHorizontalLine: (value) {
-                        return const FlLine(
-                          color: Colors.transparent,
-                          strokeWidth: 0,
-                        );
-                      },
+                      getDrawingHorizontalLine: (value) => const FlLine(
+                        color: Colors.transparent,
+                        strokeWidth: 0,
+                      ),
                       getDrawingVerticalLine: (value) {
                         if (value % 2 == 0) {
                           return FlLine(
@@ -24040,9 +23872,7 @@ class _HistoryChartState extends State<HistoryChart> {
                           );
                         }
                         return const FlLine(
-                          color: Colors.transparent,
-                          strokeWidth: 0,
-                        );
+                            color: Colors.transparent, strokeWidth: 0);
                       },
                     ),
                     titlesData: FlTitlesData(
@@ -24076,8 +23906,7 @@ class _HistoryChartState extends State<HistoryChart> {
                         isStrokeCapRound: true,
                         dotData: FlDotData(
                           show: true,
-                          getDotPainter:
-                              (spot, percent, barData, index) {
+                          getDotPainter: (spot, percent, barData, index) {
                             return FlDotCirclePainter(
                               radius: 3.5,
                               color: color,
@@ -24111,41 +23940,34 @@ class _HistoryChartState extends State<HistoryChart> {
                         fitInsideVertically: true,
                         maxContentWidth:
                             MediaQuery.of(context).size.width * 0.7,
-                        getTooltipItems:
-                            (List<LineBarSpot> touchedSpots) {
-                          return touchedSpots
-                              .map((spot) {
+                        getTooltipItems: (List<LineBarSpot> touchedSpots) {
+                          return touchedSpots.map((spot) {
                             final index = spot.spotIndex;
-                            if (index < 0 ||
-                                index >= _historyData.length) {
+                            if (index < 0 || index >= _historyData.length) {
                               return null;
                             }
-
                             final data = _historyData[index];
-                            final hour = data.timestamp.hour;
-                            final minute = data.timestamp.minute;
                             final time =
-                                '${hour.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')}';
+                                '${data.timestamp.hour.toString().padLeft(2, '0')}:${data.timestamp.minute.toString().padLeft(2, '0')}';
 
-                            final values = {
-                              'AQI': '${data.aqi}',
-                              'PM2.5':
-                                  '${data.pm25.toStringAsFixed(1)} μg/m³',
-                              'PM10':
-                                  '${data.pm10.toStringAsFixed(1)} μg/m³',
-                              'CO': '${data.co.round()} μg/m³',
+                            final values = <String, String>{
+                              if (data.aqi != null) 'AQI': '${data.aqi}',
+                              if (data.pm25 != null)
+                                'PM2.5': '${data.pm25!.toStringAsFixed(1)} μg/m³',
+                              if (data.pm10 != null)
+                                'PM10': '${data.pm10!.toStringAsFixed(1)} μg/m³',
+                              if (data.co != null)
+                                'CO': '${data.co!.round()} μg/m³',
                               if (data.so2 != null)
-                                'SO2':
-                                    '${data.so2!.toStringAsFixed(1)} μg/m³',
+                                'SO2': '${data.so2!.toStringAsFixed(1)} μg/m³',
                               if (data.o3 != null)
-                                'O3':
-                                    '${data.o3!.toStringAsFixed(1)} μg/m³',
+                                'O3': '${data.o3!.toStringAsFixed(1)} μg/m³',
                               if (data.no2 != null)
-                                'NO2':
-                                    '${data.no2!.toStringAsFixed(1)} μg/m³',
-                              'Suhu':
-                                  '${data.temperature.toStringAsFixed(1)}°C',
-                              'Kelembaban': '${data.humidity.round()}%',
+                                'NO2': '${data.no2!.toStringAsFixed(1)} μg/m³',
+                              if (data.temperature != null)
+                                'Suhu': '${data.temperature!.toStringAsFixed(1)}°C',
+                              if (data.humidity != null)
+                                'Kelembaban': '${data.humidity!.round()}%',
                             };
 
                             return LineTooltipItem(
@@ -24157,7 +23979,7 @@ class _HistoryChartState extends State<HistoryChart> {
                               ),
                             );
                           })
-                              .where((element) => element != null)
+                              .where((e) => e != null)
                               .cast<LineTooltipItem>()
                               .toList();
                         },
@@ -24174,42 +23996,33 @@ class _HistoryChartState extends State<HistoryChart> {
     );
   }
 
-  // FIXED: tetap pertahankan padding 10% di atas & di bawah agar
-  // spike (lonjakan mendadak) tetap MUAT di dalam FOV chart.
-  // Contoh: data normal AQI 40-60, spike 350 → maxY = 350 × 1.1 = 385,
-  // sehingga spike terlihat penuh tanpa terpotong.
-  //
-  // Untuk parameter opsional (SO2/O3/NO2), nilai null dilewati.
   double _getMinY() {
     if (_historyData.isEmpty) return 0.0;
-
     double minValue = double.infinity;
     for (var data in _historyData) {
       final value = _valueFor(data, _selectedParameter);
       if (value == null) continue;
       if (value < minValue) minValue = value;
     }
-
     if (minValue == double.infinity) return 0.0;
     return minValue - (minValue * 0.1);
   }
 
   double _getMaxY() {
     if (_historyData.isEmpty) return 100.0;
-
     double maxValue = double.negativeInfinity;
     for (var data in _historyData) {
       final value = _valueFor(data, _selectedParameter);
       if (value == null) continue;
       if (value > maxValue) maxValue = value;
     }
-
     if (maxValue == double.negativeInfinity) return 100.0;
     return maxValue + (maxValue * 0.1);
   }
 
   Widget _buildParameterSelector() {
     final available = _availableParameters;
+    if (available.isEmpty) return const SizedBox.shrink();
 
     return Container(
       height: 50,
@@ -24223,11 +24036,7 @@ class _HistoryChartState extends State<HistoryChart> {
           final color = _parameterColors[parameter]!;
 
           return GestureDetector(
-            onTap: () {
-              setState(() {
-                _selectedParameter = parameter;
-              });
-            },
+            onTap: () => setState(() => _selectedParameter = parameter),
             child: Container(
               margin: const EdgeInsets.only(right: 8),
               padding:
@@ -24293,9 +24102,7 @@ class _HistoryChartState extends State<HistoryChart> {
               Text(
                 DateFormat('EEEE, dd MMMM yyyy').format(_selectedDate),
                 style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                ),
+                    fontSize: 16, fontWeight: FontWeight.w600),
               ),
             ],
           ),
@@ -24338,11 +24145,7 @@ class _HistoryChartState extends State<HistoryChart> {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Icon(
-                  Icons.error_outline,
-                  size: 48,
-                  color: Colors.red,
-                ),
+                const Icon(Icons.error_outline, size: 48, color: Colors.red),
                 const SizedBox(height: 16),
                 Text(
                   _error,
@@ -24357,18 +24160,14 @@ class _HistoryChartState extends State<HistoryChart> {
               ],
             ),
           )
-        else if (_historyData.isEmpty)
+        else if (_historyData.isEmpty || _availableParameters.isEmpty)
           Container(
             height: 350,
             alignment: Alignment.center,
             child: const Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(
-                  Icons.insert_chart_outlined,
-                  size: 48,
-                  color: Colors.grey,
-                ),
+                Icon(Icons.insert_chart_outlined, size: 48, color: Colors.grey),
                 SizedBox(height: 16),
                 Text(
                   'Tidak ada data history untuk tanggal ini',
@@ -24745,15 +24544,15 @@ class RoomCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final aqiColor = Helpers.getAQIColor(room.currentAQI);
-    final aqiLabel = Helpers.getAQILabel(room.currentAQI);
+    final aqi = room.currentAQI;
+    final aqiColor = Helpers.getAQIColor(aqi);
+    final aqiLabel = Helpers.getAQILabel(aqi);
+    final hasAnyData = room.hasAnyData;
 
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 0),
       elevation: 2,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(16),
@@ -24762,7 +24561,7 @@ class RoomCard extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Header Row - Room name and building
+              // Header
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -24791,9 +24590,9 @@ class RoomCard extends StatelessWidget {
                       ],
                     ),
                   ),
-                  // Status indicator
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
                       color: aqiColor.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(20),
@@ -24813,7 +24612,7 @@ class RoomCard extends StatelessWidget {
 
               const SizedBox(height: 16),
 
-              // AQI Large Display - dengan background warna AQI
+              // AQI Display — no_data & error jadi grey
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(16),
@@ -24823,9 +24622,8 @@ class RoomCard extends StatelessWidget {
                 ),
                 child: Column(
                   children: [
-                    // Large AQI number
                     Text(
-                      room.currentAQI.toString(),
+                      aqi?.toString() ?? '—',
                       style: const TextStyle(
                         fontSize: 64,
                         fontWeight: FontWeight.w800,
@@ -24834,16 +24632,16 @@ class RoomCard extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 4),
-                    // AQI Label
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 20, vertical: 6),
                       decoration: BoxDecoration(
                         color: Colors.white.withOpacity(0.2),
                         borderRadius: BorderRadius.circular(20),
                       ),
-                      child: const Text(
-                        'INDEKS KUALITAS UDARA',
-                        style: TextStyle(
+                      child: Text(
+                        aqi == null ? 'TIDAK ADA DATA' : 'INDEKS KUALITAS UDARA',
+                        style: const TextStyle(
                           color: Colors.white,
                           fontWeight: FontWeight.w700,
                           fontSize: 12,
@@ -24857,7 +24655,7 @@ class RoomCard extends StatelessWidget {
 
               const SizedBox(height: 20),
 
-              // Parameter Grid - 2 rows, 3 columns
+              // Grid param dinamis — card yang null otomatis hilang
               GridView.count(
                 physics: const NeverScrollableScrollPhysics(),
                 shrinkWrap: true,
@@ -24866,81 +24664,88 @@ class RoomCard extends StatelessWidget {
                 crossAxisSpacing: 12,
                 childAspectRatio: 1.1,
                 children: [
-                  _buildParameterCell(
-                    label: 'PM2.5',
-                    value: room.currentData.pm25.toStringAsFixed(1),
-                    unit: 'µg/m³',
-                    status: Helpers.getPM25Status(room.currentData.pm25),
-                    color: Helpers.getPM25Color(room.currentData.pm25),
-                  ),
-                  _buildParameterCell(
-                    label: 'PM10',
-                    value: room.currentData.pm10.toStringAsFixed(1),
-                    unit: 'µg/m³',
-                    status: Helpers.getPM10Status(room.currentData.pm10),
-                    color: Helpers.getPM10Color(room.currentData.pm10),
-                  ),
-                  _buildParameterCell(
-                    label: 'CO',
-                    value: room.currentData.co.round().toString(),
-                    unit: 'µg/m³',
-                    status: Helpers.getCOStatus(room.currentData.co),
-                    color: Helpers.getCOColor(room.currentData.co),
-                  ),
-
-                  // PARTIKEL BARU — hanya tampil jika data tersedia
-                  if (room.currentData.so2 != null)
+                  if (room.currentData.hasPM25)
+                    _buildParameterCell(
+                      label: 'PM2.5',
+                      value: room.currentData.pm25!.toStringAsFixed(1),
+                      unit: 'µg/m³',
+                      status: Helpers.getPM25Status(room.currentData.pm25),
+                      color: Helpers.getPM25Color(room.currentData.pm25),
+                    ),
+                  if (room.currentData.hasPM10)
+                    _buildParameterCell(
+                      label: 'PM10',
+                      value: room.currentData.pm10!.toStringAsFixed(1),
+                      unit: 'µg/m³',
+                      status: Helpers.getPM10Status(room.currentData.pm10),
+                      color: Helpers.getPM10Color(room.currentData.pm10),
+                    ),
+                  if (room.currentData.hasCO)
+                    _buildParameterCell(
+                      label: 'CO',
+                      value: room.currentData.co!.round().toString(),
+                      unit: 'µg/m³',
+                      status: Helpers.getCOStatus(room.currentData.co),
+                      color: Helpers.getCOColor(room.currentData.co),
+                    ),
+                  if (room.currentData.hasSO2)
                     _buildParameterCell(
                       label: 'SO2',
                       value: room.currentData.so2!.toStringAsFixed(1),
                       unit: 'µg/m³',
-                      status: Helpers.getSO2Status(room.currentData.so2!),
-                      color: Helpers.getSO2Color(room.currentData.so2!),
+                      status: Helpers.getSO2Status(room.currentData.so2),
+                      color: Helpers.getSO2Color(room.currentData.so2),
                     ),
-                  if (room.currentData.o3 != null)
+                  if (room.currentData.hasO3)
                     _buildParameterCell(
                       label: 'O3',
                       value: room.currentData.o3!.toStringAsFixed(1),
                       unit: 'µg/m³',
-                      status: Helpers.getO3Status(room.currentData.o3!),
-                      color: Helpers.getO3Color(room.currentData.o3!),
+                      status: Helpers.getO3Status(room.currentData.o3),
+                      color: Helpers.getO3Color(room.currentData.o3),
                     ),
-                  if (room.currentData.no2 != null)
+                  if (room.currentData.hasNO2)
                     _buildParameterCell(
                       label: 'NO2',
                       value: room.currentData.no2!.toStringAsFixed(1),
                       unit: 'µg/m³',
-                      status: Helpers.getNO2Status(room.currentData.no2!),
-                      color: Helpers.getNO2Color(room.currentData.no2!),
+                      status: Helpers.getNO2Status(room.currentData.no2),
+                      color: Helpers.getNO2Color(room.currentData.no2),
                     ),
-
-                  _buildParameterCell(
-                    label: 'SUHU',
-                    value: room.currentData.temperature.toStringAsFixed(1),
-                    unit: '°C',
-                    status: Helpers.getTemperatureStatus(room.currentData.temperature),
-                    color: Helpers.getTemperatureColor(room.currentData.temperature),
-                  ),
-                  _buildParameterCell(
-                    label: 'LEMBAB',
-                    value: room.currentData.humidity.round().toString(),
-                    unit: '%',
-                    status: Helpers.getHumidityStatus(room.currentData.humidity),
-                    color: Helpers.getHumidityColor(room.currentData.humidity),
-                  ),
+                  if (room.currentData.hasTemperature)
+                    _buildParameterCell(
+                      label: 'SUHU',
+                      value: room.currentData.temperature!.toStringAsFixed(1),
+                      unit: '°C',
+                      status: Helpers.getTemperatureStatus(
+                          room.currentData.temperature),
+                      color: Helpers.getTemperatureColor(
+                          room.currentData.temperature),
+                    ),
+                  if (room.currentData.hasHumidity)
+                    _buildParameterCell(
+                      label: 'LEMBAB',
+                      value: room.currentData.humidity!.round().toString(),
+                      unit: '%',
+                      status: Helpers.getHumidityStatus(
+                          room.currentData.humidity),
+                      color: Helpers.getHumidityColor(
+                          room.currentData.humidity),
+                    ),
                   _buildLastUpdateCell(room),
                 ],
               ),
 
               const SizedBox(height: 12),
 
-              // Footer - Data source
+              // Footer
               Row(
                 mainAxisAlignment: MainAxisAlignment.start,
                 children: [
                   if (room.isIot)
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 4),
                       decoration: BoxDecoration(
                         color: const Color(0xFFE3F2FD),
                         borderRadius: BorderRadius.circular(12),
@@ -24948,11 +24753,7 @@ class RoomCard extends StatelessWidget {
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(
-                            Icons.sensors,
-                            size: 12,
-                            color: Colors.blue[700],
-                          ),
+                          Icon(Icons.sensors, size: 12, color: Colors.blue[700]),
                           const SizedBox(width: 4),
                           Text(
                             'Device IoT',
@@ -24967,7 +24768,8 @@ class RoomCard extends StatelessWidget {
                     )
                   else
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 4),
                       decoration: BoxDecoration(
                         color: const Color(0xFFF3E5F5),
                         borderRadius: BorderRadius.circular(12),
@@ -24975,11 +24777,8 @@ class RoomCard extends StatelessWidget {
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(
-                            Icons.auto_awesome,
-                            size: 12,
-                            color: Colors.purple[700],
-                          ),
+                          Icon(Icons.auto_awesome,
+                              size: 12, color: Colors.purple[700]),
                           const SizedBox(width: 4),
                           Text(
                             'Simulasi',
@@ -24992,6 +24791,18 @@ class RoomCard extends StatelessWidget {
                         ],
                       ),
                     ),
+                  if (!hasAnyData && aqi == null)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 8),
+                      child: Text(
+                        'Belum ada data dari perangkat',
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: Colors.grey[600],
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                    ),
                 ],
               ),
             ],
@@ -25000,8 +24811,6 @@ class RoomCard extends StatelessWidget {
       ),
     );
   }
-
-
 
   Widget _buildParameterCell({
     required String label,
@@ -25015,11 +24824,7 @@ class RoomCard extends StatelessWidget {
         color: color,
         borderRadius: BorderRadius.circular(12),
         boxShadow: const [
-          BoxShadow(
-            color: Colors.black12,
-            blurRadius: 4,
-            offset: Offset(0, 2),
-          ),
+          BoxShadow(color: Colors.black12, blurRadius: 4, offset: Offset(0, 2)),
         ],
       ),
       child: Padding(
@@ -25027,7 +24832,6 @@ class RoomCard extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // Label
             Text(
               label,
               style: TextStyle(
@@ -25036,10 +24840,7 @@ class RoomCard extends StatelessWidget {
                 color: Colors.white.withOpacity(0.9),
               ),
             ),
-
             const SizedBox(height: 4),
-
-            // Value and Unit
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.baseline,
@@ -25063,10 +24864,7 @@ class RoomCard extends StatelessWidget {
                 ),
               ],
             ),
-
             const SizedBox(height: 6),
-
-            // Status chip
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
               decoration: BoxDecoration(
@@ -25089,9 +24887,8 @@ class RoomCard extends StatelessWidget {
       ),
     );
   }
-}
 
- Widget _buildLastUpdateCell(Room room) {
+  Widget _buildLastUpdateCell(Room room) {
     return Container(
       decoration: BoxDecoration(
         color: const Color(0xFFF8F9FA),
@@ -25143,6 +24940,7 @@ class RoomCard extends StatelessWidget {
       ),
     );
   }
+}
 
 ---------------------------------------------------------------------------------------------------------------------------------------
 lib/presentation/widgets/common/server_status_indicator.dart
@@ -25634,6 +25432,57 @@ function generate30SecondBasedData(deviceId) {
   return sensorData;
 }
 
+function filterSensorData(data, fieldsQuery, excludeQuery) {
+  const allFields = ['pm25','pm10','co','so2','o3','no2','temperature','humidity'];
+
+  let selected = new Set(allFields);
+  if (fieldsQuery) {
+    selected = new Set(
+      fieldsQuery.split(',').map((f) => f.trim()).filter(Boolean)
+    );
+  } else if (excludeQuery) {
+    const excluded = new Set(
+      excludeQuery.split(',').map((f) => f.trim()).filter(Boolean)
+    );
+    selected = new Set(allFields.filter((f) => !excluded.has(f)));
+  }
+
+  const result = { ...data };
+  allFields.forEach((f) => {
+    if (!selected.has(f)) result[f] = null;
+  });
+
+  // Recompute AQI dari field yang tersisa
+  const has = (v) => typeof v === 'number' && !isNaN(v) && v >= 0;
+  const ispus = [];
+  if (has(result.pm25)) ispus.push({ name: 'pm25', value: calculateISPUFromPM25(result.pm25) });
+  if (has(result.pm10)) ispus.push({ name: 'pm10', value: calculateISPUFromPM10(result.pm10) });
+  if (has(result.co))   ispus.push({ name: 'co',   value: calculateISPUFromCO(result.co)   });
+  if (has(result.so2))  ispus.push({ name: 'so2',  value: calculateISPUFromSO2(result.so2)  });
+  if (has(result.o3))   ispus.push({ name: 'o3',   value: calculateISPUFromO3(result.o3)   });
+  if (has(result.no2))  ispus.push({ name: 'no2',  value: calculateISPUFromNO2(result.no2)  });
+
+  if (ispus.length === 0) {
+    result.aqi = null;
+    result.dominant = null;
+    result.category = 'no_data';
+  } else {
+    const order = ['co', 'so2', 'o3', 'no2', 'pm25', 'pm10'];
+    ispus.sort((a, b) => order.indexOf(a.name) - order.indexOf(b.name));
+    const maxVal = Math.max(...ispus.map((i) => i.value));
+    const dom = ispus.find((i) => i.value === maxVal);
+    result.aqi = maxVal;
+    result.dominant = dom.name;
+    if (maxVal <= 50) result.category = 'baik';
+    else if (maxVal <= 100) result.category = 'sedang';
+    else if (maxVal <= 200) result.category = 'tidak_sehat';
+    else if (maxVal <= 300) result.category = 'sangat_tidak_sehat';
+    else result.category = 'berbahaya';
+  }
+
+  return result;
+}
+
 // Clean old cache setiap 30 detik
 setInterval(() => {
   const now = Date.now();
@@ -25752,13 +25601,18 @@ const server = http.createServer((req, res) => {
         return;
       }
 
-      if (pathname.startsWith('/data/') && method === 'GET') {
+            if (pathname.startsWith('/data/') && method === 'GET') {
         const deviceId = pathname.split('/')[2];
 
         if (!deviceId) {
           return sendJson(res, 400, { success: false, message: 'Device ID is required' });
         }
 
+        // ---- 1. Baca query param DULU ----
+        const fieldsQuery  = parsedUrl.query.fields;
+        const excludeQuery = parsedUrl.query.exclude;
+
+        // ---- 2. Auto-register (kode lama, tidak berubah) ----
         if (!registeredDevices.has(deviceId)) {
           const hash = deviceId.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
           const roomType = hash % 4;
@@ -25781,8 +25635,18 @@ const server = http.createServer((req, res) => {
           registeredDevices.set(deviceId, device);
         }
 
-        const sensorData = generate30SecondBasedData(deviceId);
+        // ---- 3. Generate. WAJIB pakai `let` karena akan di-reassign filter ----
+        let sensorData = generate30SecondBasedData(deviceId);
 
+        // ---- 4. Filter SETELAH generate, SEBELUM response ----
+        if (fieldsQuery || excludeQuery) {
+          sensorData = filterSensorData(sensorData, fieldsQuery, excludeQuery);
+          console.log(
+            `🔎 Filtered ${deviceId}: fields=${fieldsQuery || '-'} exclude=${excludeQuery || '-'} → AQI=${sensorData.aqi}, dominant=${sensorData.dominant}`
+          );
+        }
+
+        // ---- 5. Bangun response (variabel `now` dst. seperti sebelumnya) ----
         const now = new Date();
         const secondsRemaining = 30 - (now.getSeconds() % 30);
 
@@ -25799,6 +25663,10 @@ const server = http.createServer((req, res) => {
             nextUpdateInSeconds: secondsRemaining,
             isAnomaly: sensorData.isAnomaly,
             anomalyType: sensorData.anomalyType,
+            appliedFilter: {
+              fields: fieldsQuery || null,
+              exclude: excludeQuery || null,
+            },
             units: {
               pm25: 'μg/m³',
               pm10: 'μg/m³',

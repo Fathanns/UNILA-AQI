@@ -190,14 +190,8 @@ class SimulationService {
         roomName: room.name,
         buildingName: room.buildingName,
         aqi: -1,
-        pm25: -1,
-        pm10: -1,
-        co: -1,
-        so2: -1,
-        o3: -1,
-        no2: -1,
-        temperature: -1,
-        humidity: -1,
+        pm25: -1, pm10: -1, co: -1, so2: -1, o3: -1, no2: -1,
+        temperature: -1, humidity: -1,
         category: 'error',
         timestamp: new Date()
       }).save();
@@ -210,16 +204,18 @@ class SimulationService {
         });
       }
       console.log('┌────────────────────────────────────────────────────────────────────────────────────');
-      console.log(`⚠️ SENSOR ERROR in ${room.name} (data invalid, room retained last good value)`);
+      console.log(
+        `⚠️ SENSOR ERROR in ${room.name} (data invalid, room retained last good value)`
+      );
       console.log('└────────────────────────────────────────────────────────────────────────────────────');
     } catch (err) {
       console.log('┌────────────────────────────────────────────────────────────────────────────────────');
       console.error(`❌ Error handling sensor error for ${room.name}:`, err.message);
-      console.log('└────────────────────────────────────────────────────────────────────────────────────');
+       console.log('└────────────────────────────────────────────────────────────────────────────────────');
     }
   }
 
-    _hasDataChanged(room, newData) {
+  _hasDataChanged(room, newData) {
     const currentData = room.currentData;
 
     const changed = (oldV, newV) => {

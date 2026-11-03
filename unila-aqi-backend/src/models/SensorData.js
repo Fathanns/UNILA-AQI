@@ -6,53 +6,22 @@ const sensorDataSchema = new mongoose.Schema({
     ref: 'Room',
     required: true
   },
-  roomName: {
-    type: String,
-    required: true
-  },
-  buildingName: {
-    type: String,
-    required: true
-  },
-  aqi: {
-    type: Number,
-    required: true
-  },
-  pm25: {
-    type: Number,
-    required: true
-  },
-  pm10: {
-    type: Number,
-    required: true
-  },
-  co: {
-    type: Number,
-    required: true
-  },
-  so2: {
-    type: Number,
-    default: null
-  },
-  o3: {
-    type: Number,
-    default: null
-  },
-  no2: {
-    type: Number,
-    default: null
-  },
-  temperature: {
-    type: Number,
-    required: true
-  },
-  humidity: {
-    type: Number,
-    required: true
-  },
+  roomName: { type: String, required: true },
+  buildingName: { type: String, required: true },
+  // FIXED: semua field nullable
+  aqi: { type: Number, default: null },
+  pm25: { type: Number, default: null },
+  pm10: { type: Number, default: null },
+  co: { type: Number, default: null },
+  so2: { type: Number, default: null },
+  o3: { type: Number, default: null },
+  no2: { type: Number, default: null },
+  temperature: { type: Number, default: null },
+  humidity: { type: Number, default: null },
   category: {
     type: String,
-    enum: ['baik', 'sedang', 'tidak_sehat', 'sangat_tidak_sehat', 'berbahaya', 'error'], // TAMBAH 'error'
+    // FIXED: tambah 'no_data'
+    enum: ['baik', 'sedang', 'tidak_sehat', 'sangat_tidak_sehat', 'berbahaya', 'error', 'no_data'],
     required: true
   },
   timestamp: {
@@ -62,7 +31,6 @@ const sensorDataSchema = new mongoose.Schema({
   }
 });
 
-// Create index untuk query yang cepat
 sensorDataSchema.index({ roomId: 1, timestamp: -1 });
 sensorDataSchema.index({ timestamp: -1 });
 

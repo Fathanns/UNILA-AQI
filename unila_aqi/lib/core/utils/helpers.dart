@@ -80,9 +80,10 @@ class Helpers {
   // ============================================================
   // AQI HELPERS — PP 22/2021
   // ============================================================
-  static bool isErrorAQI(int aqi) => aqi < 0;
+  static bool isErrorAQI(int? aqi) => aqi != null && aqi < 0;
 
-  static Color getAQIColor(int aqi) {
+   static Color getAQIColor(int? aqi) {
+    if (aqi == null) return AppColors.aqiNoData;
     if (aqi < 0) return AppColors.aqiError;
     if (aqi <= 50) return AppColors.aqiGood;
     if (aqi <= 100) return AppColors.aqiModerate;
@@ -91,7 +92,8 @@ class Helpers {
     return AppColors.aqiHazardous;
   }
 
-  static String getAQILabel(int aqi) {
+  static String getAQILabel(int? aqi) {
+    if (aqi == null) return 'TIDAK ADA DATA';
     if (aqi < 0) return 'ERROR';
     if (aqi <= 50) return 'BAIK';
     if (aqi <= 100) return 'SEDANG';
@@ -100,7 +102,10 @@ class Helpers {
     return 'BERBAHAYA';
   }
 
-  static String getAQIHealthMessage(int aqi) {
+  static String getAQIHealthMessage(int? aqi) {
+    if (aqi == null) {
+      return 'Belum ada data valid dari perangkat.';
+    }
     if (aqi < 0) {
       return 'Sensor ruangan melaporkan error. Nilai AQI yang ditampilkan adalah nilai valid terakhir.';
     }
@@ -112,148 +117,159 @@ class Helpers {
   }
 
   // PM2.5
-  static String getPM25Status(double value) {
-    if (value < 0) return 'ERROR';
-    if (value <= 55) return 'BAIK';
-    if (value <= 150) return 'SEDANG';
-    if (value <= 250) return 'TIDAK SEHAT';
-    if (value <= 350) return 'SANGAT TIDAK SEHAT';
+  static String getPM25Status(double? v) {
+    if (v == null) return 'DATA TIDAK DITERIMA';
+    if (v < 0) return 'ERROR';
+    if (v <= 55) return 'BAIK';
+    if (v <= 150) return 'SEDANG';
+    if (v <= 250) return 'TIDAK SEHAT';
+    if (v <= 350) return 'SANGAT TIDAK SEHAT';
     return 'BERBAHAYA';
   }
-
-  static Color getPM25Color(double value) {
-    if (value < 0) return AppColors.aqiError;
-    if (value <= 55) return AppColors.aqiGood;
-    if (value <= 150) return AppColors.aqiModerate;
-    if (value <= 250) return AppColors.aqiUnhealthySensitive;
-    if (value <= 350) return AppColors.aqiUnhealthy;
+  static Color getPM25Color(double? v) {
+    if (v == null) return AppColors.aqiNoData;
+    if (v < 0) return AppColors.aqiError;
+    if (v <= 55) return AppColors.aqiGood;
+    if (v <= 150) return AppColors.aqiModerate;
+    if (v <= 250) return AppColors.aqiUnhealthySensitive;
+    if (v <= 350) return AppColors.aqiUnhealthy;
     return AppColors.aqiHazardous;
   }
 
   // PM10
-  static String getPM10Status(double value) {
-    if (value < 0) return 'ERROR';
-    if (value <= 50) return 'BAIK';
-    if (value <= 150) return 'SEDANG';
-    if (value <= 350) return 'TIDAK SEHAT';
-    if (value <= 420) return 'SANGAT TIDAK SEHAT';
+  static String getPM10Status(double? v) {
+    if (v == null) return 'DATA TIDAK DITERIMA';
+    if (v < 0) return 'ERROR';
+    if (v <= 50) return 'BAIK';
+    if (v <= 150) return 'SEDANG';
+    if (v <= 350) return 'TIDAK SEHAT';
+    if (v <= 420) return 'SANGAT TIDAK SEHAT';
     return 'BERBAHAYA';
   }
+  static Color getPM10Color(double? v) {
+    if (v == null) return AppColors.aqiNoData;
+    if (v < 0) return AppColors.aqiError;
+    if (v <= 50) return AppColors.aqiGood;
+    if (v <= 150) return AppColors.aqiModerate;
+    if (v <= 350) return AppColors.aqiUnhealthySensitive;
+    if (v <= 420) return AppColors.aqiUnhealthy;
+    return AppColors.aqiHazardous;
+  }
 
-  static Color getPM10Color(double value) {
-    if (value < 0) return AppColors.aqiError;
-    if (value <= 50) return AppColors.aqiGood;
-    if (value <= 150) return AppColors.aqiModerate;
-    if (value <= 350) return AppColors.aqiUnhealthySensitive;
-    if (value <= 420) return AppColors.aqiUnhealthy;
+  // CO
+  static String getCOStatus(double? v) {
+    if (v == null) return 'DATA TIDAK DITERIMA';
+    if (v < 0) return 'ERROR';
+    if (v <= 4000) return 'BAIK';
+    if (v <= 8000) return 'SEDANG';
+    if (v <= 15000) return 'TIDAK SEHAT';
+    if (v <= 30000) return 'SANGAT TIDAK SEHAT';
+    return 'BERBAHAYA';
+  }
+  static Color getCOColor(double? v) {
+    if (v == null) return AppColors.aqiNoData;
+    if (v < 0) return AppColors.aqiError;
+    if (v <= 4000) return AppColors.aqiGood;
+    if (v <= 8000) return AppColors.aqiModerate;
+    if (v <= 15000) return AppColors.aqiUnhealthySensitive;
+    if (v <= 30000) return AppColors.aqiUnhealthy;
+    return AppColors.aqiHazardous;
+  }
+
+  // SO2
+  static String getSO2Status(double? v) {
+    if (v == null) return 'DATA TIDAK DITERIMA';
+    if (v < 0) return 'ERROR';
+    if (v <= 80) return 'BAIK';
+    if (v <= 365) return 'SEDANG';
+    if (v <= 800) return 'TIDAK SEHAT';
+    if (v <= 1600) return 'SANGAT TIDAK SEHAT';
+    return 'BERBAHAYA';
+  }
+  static Color getSO2Color(double? v) {
+    if (v == null) return AppColors.aqiNoData;
+    if (v < 0) return AppColors.aqiError;
+    if (v <= 80) return AppColors.aqiGood;
+    if (v <= 365) return AppColors.aqiModerate;
+    if (v <= 800) return AppColors.aqiUnhealthySensitive;
+    if (v <= 1600) return AppColors.aqiUnhealthy;
+    return AppColors.aqiHazardous;
+  }
+
+  // O3
+  static String getO3Status(double? v) {
+    if (v == null) return 'DATA TIDAK DITERIMA';
+    if (v < 0) return 'ERROR';
+    if (v <= 120) return 'BAIK';
+    if (v <= 235) return 'SEDANG';
+    if (v <= 400) return 'TIDAK SEHAT';
+    if (v <= 800) return 'SANGAT TIDAK SEHAT';
+    return 'BERBAHAYA';
+  }
+  static Color getO3Color(double? v) {
+    if (v == null) return AppColors.aqiNoData;
+    if (v < 0) return AppColors.aqiError;
+    if (v <= 120) return AppColors.aqiGood;
+    if (v <= 235) return AppColors.aqiModerate;
+    if (v <= 400) return AppColors.aqiUnhealthySensitive;
+    if (v <= 800) return AppColors.aqiUnhealthy;
+    return AppColors.aqiHazardous;
+  }
+
+  // NO2
+  static String getNO2Status(double? v) {
+    if (v == null) return 'DATA TIDAK DITERIMA';
+    if (v < 0) return 'ERROR';
+    if (v <= 80) return 'BAIK';
+    if (v <= 200) return 'SEDANG';
+    if (v <= 1130) return 'TIDAK SEHAT';
+    if (v <= 2260) return 'SANGAT TIDAK SEHAT';
+    return 'BERBAHAYA';
+  }
+  static Color getNO2Color(double? v) {
+    if (v == null) return AppColors.aqiNoData;
+    if (v < 0) return AppColors.aqiError;
+    if (v <= 80) return AppColors.aqiGood;
+    if (v <= 200) return AppColors.aqiModerate;
+    if (v <= 1130) return AppColors.aqiUnhealthySensitive;
+    if (v <= 2260) return AppColors.aqiUnhealthy;
     return AppColors.aqiHazardous;
   }
 
   // Temperature
-  static String getTemperatureStatus(double value) {
-    if (value < 0) return 'ERROR';
-    if (value < 24) return 'DINGIN';
-    if (value <= 27) return 'IDEAL';
-    if (value <= 30) return 'HANGAT';
+  static String getTemperatureStatus(double? v) {
+    if (v == null) return 'DATA TIDAK DITERIMA';
+    if (v < 0) return 'ERROR';
+    if (v < 24) return 'DINGIN';
+    if (v <= 27) return 'IDEAL';
+    if (v <= 30) return 'HANGAT';
     return 'PANAS';
   }
-
-  static Color getTemperatureColor(double value) {
-    if (value < 0) return AppColors.aqiError;
-    if (value < 24) return Colors.blue;
-    if (value <= 27) return AppColors.success;
-    if (value <= 30) return AppColors.warning;
+  static Color getTemperatureColor(double? v) {
+    if (v == null) return AppColors.aqiNoData;
+    if (v < 0) return AppColors.aqiError;
+    if (v < 24) return Colors.blue;
+    if (v <= 27) return AppColors.success;
+    if (v <= 30) return AppColors.warning;
     return AppColors.error;
   }
 
   // Humidity
-  static String getHumidityStatus(double value) {
-    if (value < 0) return 'ERROR';
-    if (value < 40) return 'KERING';
-    if (value <= 60) return 'IDEAL';
-    if (value <= 70) return 'LEMBAB';
+  static String getHumidityStatus(double? v) {
+    if (v == null) return 'DATA TIDAK DITERIMA';
+    if (v < 0) return 'ERROR';
+    if (v < 40) return 'KERING';
+    if (v <= 60) return 'IDEAL';
+    if (v <= 70) return 'LEMBAB';
     return 'TIDAK NYAMAN';
   }
-
-  static Color getHumidityColor(double value) {
-    if (value < 0) return AppColors.aqiError;
-    if (value < 40) return AppColors.aqiUnhealthySensitive;
-    if (value <= 60) return AppColors.aqiGood;
-    if (value <= 70) return AppColors.aqiModerate;
+  static Color getHumidityColor(double? v) {
+    if (v == null) return AppColors.aqiNoData;
+    if (v < 0) return AppColors.aqiError;
+    if (v < 40) return AppColors.aqiUnhealthySensitive;
+    if (v <= 60) return AppColors.aqiGood;
+    if (v <= 70) return AppColors.aqiModerate;
     return AppColors.aqiUnhealthy;
-  }
-
-   // CO
-  static String getCOStatus(double value) { 
-    if (value < 0) return 'ERROR';
-    if (value <= 4000) return 'BAIK';
-    if (value <= 8000) return 'SEDANG';
-    if (value <= 15000) return 'TIDAK SEHAT';
-    if (value <= 30000) return 'SANGAT TIDAK SEHAT';
-    return 'BERBAHAYA';
-  }
-
-   static Color getCOColor(double value) { 
-    if (value < 0) return AppColors.aqiError;
-    if (value <= 4000) return AppColors.aqiGood;
-    if (value <= 8000) return AppColors.aqiModerate;
-    if (value <= 15000) return AppColors.aqiUnhealthySensitive;
-    if (value <= 30000) return AppColors.aqiUnhealthy;
-    return AppColors.aqiHazardous;
-  }
-
-  static String getSO2Status(double value) {
-    if (value < 0) return 'ERROR';
-    if (value <= 80) return 'BAIK';
-    if (value <= 365) return 'SEDANG';
-    if (value <= 800) return 'TIDAK SEHAT';
-    if (value <= 1600) return 'SANGAT TIDAK SEHAT';
-    return 'BERBAHAYA';
-  }
-
-  static Color getSO2Color(double value) {
-    if (value < 0) return AppColors.aqiError;
-    if (value <= 80) return AppColors.aqiGood;
-    if (value <= 365) return AppColors.aqiModerate;
-    if (value <= 800) return AppColors.aqiUnhealthySensitive;
-    if (value <= 1600) return AppColors.aqiUnhealthy;
-    return AppColors.aqiHazardous;
-  }
-
-  static String getO3Status(double value) {
-    if (value < 0) return 'ERROR';
-    if (value <= 120) return 'BAIK';
-    if (value <= 235) return 'SEDANG';
-    if (value <= 400) return 'TIDAK SEHAT';
-    if (value <= 800) return 'SANGAT TIDAK SEHAT';
-    return 'BERBAHAYA';
-  }
-
-  static Color getO3Color(double value) {
-    if (value < 0) return AppColors.aqiError;
-    if (value <= 120) return AppColors.aqiGood;
-    if (value <= 235) return AppColors.aqiModerate;
-    if (value <= 400) return AppColors.aqiUnhealthySensitive;
-    if (value <= 800) return AppColors.aqiUnhealthy;
-    return AppColors.aqiHazardous;
-  }
-
-  static String getNO2Status(double value) {
-    if (value < 0) return 'ERROR';
-    if (value <= 80) return 'BAIK';
-    if (value <= 200) return 'SEDANG';
-    if (value <= 1130) return 'TIDAK SEHAT';
-    if (value <= 2260) return 'SANGAT TIDAK SEHAT';
-    return 'BERBAHAYA';
-  }
-
-  static Color getNO2Color(double value) {
-    if (value < 0) return AppColors.aqiError;
-    if (value <= 80) return AppColors.aqiGood;
-    if (value <= 200) return AppColors.aqiModerate;
-    if (value <= 1130) return AppColors.aqiUnhealthySensitive;
-    if (value <= 2260) return AppColors.aqiUnhealthy;
-    return AppColors.aqiHazardous;
   }
 
   // ============================================================
@@ -522,98 +538,105 @@ class Helpers {
     final data = room.currentData;
     final aqi = room.currentAQI;
 
-    // 0. SENSOR ERROR
+    // 0. NO DATA
+    if (aqi == null) {
+      recommendations.add('BELUM ADA DATA');
+      recommendations.add(
+          'Perangkat belum mengirimkan data yang valid. Data akan muncul setelah polling berhasil.');
+      recommendations.add(
+          'Jika kondisi ini berlangsung lama, hubungi admin untuk memeriksa perangkat.');
+      return recommendations;
+    }
+
+    // 0b. SENSOR ERROR
     if (aqi < 0) {
       recommendations.add('SENSOR RUANGAN MELAPORKAN ERROR');
       recommendations.add(
           'Nilai AQI yang ditampilkan adalah nilai valid terakhir sebelum sensor bermasalah');
-      recommendations
-          .add('Hubungi admin untuk memeriksa perangkat sensor pada ruangan ini');
+      recommendations.add(
+          'Hubungi admin untuk memeriksa perangkat sensor pada ruangan ini');
       return recommendations;
     }
 
-    // 1. AQI / ISPU — PP 22/2021
+    // 1. AQI
     if (aqi <= 50) {
       recommendations.add(
           'AQI: Aman untuk perkuliahan normal dengan durasi berapa pun. Tidak perlu tindakan khusus.');
     } else if (aqi <= 100) {
       recommendations.add(
-          'AQI: Perkuliahan tatap muka tetap aman. Pastikan ruangan bebas debu berlebih di lantai, meja, dan filter AC. Kelompok sensitif (asma, ibu hamil, lansia) sebaiknya tidak duduk dekat jendela/sumber polusi.');
+          'AQI: Perkuliahan tatap muka tetap aman. Pastikan ruangan bebas debu berlebih. Kelompok sensitif sebaiknya tidak duduk dekat jendela/sumber polusi.');
     } else if (aqi <= 200) {
       recommendations.add(
-          'AQI: Kurangi aktivitas fisik berat di ruangan. Nyalakan air purifier bila tersedia. Mahasiswa dengan riwayat pernapasan disarankan memakai masker. Pertimbangkan memindahkan kelas ke ruangan dengan ventilasi lebih baik.');
+          'AQI: Kurangi aktivitas fisik berat di ruangan. Nyalakan air purifier bila tersedia. Pertimbangkan memindahkan kelas ke ruangan dengan ventilasi lebih baik.');
     } else if (aqi <= 300) {
       recommendations.add(
-          'AQI: Wajib memakai masker di dalam ruangan. Nyalakan air purifier kecepatan maksimum. Batasi durasi tatap muka. Pertimbangkan mengalihkan kelas ke daring/async atau pindah ke ruangan ber-AC terpusat dengan filtrasi HEPA.');
+          'AQI: Wajib memakai masker di dalam ruangan. Nyalakan air purifier kecepatan maksimum. Batasi durasi tatap muka.');
     } else {
       recommendations.add(
-          'AQI: Tidak ada aktivitas akademik tatap muka. Alihkan seluruhnya ke daring. Tim gedung pantau AQI setiap jam. Air purifier kecepatan maksimum 24 jam non-stop sampai AQI turun.');
+          'AQI: Tidak ada aktivitas akademik tatap muka. Alihkan seluruhnya ke daring.');
     }
 
-    // 2. PM2.5 — PP 22/2021 ISPU
+    // 2. PM2.5
     final pm25 = data.pm25;
-    if (pm25 >= 0) {
+    if (pm25 != null && pm25 >= 0) {
       if (pm25 <= 55) {
-        recommendations.add(
-            'PM2.5: Aman untuk perkuliahan. Jaga kebersihan lantai dan meja.');
+        recommendations.add('PM2.5: Aman untuk perkuliahan. Jaga kebersihan lantai dan meja.');
       } else if (pm25 <= 150) {
         recommendations.add(
-            'PM2.5: Nyalakan air purifier bila ada. Hindari aktivitas berdebu (menyapu kering, buka jendela saat lalu lintas padat).');
+            'PM2.5: Nyalakan air purifier bila ada. Hindari aktivitas berdebu.');
       } else if (pm25 <= 250) {
         recommendations.add(
-            'PM2.5: Wajib nyalakan air purifier. Masker disarankan. Tutup jendela. Bersihkan filter AC/purifier.');
+            'PM2.5: Wajib nyalakan air purifier. Masker disarankan. Tutup jendela.');
       } else if (pm25 <= 350) {
         recommendations.add(
-            'PM2.5: Masker wajib (surgical/N95). Air purifier kecepatan maksimum. Pertimbangkan relokasi kelas atau daring.');
+            'PM2.5: Masker wajib (surgical/N95). Air purifier kecepatan maksimum.');
       } else {
         recommendations.add(
-            'PM2.5: Tidak ada aktivitas tatap muka. Evakuasi ruangan bila perlu. Air purifier 24 jam. Investigasi sumber polusi.');
+            'PM2.5: Tidak ada aktivitas tatap muka. Evakuasi ruangan bila perlu.');
       }
     }
 
-    // 3. PM10 — PP 22/2021 ISPU
+    // 3. PM10
     final pm10 = data.pm10;
-    if (pm10 >= 0) {
+    if (pm10 != null && pm10 >= 0) {
       if (pm10 <= 50) {
-        recommendations.add(
-            'PM10: Aman. Jaga kebersihan lantai dan meja.');
+        recommendations.add('PM10: Aman. Jaga kebersihan lantai dan meja.');
       } else if (pm10 <= 150) {
         recommendations.add(
-            'PM10: Bersihkan kelas secara basah (pel basah) sebelum perkuliahan. Hindari menyapu kering. Pastikan filter AC bersih.');
+            'PM10: Bersihkan kelas secara basah (pel basah) sebelum perkuliahan.');
       } else if (pm10 <= 350) {
         recommendations.add(
-            'PM10: Masker disarankan. Nyalakan air purifier. Tutup jendela. Pel basah lebih sering.');
+            'PM10: Masker disarankan. Nyalakan air purifier. Tutup jendela.');
       } else if (pm10 <= 420) {
         recommendations.add(
-            'PM10: Masker wajib. Air purifier kecepatan maksimum. Batasi aktivitas fisik. Pertimbangkan daring.');
+            'PM10: Masker wajib. Air purifier kecepatan maksimum. Batasi aktivitas fisik.');
       } else {
         recommendations.add(
-            'PM10: Tidak ada aktivitas tatap muka. Evakuasi. Investigasi sumber debu (renovasi/jalan raya/gudang).');
+            'PM10: Tidak ada aktivitas tatap muka. Evakuasi. Investigasi sumber debu.');
       }
     }
 
     // 4. CO
-    final co = data.co; 
-    if (co >= 0) {
+    final co = data.co;
+    if (co != null && co >= 0) {
       if (co <= 4000) {
-        recommendations.add(
-            'CO: Aman untuk perkuliahan normal.');
+        recommendations.add('CO: Aman untuk perkuliahan normal.');
       } else if (co <= 8000) {
         recommendations.add(
-            'CO: Pastikan ventilasi mekanis/AC fresh air berjalan. Bila memungkinkan buka pintu/jendela sesaat.');
+            'CO: Pastikan ventilasi mekanis/AC fresh air berjalan.');
       } else if (co <= 15000) {
         recommendations.add(
-            'CO: Buka jendela/pintu untuk ventilasi silang. Nyalakan exhaust fan. Kurangi kapasitas mahasiswa di ruangan.');
+            'CO: Buka jendela/pintu untuk ventilasi silang. Nyalakan exhaust fan.');
       } else if (co <= 30000) {
         recommendations.add(
-            'CO: Ventilasi darurat — buka semua akses udara, exhaust maksimum. Pertimbangkan mengosongkan ruangan sementara.');
+            'CO: Ventilasi darurat — buka semua akses udara, exhaust maksimum.');
       } else {
         recommendations.add(
-            'CO: Evakuasi ruangan. Investigasi segera (sistem HVAC, kebocoran, ruangan tertutup terlalu lama).');
+            'CO: Evakuasi ruangan. Investigasi segera (sistem HVAC, kebocoran).');
       }
     }
 
-    // 4b. SO2
+    // 5. SO2
     final so2 = data.so2;
     if (so2 != null && so2 >= 0) {
       if (so2 <= 80) {
@@ -633,14 +656,14 @@ class Helpers {
       }
     }
 
-    // 4c. O3
+    // 6. O3
     final o3 = data.o3;
     if (o3 != null && o3 >= 0) {
       if (o3 <= 120) {
         recommendations.add('O3: Aman untuk perkuliahan normal.');
       } else if (o3 <= 235) {
         recommendations.add(
-            'O3: Kelompok sensitif sebaiknya mengurangi aktivitas fisik berat. Pastikan ventilasi baik.');
+            'O3: Kelompok sensitif sebaiknya mengurangi aktivitas fisik berat.');
       } else if (o3 <= 400) {
         recommendations.add(
             'O3: Kurangi aktivitas fisik berat. Masker disarankan. Nyalakan air purifier bila ada.');
@@ -653,7 +676,7 @@ class Helpers {
       }
     }
 
-    // 4d. NO2
+    // 7. NO2
     final no2 = data.no2;
     if (no2 != null && no2 >= 0) {
       if (no2 <= 80) {
@@ -673,39 +696,37 @@ class Helpers {
       }
     }
 
-    // 5. Suhu — SNI 03-6572-2001 & Permenaker 5/2018
+    // 8. Suhu
     final temp = data.temperature;
-    if (temp >= 0) {
+    if (temp != null && temp >= 0) {
       if (temp < 24) {
         recommendations.add(
-            'Suhu: Nyalakan pemanas ruangan bila tersedia. Pakai pakaian hangat. Hindari duduk dekat AC/ventilasi dingin.');
+            'Suhu: Nyalakan pemanas ruangan bila tersedia. Pakai pakaian hangat.');
       } else if (temp <= 27) {
-        recommendations.add(
-            'Suhu: Kondisi optimal untuk belajar. Tidak perlu tindakan.');
+        recommendations.add('Suhu: Kondisi optimal untuk belajar. Tidak perlu tindakan.');
       } else if (temp <= 30) {
         recommendations.add(
-            'Suhu: Nyalakan AC atau kipas. Pastikan sirkulasi udara baik. Sediakan air minum.');
+            'Suhu: Nyalakan AC atau kipas. Pastikan sirkulasi udara baik.');
       } else {
         recommendations.add(
-            'Suhu: AC/kipas wajib. Buka ventilasi bila AC tidak tersedia. Sediakan air minum. Pertimbangkan relokasi ke ruangan ber-AC.');
+            'Suhu: AC/kipas wajib. Buka ventilasi bila AC tidak tersedia. Sediakan air minum.');
       }
     }
 
-    // 6. Kelembaban — SNI 03-6572-2001 & Permenaker 5/2018
+    // 9. Kelembaban
     final humidity = data.humidity;
-    if (humidity >= 0) {
+    if (humidity != null && humidity >= 0) {
       if (humidity < 40) {
         recommendations.add(
-            'Kelembaban: Gunakan humidifier. Sediakan air minum. Hindari AC terlalu dingin yang mengeringkan udara.');
+            'Kelembaban: Gunakan humidifier. Sediakan air minum.');
       } else if (humidity <= 60) {
-        recommendations.add(
-            'Kelembaban: Kondisi optimal. Tidak perlu tindakan.');
+        recommendations.add('Kelembaban: Kondisi optimal. Tidak perlu tindakan.');
       } else if (humidity <= 70) {
         recommendations.add(
-            'Kelembaban: Nyalakan dehumidifier atau AC mode dry. Pastikan ventilasi baik. Waspada jamur pada dinding/AC.');
+            'Kelembaban: Nyalakan dehumidifier atau AC mode dry. Pastikan ventilasi baik.');
       } else {
         recommendations.add(
-            'Kelembaban: Dehumidifier wajib. Tingkatkan ventilasi. Periksa kebocoran/kelembaban dinding. Risiko jamur & tungau meningkat.');
+            'Kelembaban: Dehumidifier wajib. Tingkatkan ventilasi. Risiko jamur & tungau meningkat.');
       }
     }
 

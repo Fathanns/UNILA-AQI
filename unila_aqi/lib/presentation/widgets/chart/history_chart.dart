@@ -22,7 +22,6 @@ class HistoryChart extends StatefulWidget {
 }
 
 class _HistoryChartState extends State<HistoryChart> {
-  // State variables
   List<SensorData> _historyData = [];
   DateTime _selectedDate = DateTime.now();
   String _selectedParameter = 'aqi';
@@ -30,22 +29,12 @@ class _HistoryChartState extends State<HistoryChart> {
   String _error = '';
   final ScrollController _scrollController = ScrollController();
 
-  // FOV config — 8 titik per viewport
   static const int _pointsInView = 8;
   static const double _containerPadding = 16.0;
 
-  // Parameter options
-  // Parameter opsional (so2, o3, no2) hanya dimasukkan bila ada data.
-  final List<String> _baseParameters = [
-    'aqi',
-    'pm25',
-    'pm10',
-    'co',
-    'temperature',
-    'humidity',
+  static const List<String> _allParameters = [
+    'aqi', 'pm25', 'pm10', 'co', 'so2', 'o3', 'no2', 'temperature', 'humidity',
   ];
-
-  final List<String> _optionalParameters = ['so2', 'o3', 'no2'];
 
   final Map<String, String> _parameterLabels = {
     'aqi': 'AQI',
@@ -59,7 +48,6 @@ class _HistoryChartState extends State<HistoryChart> {
     'humidity': 'Kelembaban',
   };
 
-  // Color for each parameter
   final Map<String, Color> _parameterColors = {
     'aqi': Colors.blue,
     'pm25': Colors.red,
@@ -95,43 +83,26 @@ class _HistoryChartState extends State<HistoryChart> {
     super.dispose();
   }
 
-  // ============================================================
-  // HELPER: ambil nilai parameter dari satu titik data.
-  // Mengembalikan null bila parameter tidak tersedia (IoT parsial).
-  // ============================================================
   double? _valueFor(SensorData data, String parameter) {
     switch (parameter) {
-      case 'aqi':
-        return data.aqi.toDouble();
-      case 'pm25':
-        return data.pm25;
-      case 'pm10':
-        return data.pm10;
-      case 'co':
-        return data.co;
-      case 'so2':
-        return data.so2;
-      case 'o3':
-        return data.o3;
-      case 'no2':
-        return data.no2;
-      case 'temperature':
-        return data.temperature;
-      case 'humidity':
-        return data.humidity;
-      default:
-        return null;
+      case 'aqi':         return data.aqi?.toDouble();
+      case 'pm25':        return data.pm25;
+      case 'pm10':        return data.pm10;
+      case 'co':          return data.co;
+      case 'so2':         return data.so2;
+      case 'o3':          return data.o3;
+      case 'no2':         return data.no2;
+      case 'temperature': return data.temperature;
+      case 'humidity':    return data.humidity;
+      default:            return null;
     }
   }
 
-  // ============================================================
-  // Parameter yang boleh dipilih: base + optional (hanya yang ada data)
-  // ============================================================
+  /// Hanya parameter yang punya minimal satu nilai non-null di history.
   List<String> get _availableParameters {
-    final optional = _optionalParameters.where((p) {
+    return _allParameters.where((p) {
       return _historyData.any((d) => _valueFor(d, p) != null);
     }).toList();
-    return [..._baseParameters, ...optional];
   }
 
   Future<void> _loadHistoryData() async {
@@ -140,7 +111,6 @@ class _HistoryChartState extends State<HistoryChart> {
     final hadData = _historyData.isNotEmpty;
 
     setState(() {
-      // Spinner hanya saat belum ada data sama sekali
       _isLoading = !hadData;
       _error = '';
     });
@@ -160,18 +130,14 @@ class _HistoryChartState extends State<HistoryChart> {
       if (response is Map && response['success'] == true) {
         final List<dynamic> data = response['data'] ?? [];
         final parsed = data
-            .map((json) =>
-                SensorData.fromJson(Map<String, dynamic>.from(json)))
+            .map((json) => SensorData.fromJson(Map<String, dynamic>.from(json)))
             .toList();
 
         setState(() {
           _historyData = parsed;
-
-          // Pastikan parameter terpilih masih tersedia.
-          // Jika tidak (mis. sebelumnya user pilih SO2, lalu pindah
-          // tanggal yang datanya tidak punya SO2), fallback ke AQI.
           if (!_availableParameters.contains(_selectedParameter)) {
-            _selectedParameter = 'aqi';
+            _selectedParameter =
+                _availableParameters.isNotEmpty ? _availableParameters.first : 'aqi';
           }
         });
       } else {
@@ -188,9 +154,6 @@ class _HistoryChartState extends State<HistoryChart> {
     if (!mounted) return;
 
     if (failed) {
-      // ❗ TIDAK generate sample baru.
-      // Data lama (_historyData) tetap dipakai.
-      // UI error penuh hanya muncul kalau memang belum pernah ada data.
       if (!hadData) {
         setState(() {
           _error = isNetworkFailure
@@ -202,21 +165,13 @@ class _HistoryChartState extends State<HistoryChart> {
       if (isNetworkFailure) {
         Helpers.showServerError(context);
       } else {
-        Helpers.showSnackBar(
-          context,
-          'Gagal memuat data grafik',
-          isError: true,
-        );
+        Helpers.showSnackBar(context, 'Gagal memuat data grafik', isError: true);
       }
     }
 
-    if (mounted) {
-      setState(() => _isLoading = false);
-    }
+    if (mounted) setState(() => _isLoading = false);
   }
 
-  // FIXED: bungkus dengan try-catch. showDatePicker dapat melempar
-  // (mis. context tidak valid saat widget sudah unmounted).
   Future<void> _selectDate(BuildContext context) async {
     try {
       final DateTime? picked = await showDatePicker(
@@ -225,75 +180,49 @@ class _HistoryChartState extends State<HistoryChart> {
         firstDate: DateTime.now().subtract(const Duration(days: 30)),
         lastDate: DateTime.now(),
       );
-
       if (picked != null && picked != _selectedDate) {
-        setState(() {
-          _selectedDate = picked;
-        });
+        setState(() => _selectedDate = picked);
         await _loadHistoryData();
       }
     } catch (e) {
       debugPrint('❌ Date picker error: $e');
       if (mounted) {
-        Helpers.showSnackBar(
-          context,
-          'Gagal membuka pemilih tanggal',
-          isError: true,
-        );
+        Helpers.showSnackBar(context, 'Gagal membuka pemilih tanggal',
+            isError: true);
       }
     }
   }
 
   List<FlSpot> _getDataPoints() {
     final spots = <FlSpot>[];
-
     for (int i = 0; i < _historyData.length; i++) {
-      final data = _historyData[i];
-      final y = _valueFor(data, _selectedParameter);
+      final y = _valueFor(_historyData[i], _selectedParameter);
       if (y == null) continue;
       spots.add(FlSpot(i.toDouble(), y));
     }
-
     return spots;
   }
 
-  // FIXED: interval diubah dari 2 → 1 agar getTitlesWidget dipanggil
-  // untuk SETIAP titik. Penyaringan label dilakukan di dalam widget
-  // berdasarkan minute == 0 (jam genap: 14:00, 15:00, 16:00).
-  //
-  // Dengan cara ini, label tetap muncul dengan benar meskipun titik
-  // pertama bukan berada di menit :00 (mis. chart dibuka saat 14:30,
-  // maka titik pertama adalah 14:30 → label pertama di 15:00).
   SideTitles _getBottomTitles() {
     return SideTitles(
       showTitles: true,
       reservedSize: 30,
       interval: 1,
       getTitlesWidget: (value, meta) {
-        // Hanya untuk nilai x yang berupa bilangan bulat (indeks valid)
         final index = value.toInt();
         if (value != index.toDouble()) return const SizedBox.shrink();
         if (index < 0 || index >= _historyData.length) {
           return const SizedBox.shrink();
         }
-
         final data = _historyData[index];
-        final hour = data.timestamp.hour;
-        final minute = data.timestamp.minute;
+        if (data.timestamp.minute != 0) return const SizedBox.shrink();
 
-        // FIXED: hanya tampilkan label di jam genap (minute == 0).
-        // Titik di menit :30 (14:30, 15:30, ...) tidak diberi label.
-        if (minute != 0) return const SizedBox.shrink();
-
-        final hourLabel = hour.toString().padLeft(2, '0');
+        final hourLabel = data.timestamp.hour.toString().padLeft(2, '0');
         return Padding(
           padding: const EdgeInsets.only(top: 8.0),
           child: Text(
             '$hourLabel:00',
-            style: const TextStyle(
-              fontSize: 10,
-              color: Colors.grey,
-            ),
+            style: const TextStyle(fontSize: 10, color: Colors.grey),
           ),
         );
       },
@@ -304,21 +233,9 @@ class _HistoryChartState extends State<HistoryChart> {
     final spots = _getDataPoints();
     final color = _parameterColors[_selectedParameter]!;
 
-    // FIXED: FOV 8 titik per viewport.
-    //   pointSpacing = (lebar layar − padding container) / 8
-    //   chartWidth   = jumlah titik × pointSpacing
-    //   minimal      = lebar viewport (agar chart tidak lebih sempit dari layar)
-    //
-    // Contoh pada layar 400px:
-    //   availableViewport = 400 − 32 = 368
-    //   pointSpacing      = 368 / 8 = 46px
-    //   48 titik (24 jam) → chartWidth = 48 × 46 = 2208px
-    //   viewport 368px    → menampilkan 368/46 = 8 titik
     final screenWidth = MediaQuery.of(context).size.width;
-    final availableViewport =
-        screenWidth - (_containerPadding * 2);
+    final availableViewport = screenWidth - (_containerPadding * 2);
     final pointSpacing = availableViewport / _pointsInView;
-
     final calculatedWidth = _historyData.length * pointSpacing;
     final actualChartWidth = calculatedWidth > availableViewport
         ? calculatedWidth
@@ -345,10 +262,8 @@ class _HistoryChartState extends State<HistoryChart> {
             children: [
               Text(
                 'Grafik ${_parameterLabels[_selectedParameter]}',
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                ),
+                style:
+                    const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
               ),
               Container(
                 padding:
@@ -362,10 +277,8 @@ class _HistoryChartState extends State<HistoryChart> {
                     Container(
                       width: 12,
                       height: 12,
-                      decoration: BoxDecoration(
-                        color: color,
-                        shape: BoxShape.circle,
-                      ),
+                      decoration:
+                          BoxDecoration(color: color, shape: BoxShape.circle),
                     ),
                     const SizedBox(width: 4),
                     Text(
@@ -395,12 +308,10 @@ class _HistoryChartState extends State<HistoryChart> {
                       drawVerticalLine: true,
                       drawHorizontalLine: false,
                       horizontalInterval: 20,
-                      getDrawingHorizontalLine: (value) {
-                        return const FlLine(
-                          color: Colors.transparent,
-                          strokeWidth: 0,
-                        );
-                      },
+                      getDrawingHorizontalLine: (value) => const FlLine(
+                        color: Colors.transparent,
+                        strokeWidth: 0,
+                      ),
                       getDrawingVerticalLine: (value) {
                         if (value % 2 == 0) {
                           return FlLine(
@@ -409,9 +320,7 @@ class _HistoryChartState extends State<HistoryChart> {
                           );
                         }
                         return const FlLine(
-                          color: Colors.transparent,
-                          strokeWidth: 0,
-                        );
+                            color: Colors.transparent, strokeWidth: 0);
                       },
                     ),
                     titlesData: FlTitlesData(
@@ -445,8 +354,7 @@ class _HistoryChartState extends State<HistoryChart> {
                         isStrokeCapRound: true,
                         dotData: FlDotData(
                           show: true,
-                          getDotPainter:
-                              (spot, percent, barData, index) {
+                          getDotPainter: (spot, percent, barData, index) {
                             return FlDotCirclePainter(
                               radius: 3.5,
                               color: color,
@@ -480,41 +388,34 @@ class _HistoryChartState extends State<HistoryChart> {
                         fitInsideVertically: true,
                         maxContentWidth:
                             MediaQuery.of(context).size.width * 0.7,
-                        getTooltipItems:
-                            (List<LineBarSpot> touchedSpots) {
-                          return touchedSpots
-                              .map((spot) {
+                        getTooltipItems: (List<LineBarSpot> touchedSpots) {
+                          return touchedSpots.map((spot) {
                             final index = spot.spotIndex;
-                            if (index < 0 ||
-                                index >= _historyData.length) {
+                            if (index < 0 || index >= _historyData.length) {
                               return null;
                             }
-
                             final data = _historyData[index];
-                            final hour = data.timestamp.hour;
-                            final minute = data.timestamp.minute;
                             final time =
-                                '${hour.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')}';
+                                '${data.timestamp.hour.toString().padLeft(2, '0')}:${data.timestamp.minute.toString().padLeft(2, '0')}';
 
-                            final values = {
-                              'AQI': '${data.aqi}',
-                              'PM2.5':
-                                  '${data.pm25.toStringAsFixed(1)} μg/m³',
-                              'PM10':
-                                  '${data.pm10.toStringAsFixed(1)} μg/m³',
-                              'CO': '${data.co.round()} μg/m³',
+                            final values = <String, String>{
+                              if (data.aqi != null) 'AQI': '${data.aqi}',
+                              if (data.pm25 != null)
+                                'PM2.5': '${data.pm25!.toStringAsFixed(1)} μg/m³',
+                              if (data.pm10 != null)
+                                'PM10': '${data.pm10!.toStringAsFixed(1)} μg/m³',
+                              if (data.co != null)
+                                'CO': '${data.co!.round()} μg/m³',
                               if (data.so2 != null)
-                                'SO2':
-                                    '${data.so2!.toStringAsFixed(1)} μg/m³',
+                                'SO2': '${data.so2!.toStringAsFixed(1)} μg/m³',
                               if (data.o3 != null)
-                                'O3':
-                                    '${data.o3!.toStringAsFixed(1)} μg/m³',
+                                'O3': '${data.o3!.toStringAsFixed(1)} μg/m³',
                               if (data.no2 != null)
-                                'NO2':
-                                    '${data.no2!.toStringAsFixed(1)} μg/m³',
-                              'Suhu':
-                                  '${data.temperature.toStringAsFixed(1)}°C',
-                              'Kelembaban': '${data.humidity.round()}%',
+                                'NO2': '${data.no2!.toStringAsFixed(1)} μg/m³',
+                              if (data.temperature != null)
+                                'Suhu': '${data.temperature!.toStringAsFixed(1)}°C',
+                              if (data.humidity != null)
+                                'Kelembaban': '${data.humidity!.round()}%',
                             };
 
                             return LineTooltipItem(
@@ -526,7 +427,7 @@ class _HistoryChartState extends State<HistoryChart> {
                               ),
                             );
                           })
-                              .where((element) => element != null)
+                              .where((e) => e != null)
                               .cast<LineTooltipItem>()
                               .toList();
                         },
@@ -543,42 +444,33 @@ class _HistoryChartState extends State<HistoryChart> {
     );
   }
 
-  // FIXED: tetap pertahankan padding 10% di atas & di bawah agar
-  // spike (lonjakan mendadak) tetap MUAT di dalam FOV chart.
-  // Contoh: data normal AQI 40-60, spike 350 → maxY = 350 × 1.1 = 385,
-  // sehingga spike terlihat penuh tanpa terpotong.
-  //
-  // Untuk parameter opsional (SO2/O3/NO2), nilai null dilewati.
   double _getMinY() {
     if (_historyData.isEmpty) return 0.0;
-
     double minValue = double.infinity;
     for (var data in _historyData) {
       final value = _valueFor(data, _selectedParameter);
       if (value == null) continue;
       if (value < minValue) minValue = value;
     }
-
     if (minValue == double.infinity) return 0.0;
     return minValue - (minValue * 0.1);
   }
 
   double _getMaxY() {
     if (_historyData.isEmpty) return 100.0;
-
     double maxValue = double.negativeInfinity;
     for (var data in _historyData) {
       final value = _valueFor(data, _selectedParameter);
       if (value == null) continue;
       if (value > maxValue) maxValue = value;
     }
-
     if (maxValue == double.negativeInfinity) return 100.0;
     return maxValue + (maxValue * 0.1);
   }
 
   Widget _buildParameterSelector() {
     final available = _availableParameters;
+    if (available.isEmpty) return const SizedBox.shrink();
 
     return Container(
       height: 50,
@@ -592,11 +484,7 @@ class _HistoryChartState extends State<HistoryChart> {
           final color = _parameterColors[parameter]!;
 
           return GestureDetector(
-            onTap: () {
-              setState(() {
-                _selectedParameter = parameter;
-              });
-            },
+            onTap: () => setState(() => _selectedParameter = parameter),
             child: Container(
               margin: const EdgeInsets.only(right: 8),
               padding:
@@ -662,9 +550,7 @@ class _HistoryChartState extends State<HistoryChart> {
               Text(
                 DateFormat('EEEE, dd MMMM yyyy').format(_selectedDate),
                 style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                ),
+                    fontSize: 16, fontWeight: FontWeight.w600),
               ),
             ],
           ),
@@ -707,11 +593,7 @@ class _HistoryChartState extends State<HistoryChart> {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Icon(
-                  Icons.error_outline,
-                  size: 48,
-                  color: Colors.red,
-                ),
+                const Icon(Icons.error_outline, size: 48, color: Colors.red),
                 const SizedBox(height: 16),
                 Text(
                   _error,
@@ -726,18 +608,14 @@ class _HistoryChartState extends State<HistoryChart> {
               ],
             ),
           )
-        else if (_historyData.isEmpty)
+        else if (_historyData.isEmpty || _availableParameters.isEmpty)
           Container(
             height: 350,
             alignment: Alignment.center,
             child: const Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(
-                  Icons.insert_chart_outlined,
-                  size: 48,
-                  color: Colors.grey,
-                ),
+                Icon(Icons.insert_chart_outlined, size: 48, color: Colors.grey),
                 SizedBox(height: 16),
                 Text(
                   'Tidak ada data history untuk tanggal ini',

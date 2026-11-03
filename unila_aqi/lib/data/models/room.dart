@@ -5,7 +5,7 @@ class Room {
   final String buildingName;
   final String dataSource;
   final String? iotDeviceId;
-  final int currentAQI;
+  final int? currentAQI;   // ✅ nullable — null = no_data
   final RoomData currentData;
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -17,7 +17,7 @@ class Room {
     required this.buildingName,
     required this.dataSource,
     this.iotDeviceId,
-    required this.currentAQI,
+    this.currentAQI,
     required this.currentData,
     required this.createdAt,
     required this.updatedAt,
@@ -34,7 +34,9 @@ class Room {
           (json['building'] is Map ? json['building']['name'] : 'Unknown'),
       dataSource: json['dataSource'] ?? 'simulation',
       iotDeviceId: json['iotDeviceId'],
-      currentAQI: json['currentAQI'] ?? 0,
+      currentAQI: json['currentAQI'] == null
+          ? null
+          : (json['currentAQI'] as num).toInt(),
       currentData: RoomData.fromJson(json['currentData'] ?? {}),
       createdAt: DateTime.parse(json['createdAt']),
       updatedAt: DateTime.parse(json['updatedAt']),
@@ -59,47 +61,57 @@ class Room {
   String get displayName => '$name - $buildingName';
   bool get isSimulation => dataSource == 'simulation';
   bool get isIot => dataSource == 'iot';
+  bool get hasAnyData =>
+      currentData.hasPM25 ||
+      currentData.hasPM10 ||
+      currentData.hasCO ||
+      currentData.hasSO2 ||
+      currentData.hasO3 ||
+      currentData.hasNO2 ||
+      currentData.hasTemperature ||
+      currentData.hasHumidity;
 }
 
 class RoomData {
-  final double pm25;
-  final double pm10;
-  final double co;
+  final double? pm25;
+  final double? pm10;
+  final double? co;
   final double? so2;
   final double? o3;
   final double? no2;
-  final double temperature;
-  final double humidity;
+  final double? temperature;
+  final double? humidity;
   final DateTime updatedAt;
 
   RoomData({
-    required this.pm25,
-    required this.pm10,
-    required this.co,
+    this.pm25,
+    this.pm10,
+    this.co,
     this.so2,
     this.o3,
     this.no2,
-    required this.temperature,
-    required this.humidity,
+    this.temperature,
+    this.humidity,
     required this.updatedAt,
   });
 
-  static double? _nullableDouble(dynamic v) {
+  static double? _n(dynamic v) {
     if (v == null) return null;
     if (v is num) return v.toDouble();
-    return double.tryParse(v.toString());
+    final parsed = double.tryParse(v.toString());
+    return parsed;
   }
 
   factory RoomData.fromJson(Map<String, dynamic> json) {
     return RoomData(
-      pm25: (json['pm25'] ?? 0).toDouble(),
-      pm10: (json['pm10'] ?? 0).toDouble(),
-      co: (json['co'] ?? 0).toDouble(),
-      so2: _nullableDouble(json['so2']),
-      o3: _nullableDouble(json['o3']),
-      no2: _nullableDouble(json['no2']),
-      temperature: (json['temperature'] ?? 0).toDouble(),
-      humidity: (json['humidity'] ?? 0).toDouble(),
+      pm25: _n(json['pm25']),
+      pm10: _n(json['pm10']),
+      co: _n(json['co']),
+      so2: _n(json['so2']),
+      o3: _n(json['o3']),
+      no2: _n(json['no2']),
+      temperature: _n(json['temperature']),
+      humidity: _n(json['humidity']),
       updatedAt: json['updatedAt'] != null
           ? DateTime.parse(json['updatedAt'])
           : DateTime.now(),
@@ -120,7 +132,12 @@ class RoomData {
     };
   }
 
-  bool get hasSO2 => so2 != null;
-  bool get hasO3 => o3 != null;
-  bool get hasNO2 => no2 != null;
+  bool get hasPM25        => pm25 != null;
+  bool get hasPM10        => pm10 != null;
+  bool get hasCO          => co != null;
+  bool get hasSO2         => so2 != null;
+  bool get hasO3          => o3 != null;
+  bool get hasNO2         => no2 != null;
+  bool get hasTemperature => temperature != null;
+  bool get hasHumidity    => humidity != null;
 }

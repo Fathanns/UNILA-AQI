@@ -7,6 +7,7 @@ import 'package:unila_aqi/data/models/room.dart';
 import 'package:unila_aqi/data/repositories/room_repository.dart';
 import 'package:unila_aqi/presentation/widgets/chart/history_chart.dart';
 import '../../widgets/common/server_status_indicator.dart';
+
 enum _RecSeverity { normal, warning, danger }
 
 class RoomDetailScreen extends StatefulWidget {
@@ -28,7 +29,7 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
   String? _lastNotificationMessage;
   DateTime? _lastNotificationTime;
 
-  // FIXED: auto-refresh 1 menit (sebelumnya live socket tiap 10 detik)
+  // Auto-refresh 1 menit
   static const Duration _autoRefreshInterval = Duration(minutes: 1);
 
   bool _isRefreshing = false;
@@ -66,7 +67,7 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
     return null;
   }
 
-  // FIXED: auto-refresh 60 detik — fetch ulang dari API.
+  // Auto-refresh 60 detik — fetch ulang dari API.
   void _startAutoRefreshTimer() {
     _autoRefreshTimer?.cancel();
     _autoRefreshTimer = Timer.periodic(_autoRefreshInterval, (_) async {
@@ -202,9 +203,6 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
     _socketService.joinRoom(widget.room.id);
   }
 
-  // FIXED: hanya listen 'notification' dari socket.
-  // 'room-update' (data tiap 10 detik) TIDAK di-listen lagi —
-  // data di-refresh via _autoRefreshTimer (60 detik) atau tombol refresh.
   void _setupRealtimeListener() {
     _socketService.on('notification', (data) {
       if (!_isMounted) return;
@@ -221,7 +219,7 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
   void _showNotification(String message, String type) {
     if (!_isMounted) return;
 
-    // 1. Throttling: Cegah pesan yang sama muncul berulang dalam 10 detik
+    // Throttling: cegah pesan yang sama muncul berulang dalam 10 detik
     final now = DateTime.now();
     if (_lastNotificationMessage == message &&
         _lastNotificationTime != null &&
@@ -253,10 +251,7 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
     }
 
     final messenger = ScaffoldMessenger.of(context);
-    
-    // 2. Hapus snackbar yang sedang tampil agar tidak menumpuk (queue)
-    messenger.hideCurrentSnackBar(); 
-    
+    messenger.hideCurrentSnackBar();
     messenger.showSnackBar(
       SnackBar(
         content: Row(
@@ -317,12 +312,13 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
   }
 
   // ------------------------------------------------------------
-  // UI BUILDING METHODS (tidak berubah)
+  // UI BUILDING METHODS
   // ------------------------------------------------------------
 
   Widget _buildAQICard() {
-    final aqiColor = Helpers.getAQIColor(_currentRoomData.currentAQI);
-    final aqiLabel = Helpers.getAQILabel(_currentRoomData.currentAQI);
+    final aqi = _currentRoomData.currentAQI;
+    final aqiColor = Helpers.getAQIColor(aqi);
+    final aqiLabel = Helpers.getAQILabel(aqi);
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -402,7 +398,7 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
           Row(
             children: [
               Text(
-                _currentRoomData.currentAQI.toString(),
+                aqi?.toString() ?? '—',
                 style: const TextStyle(
                   fontSize: 32,
                   fontWeight: FontWeight.w800,
@@ -497,7 +493,98 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
     );
   }
 
-      Widget _buildHealthRecommendations() {
+  /// Baris parameter dinamis — hanya parameter yang tersedia (non-null)
+  /// yang ditampilkan. Cell disusun 3-kolom, dengan filler untuk menjaga
+  /// alignment tetap konsisten meski jumlahnya bukan kelipatan 3.
+  Widget _buildParameterRows() {
+    final data = _currentRoomData.currentData;
+    final cells = <Widget>[];
+
+    if (data.hasPM25) {
+      cells.add(_buildParameterCard(
+        'PM2.5',
+        '${data.pm25!.toStringAsFixed(1)}\nμg/m³',
+        Helpers.getPM25Status(data.pm25),
+        Helpers.getPM25Color(data.pm25),
+      ));
+    }
+    if (data.hasPM10) {
+      cells.add(_buildParameterCard(
+        'PM10',
+        '${data.pm10!.toStringAsFixed(1)}\nμg/m³',
+        Helpers.getPM10Status(data.pm10),
+        Helpers.getPM10Color(data.pm10),
+      ));
+    }
+    if (data.hasCO) {
+      cells.add(_buildParameterCard(
+        'CO',
+        '${data.co!.round()}\nµg/m³',
+        Helpers.getCOStatus(data.co),
+        Helpers.getCOColor(data.co),
+      ));
+    }
+    if (data.hasSO2) {
+      cells.add(_buildParameterCard(
+        'SO2',
+        '${data.so2!.toStringAsFixed(1)}\nµg/m³',
+        Helpers.getSO2Status(data.so2),
+        Helpers.getSO2Color(data.so2),
+      ));
+    }
+    if (data.hasO3) {
+      cells.add(_buildParameterCard(
+        'O3',
+        '${data.o3!.toStringAsFixed(1)}\nµg/m³',
+        Helpers.getO3Status(data.o3),
+        Helpers.getO3Color(data.o3),
+      ));
+    }
+    if (data.hasNO2) {
+      cells.add(_buildParameterCard(
+        'NO2',
+        '${data.no2!.toStringAsFixed(1)}\nµg/m³',
+        Helpers.getNO2Status(data.no2),
+        Helpers.getNO2Color(data.no2),
+      ));
+    }
+    if (data.hasTemperature) {
+      cells.add(_buildParameterCard(
+        'SUHU',
+        '${data.temperature!.toStringAsFixed(1)}°C',
+        Helpers.getTemperatureStatus(data.temperature),
+        Helpers.getTemperatureColor(data.temperature),
+      ));
+    }
+    if (data.hasHumidity) {
+      cells.add(_buildParameterCard(
+        'KELEMBABAN',
+        '${data.humidity!.round()}%',
+        Helpers.getHumidityStatus(data.humidity),
+        Helpers.getHumidityColor(data.humidity),
+      ));
+    }
+
+    if (cells.isEmpty) return const SizedBox.shrink();
+
+    final rows = <Widget>[];
+    for (int i = 0; i < cells.length; i += 3) {
+      final rowChildren = <Widget>[];
+      for (int j = 0; j < 3; j++) {
+        if (j > 0) rowChildren.add(const SizedBox(width: 12));
+        if (i + j < cells.length) {
+          rowChildren.add(Expanded(child: cells[i + j]));
+        } else {
+          rowChildren.add(const Expanded(child: SizedBox()));
+        }
+      }
+      rows.add(Row(children: rowChildren));
+      if (i + 3 < cells.length) rows.add(const SizedBox(height: 12));
+    }
+    return Column(children: rows);
+  }
+
+  Widget _buildHealthRecommendations() {
     final recommendations =
         Helpers.getDetailedRecommendations(_currentRoomData);
 
@@ -544,7 +631,7 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
     );
   }
 
-   Widget _buildParameterStatus() {
+  Widget _buildParameterStatus() {
     final data = _currentRoomData.currentData;
     final aqi = _currentRoomData.currentAQI;
 
@@ -552,31 +639,32 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
       spacing: 10,
       runSpacing: 10,
       children: [
-        _buildStatusChip('AQI: $aqi', Helpers.getAQIColor(aqi)),
-        _buildStatusChip('PM2.5: ${data.pm25.toStringAsFixed(1)}',
-            Helpers.getPM25Color(data.pm25)),
-        _buildStatusChip('PM10: ${data.pm10.toStringAsFixed(1)}',
-            Helpers.getPM10Color(data.pm10)),
         _buildStatusChip(
-            'CO: ${data.co.round()}', Helpers.getCOColor(data.co)),
-            if (data.so2 != null)
+            'AQI: ${aqi?.toString() ?? '—'}', Helpers.getAQIColor(aqi)),
+        if (data.hasPM25)
+          _buildStatusChip('PM2.5: ${data.pm25!.toStringAsFixed(1)}',
+              Helpers.getPM25Color(data.pm25)),
+        if (data.hasPM10)
+          _buildStatusChip('PM10: ${data.pm10!.toStringAsFixed(1)}',
+              Helpers.getPM10Color(data.pm10)),
+        if (data.hasCO)
           _buildStatusChip(
-              'SO2: ${data.so2!.toStringAsFixed(1)}',
-              Helpers.getSO2Color(data.so2!)),
-        if (data.o3 != null)
-          _buildStatusChip(
-              'O3: ${data.o3!.toStringAsFixed(1)}',
-              Helpers.getO3Color(data.o3!)),
-        if (data.no2 != null)
-          _buildStatusChip(
-              'NO2: ${data.no2!.toStringAsFixed(1)}',
-              Helpers.getNO2Color(data.no2!)),
-        _buildStatusChip(
-            'Suhu: ${data.temperature.toStringAsFixed(1)}°C',
-            Helpers.getTemperatureColor(data.temperature)),
-        _buildStatusChip(
-            'Lembab: ${data.humidity.round()}%',
-            Helpers.getHumidityColor(data.humidity)),
+              'CO: ${data.co!.round()}', Helpers.getCOColor(data.co)),
+        if (data.hasSO2)
+          _buildStatusChip('SO2: ${data.so2!.toStringAsFixed(1)}',
+              Helpers.getSO2Color(data.so2)),
+        if (data.hasO3)
+          _buildStatusChip('O3: ${data.o3!.toStringAsFixed(1)}',
+              Helpers.getO3Color(data.o3)),
+        if (data.hasNO2)
+          _buildStatusChip('NO2: ${data.no2!.toStringAsFixed(1)}',
+              Helpers.getNO2Color(data.no2)),
+        if (data.hasTemperature)
+          _buildStatusChip('Suhu: ${data.temperature!.toStringAsFixed(1)}°C',
+              Helpers.getTemperatureColor(data.temperature)),
+        if (data.hasHumidity)
+          _buildStatusChip('Lembab: ${data.humidity!.round()}%',
+              Helpers.getHumidityColor(data.humidity)),
       ],
     );
   }
@@ -599,92 +687,110 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
     );
   }
 
-    Widget _buildRecommendationItem(String text) {
+  Widget _buildRecommendationItem(String text) {
+    _RecSeverity _recommendationSeverity(String text) {
+      final data = _currentRoomData.currentData;
+      final aqi = _currentRoomData.currentAQI;
 
-_RecSeverity _recommendationSeverity(String text) {
-    final data = _currentRoomData.currentData;
-    final aqi = _currentRoomData.currentAQI;
+      // --- NO DATA ---
+      if (text.startsWith('BELUM ADA DATA') ||
+          text.startsWith('Perangkat belum mengirimkan') ||
+          text.startsWith('Jika kondisi ini berlangsung lama')) {
+        return _RecSeverity.warning;
+      }
 
-    // --- Sensor error: semua baris error dianggap danger ---
-    if (text.startsWith('SENSOR RUANGAN MELAPORKAN ERROR') ||
-        text.startsWith('Nilai AQI yang ditampilkan') ||
-        text.startsWith('Hubungi admin')) {
-      return _RecSeverity.danger;
+      // --- SENSOR ERROR ---
+      if (text.startsWith('SENSOR RUANGAN MELAPORKAN ERROR') ||
+          text.startsWith('Nilai AQI yang ditampilkan') ||
+          text.startsWith('Hubungi admin')) {
+        return _RecSeverity.danger;
+      }
+
+      // --- AQI ---
+      if (text.startsWith('AQI:')) {
+        if (aqi == null) return _RecSeverity.warning;
+        if (aqi < 0) return _RecSeverity.danger;
+        if (aqi <= 50) return _RecSeverity.normal;
+        if (aqi <= 100) return _RecSeverity.warning;
+        return _RecSeverity.danger;
+      }
+
+      // --- PM2.5 ---
+      if (text.startsWith('PM2.5:')) {
+        final v = data.pm25;
+        if (v == null || v < 0) return _RecSeverity.normal;
+        if (v <= 55) return _RecSeverity.normal;
+        if (v <= 150) return _RecSeverity.warning;
+        return _RecSeverity.danger;
+      }
+
+      // --- PM10 ---
+      if (text.startsWith('PM10:')) {
+        final v = data.pm10;
+        if (v == null || v < 0) return _RecSeverity.normal;
+        if (v <= 50) return _RecSeverity.normal;
+        if (v <= 150) return _RecSeverity.warning;
+        return _RecSeverity.danger;
+      }
+
+      // --- CO ---
+      if (text.startsWith('CO:')) {
+        final v = data.co;
+        if (v == null || v < 0) return _RecSeverity.normal;
+        if (v <= 4000) return _RecSeverity.normal;
+        if (v <= 8000) return _RecSeverity.warning;
+        return _RecSeverity.danger;
+      }
+
+      // --- SO2 ---
+      if (text.startsWith('SO2:')) {
+        final v = data.so2;
+        if (v == null || v < 0) return _RecSeverity.normal;
+        if (v <= 80) return _RecSeverity.normal;
+        if (v <= 365) return _RecSeverity.warning;
+        return _RecSeverity.danger;
+      }
+
+      // --- O3 ---
+      if (text.startsWith('O3:')) {
+        final v = data.o3;
+        if (v == null || v < 0) return _RecSeverity.normal;
+        if (v <= 120) return _RecSeverity.normal;
+        if (v <= 235) return _RecSeverity.warning;
+        return _RecSeverity.danger;
+      }
+
+      // --- NO2 ---
+      if (text.startsWith('NO2:')) {
+        final v = data.no2;
+        if (v == null || v < 0) return _RecSeverity.normal;
+        if (v <= 80) return _RecSeverity.normal;
+        if (v <= 200) return _RecSeverity.warning;
+        return _RecSeverity.danger;
+      }
+
+      // --- Suhu ---
+      if (text.startsWith('Suhu:')) {
+        final t = data.temperature;
+        if (t == null) return _RecSeverity.normal;
+        if (t < 24) return _RecSeverity.danger;
+        if (t <= 27) return _RecSeverity.normal;
+        if (t <= 30) return _RecSeverity.warning;
+        return _RecSeverity.danger;
+      }
+
+      // --- Kelembaban ---
+      if (text.startsWith('Kelembaban:')) {
+        final h = data.humidity;
+        if (h == null) return _RecSeverity.normal;
+        if (h < 40) return _RecSeverity.warning;
+        if (h <= 60) return _RecSeverity.normal;
+        if (h <= 70) return _RecSeverity.warning;
+        return _RecSeverity.danger;
+      }
+
+      return _RecSeverity.normal;
     }
-
-    // --- AQI ---
-    if (text.startsWith('AQI:')) {
-      if (aqi <= 50) return _RecSeverity.normal;
-      if (aqi <= 100) return _RecSeverity.warning;
-      return _RecSeverity.danger;
-    }
-
-    // --- PM2.5 ---
-    if (text.startsWith('PM2.5:')) {
-      if (data.pm25 <= 55) return _RecSeverity.normal;
-      if (data.pm25 <= 150) return _RecSeverity.warning;
-      return _RecSeverity.danger;
-    }
-
-    // --- PM10 ---
-    if (text.startsWith('PM10:')) {
-      if (data.pm10 <= 50) return _RecSeverity.normal;
-      if (data.pm10 <= 150) return _RecSeverity.warning;
-      return _RecSeverity.danger;
-    }
-
-    // --- CO ---
-    if (text.startsWith('CO:')) { 
-      if (data.co <= 4000) return _RecSeverity.normal; 
-      if (data.co <= 8000) return _RecSeverity.warning; 
-      return _RecSeverity.danger;
-    }
-
-        if (text.startsWith('SO2:')) {
-      final v = data.so2;
-      if (v == null) return _RecSeverity.normal;
-      if (v <= 80) return _RecSeverity.normal;
-      if (v <= 365) return _RecSeverity.warning;
-      return _RecSeverity.danger;
-    }
-
-    if (text.startsWith('O3:')) {
-      final v = data.o3;
-      if (v == null) return _RecSeverity.normal;
-      if (v <= 120) return _RecSeverity.normal;
-      if (v <= 235) return _RecSeverity.warning;
-      return _RecSeverity.danger;
-    }
-
-    if (text.startsWith('NO2:')) {
-      final v = data.no2;
-      if (v == null) return _RecSeverity.normal;
-      if (v <= 80) return _RecSeverity.normal;
-      if (v <= 200) return _RecSeverity.warning;
-      return _RecSeverity.danger;
-    }
-    
-
-    // --- Suhu ---
-    if (text.startsWith('Suhu:')) {
-      final t = data.temperature;
-      if (t < 24) return _RecSeverity.danger; // DINGIN → merah
-      if (t <= 27) return _RecSeverity.normal; // IDEAL
-      if (t <= 30) return _RecSeverity.warning; // HANGAT → kuning
-      return _RecSeverity.danger; // PANAS → merah
-    }
-
-    // --- Kelembaban ---
-    if (text.startsWith('Kelembaban:')) {
-      final h = data.humidity;
-      if (h < 40) return _RecSeverity.warning; // KERING → kuning
-      if (h <= 60) return _RecSeverity.normal; // IDEAL
-      if (h <= 70) return _RecSeverity.warning; // LEMBAB → kuning
-      return _RecSeverity.danger; // TIDAK NYAMAN → merah
-    }
-
-    return _RecSeverity.normal;
-  }
 
     final severity = _recommendationSeverity(text);
 
@@ -843,44 +949,6 @@ _RecSeverity _recommendationSeverity(String text) {
     );
   }
 
-    Widget _buildOptionalPollutantRow() {
-    final data = _currentRoomData.currentData;
-    final cards = <Widget>[];
-
-    void addCard(Widget card) {
-      if (cards.isNotEmpty) cards.add(const SizedBox(width: 12));
-      cards.add(Expanded(child: card));
-    }
-
-    if (data.so2 != null) {
-      addCard(_buildParameterCard(
-        'SO2',
-        '${data.so2!.toStringAsFixed(1)}\nµg/m³',
-        Helpers.getSO2Status(data.so2!),
-        Helpers.getSO2Color(data.so2!),
-      ));
-    }
-    if (data.o3 != null) {
-      addCard(_buildParameterCard(
-        'O3',
-        '${data.o3!.toStringAsFixed(1)}\nµg/m³',
-        Helpers.getO3Status(data.o3!),
-        Helpers.getO3Color(data.o3!),
-      ));
-    }
-    if (data.no2 != null) {
-      addCard(_buildParameterCard(
-        'NO2',
-        '${data.no2!.toStringAsFixed(1)}\nµg/m³',
-        Helpers.getNO2Status(data.no2!),
-        Helpers.getNO2Color(data.no2!),
-      ));
-    }
-
-    if (cards.isEmpty) return const SizedBox.shrink();
-    return Row(children: cards);
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -936,77 +1004,10 @@ _RecSeverity _recommendationSeverity(String text) {
             const SizedBox(height: 16),
             _buildAQICard(),
             const SizedBox(height: 16),
-
-            Row(
-              children: [
-                Expanded(
-                  child: _buildParameterCard(
-                    'PM2.5',
-                    '${_currentRoomData.currentData.pm25.toStringAsFixed(1)}\nμg/m³', 
-                    Helpers.getPM25Status(
-                        _currentRoomData.currentData.pm25),
-                    Helpers.getPM25Color(
-                        _currentRoomData.currentData.pm25),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _buildParameterCard(
-                    'PM10',
-                    '${_currentRoomData.currentData.pm10.toStringAsFixed(1)}\nμg/m³', 
-                    Helpers.getPM10Status(
-                        _currentRoomData.currentData.pm10),
-                    Helpers.getPM10Color(
-                        _currentRoomData.currentData.pm10),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _buildParameterCard(
-                    'CO', 
-                    '${_currentRoomData.currentData.co.round()}\nµg/m³', 
-                    Helpers.getCOStatus(
-                        _currentRoomData.currentData.co), 
-                    Helpers.getCOColor(
-                        _currentRoomData.currentData.co), 
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            _buildOptionalPollutantRow(),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: _buildParameterCard(
-                    'SUHU',
-                    '${_currentRoomData.currentData.temperature.toStringAsFixed(1)}°C',
-                    Helpers.getTemperatureStatus(
-                        _currentRoomData.currentData.temperature),
-                    Helpers.getTemperatureColor(
-                        _currentRoomData.currentData.temperature),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _buildParameterCard(
-                    'KELEMBABAN',
-                    '${_currentRoomData.currentData.humidity.round()}%',
-                    Helpers.getHumidityStatus(
-                        _currentRoomData.currentData.humidity),
-                    Helpers.getHumidityColor(
-                        _currentRoomData.currentData.humidity),
-                  ),
-                ),
-                const Spacer(),
-              ],
-            ),
+            _buildParameterRows(),
             const SizedBox(height: 24),
-
             _buildHealthRecommendations(),
             const SizedBox(height: 24),
-
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(12),

@@ -24,24 +24,25 @@ const roomSchema = new mongoose.Schema({
     type: String,
     default: null
   },
+  // FIXED: currentAQI nullable — null berarti "belum ada data valid".
+  //   - null  → UI tampilkan card abu-abu "Tidak Ada Data"
+  //   - 0..500 → nilai AQI normal
   currentAQI: {
     type: Number,
-    default: 0
+    default: null
   },
-    currentData: {
-    pm25: { type: Number, default: 0 },
-    pm10: { type: Number, default: 0 },
-    co: { type: Number, default: 0 },
+  // FIXED: semua field nullable. null berarti "tidak dikirim device".
+  currentData: {
+    pm25: { type: Number, default: null },
+    pm10: { type: Number, default: null },
+    co: { type: Number, default: null },
     so2: { type: Number, default: null },
     o3: { type: Number, default: null },
     no2: { type: Number, default: null },
-    temperature: { type: Number, default: 0 },
-    humidity: { type: Number, default: 0 },
+    temperature: { type: Number, default: null },
+    humidity: { type: Number, default: null },
     updatedAt: { type: Date }
   },
-  // FIXED: flag untuk demo mode — kalau true, simulationService & iotService
-  // TIDAK akan menimpa nilai currentAQI. Dipakai untuk sidang/demo
-  // agar dosen bisa melihat kategori AQI ekstrem secara deterministik.
   demoMode: {
     type: Boolean,
     default: false

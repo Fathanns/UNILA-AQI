@@ -364,11 +364,11 @@ router.post('/', authMiddleware, adminMiddleware, async (req, res) => {
       buildingName: building.name,
       dataSource: dataSource || 'simulation',
       iotDeviceId: dataSource === 'iot' ? iotDeviceId : null,
-      currentAQI: 0,
+      currentAQI: null,        // ✅ no_data sampai poll pertama
       currentData: {
-        pm25: 0, pm10: 0, co: 0,
+        pm25: null, pm10: null, co: null,
         so2: null, o3: null, no2: null,
-        temperature: 0, humidity: 0,
+        temperature: null, humidity: null,
         updatedAt: new Date()
       },
       createdAt: new Date(),
@@ -495,15 +495,15 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
       (prevIotDeviceId !== (room.iotDeviceId || null));
 
     if (deviceChanged) {
-      room.currentAQI = 0;
+      room.currentAQI = null;
       room.currentData = {
-        pm25: 0, pm10: 0, co: 0,
+        pm25: null, pm10: null, co: null,
         so2: null, o3: null, no2: null,
-        temperature: 0, humidity: 0,
+        temperature: null, humidity: null,
         updatedAt: new Date()
       };
       console.log(
-        `🔄 Room "${room.name}" device changed (${prevIotDeviceId} → ${room.iotDeviceId}). Data partikel direset.`
+        `🔄 Room "${room.name}" device changed (${prevIotDeviceId} → ${room.iotDeviceId}). Data direset.`
       );
     }
 

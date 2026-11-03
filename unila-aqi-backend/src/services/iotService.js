@@ -163,16 +163,14 @@ class IoTService {
     return updates;
   }
 
-    isValidIoTData(data) {
-    if (!data) return false;
-
-    const required = ['aqi', 'pm25', 'pm10', 'co', 'temperature', 'humidity'];
-    if (!required.every((k) => typeof data[k] === 'number')) return false;
-
-    const optional = ['so2', 'o3', 'no2'];
-    return optional.every(
-      (k) => data[k] === undefined || data[k] === null || typeof data[k] === 'number'
-    );
+     isValidIoTData(data) {
+    if (!data || typeof data !== 'object') return false;
+    
+    const knownFields = [
+      'aqi', 'pm25', 'pm10', 'co', 'so2', 'o3', 'no2',
+      'temperature', 'humidity'
+    ];
+    return knownFields.some((k) => k in data);
   }
 
    _hasDataChanged(oldData, newData) {
@@ -204,45 +202,35 @@ class IoTService {
         return;
       }
 
-      const optionalNum = (v) =>
-        typeof v === 'number' && Number.isFinite(v) && !Number.isNaN(v) ? v : null;
+      const optNum = (v) =>
+        typeof v === 'number' && Number.isFinite(v) && !Number.isNaN(v)
+          ? v
+          : null;
 
-      const so2 = optionalNum(iotData.so2);
-      const o3 = optionalNum(iotData.o3);
-      const no2 = optionalNum(iotData.no2);
+      const pm25 = optNum(iotData.pm25);
+      const pm10 = optNum(iotData.pm10);
+      const co   = optNum(iotData.co);
+      const so2  = optNum(iotData.so2);
+      const o3   = optNum(iotData.o3);
+      const no2  = optNum(iotData.no2);
+      const temperature = optNum(iotData.temperature);
+      const humidity    = optNum(iotData.humidity);
 
-      // Deteksi error pada field yang tersedia
-      if (
-        iotData.aqi < 0 ||
-        iotData.pm25 < 0 ||
-        iotData.pm10 < 0 ||
-        (so2 != null && so2 < 0) ||
-        (o3 != null && o3 < 0) ||
-        (no2 != null && no2 < 0)
-      ) {
+      // Deteksi error hanya untuk field yang ADA dan negatif.
+      const hasError = [pm25, pm10, co, so2, o3, no2, temperature, humidity]
+        .some((v) => v !== null && v < 0);
+
+      if (hasError) {
         await this.handleDeviceError(room, deviceName);
         return;
       }
 
-      const aqiResult = calculateAQI(
-        iotData.pm25,
-        iotData.pm10,
-        iotData.co,
-        so2,
-        o3,
-        no2
-      );
+      const aqiResult = calculateAQI(pm25, pm10, co, so2, o3, no2);
 
       const normalizedData = {
-        pm25: iotData.pm25,
-        pm10: iotData.pm10,
-        co: iotData.co,
-        so2,
-        o3,
-        no2,
-        temperature: iotData.temperature,
-        humidity: iotData.humidity,
         aqi: aqiResult.aqi,
+        pm25, pm10, co, so2, o3, no2,
+        temperature, humidity,
         category: aqiResult.category,
         dominant: aqiResult.dominant,
       };
@@ -264,183 +252,142 @@ class IoTService {
       );
 
       if (!hasRoomDataChanged) {
-        console.log('┌───────────────────────────────────────────────────────────────────────');
-        console.log(`ℹ️  Room ${room.name} data unchanged (exact match), skipping update`);
-        console.log('└───────────────────────────────────────────────────────────────────────');
+        console.log(
+          `ℹ️ Room ${room.name} data unchanged (exact match), skipping update`
+        );
         return;
       }
 
       room.currentAQI = normalizedData.aqi;
       room.currentData = {
-        pm25: normalizedData.pm25,
-        pm10: normalizedData.pm10,
-        co: normalizedData.co,
-        so2: normalizedData.so2,
-        o3: normalizedData.o3,
-        no2: normalizedData.no2,
-        temperature: normalizedData.temperature,
-        humidity: normalizedData.humidity,
+        pm25, pm10, co, so2, o3, no2,
+        temperature, humidity,
         updatedAt: new Date(),
       };
       room.updatedAt = new Date();
       await room.save();
 
-      const historicalData = new SensorData({
+      await new SensorData({
         roomId: room._id,
         roomName: room.name,
         buildingName: room.buildingName,
         aqi: normalizedData.aqi,
-        pm25: normalizedData.pm25,
-        pm10: normalizedData.pm10,
-        co: normalizedData.co,
-        so2: normalizedData.so2,
-        o3: normalizedData.o3,
-        no2: normalizedData.no2,
-        temperature: normalizedData.temperature,
-        humidity: normalizedData.humidity,
+        pm25, pm10, co, so2, o3, no2,
+        temperature, humidity,
         category: aqiResult.category,
         timestamp: new Date(),
-      });
-      await historicalData.save();
-
-      console.log('┌────────────────────────────────────────────────────────────────────────────────────');
+      }).save();
 
       this.broadcastRoomUpdate(room, normalizedData, 'iot', deviceName);
 
-      if (aqiResult.aqi > 100) {
+      if (normalizedData.aqi == null) {
         console.log(
-          `🚨 HIGH AQI in ${room.name} (IoT ${deviceName}): ${aqiResult.aqi} (${aqiResult.category})`
+          `ℹ️ IoT room ${room.name} (device ${deviceName}): tidak ada data valid — status no_data`
+        );
+      } else if (normalizedData.aqi > 100) {
+        console.log(
+          `🚨 HIGH AQI in ${room.name} (IoT ${deviceName}): ${normalizedData.aqi} (${aqiResult.category})`
         );
       } else {
         console.log(
-          `✅ IoT room ${room.name}: AQI ${normalizedData.aqi}, ` +
-          `PM2.5=${normalizedData.pm25}, PM10=${normalizedData.pm10}, ` +
-          `CO=${normalizedData.co}, SO2=${normalizedData.so2}, O3=${normalizedData.o3}, NO2=${normalizedData.no2}, ` +
-          `Suhu=${normalizedData.temperature}, RH=${normalizedData.humidity}`
+          `✅ IoT room ${room.name}: AQI ${normalizedData.aqi} (${aqiResult.dominant}), ` +
+          `PM2.5=${pm25}, PM10=${pm10}, CO=${co}, SO2=${so2}, O3=${o3}, NO2=${no2}, ` +
+          `Suhu=${temperature}, RH=${humidity}`
         );
       }
 
-      const dominantLabel = {
-        pm25: `PM2.5 (ISPU=${aqiResult.ispuPM25})`,
-        pm10: `PM10 (ISPU=${aqiResult.ispuPM10})`,
-        co:   `CO (ISPU=${aqiResult.ispuCO})`,
-        so2:  `SO2 (ISPU=${aqiResult.ispuSO2})`,
-        o3:   `O3 (ISPU=${aqiResult.ispuO3})`,
-        no2:  `NO2 (ISPU=${aqiResult.ispuNO2})`,
-      }[aqiResult.dominant] || aqiResult.dominant;
+      if (aqiResult.dominant) {
+        const dominantLabel = {
+          pm25: `PM2.5 (ISPU=${aqiResult.ispuPM25})`,
+          pm10: `PM10 (ISPU=${aqiResult.ispuPM10})`,
+          co:   `CO (ISPU=${aqiResult.ispuCO})`,
+          so2:  `SO2 (ISPU=${aqiResult.ispuSO2})`,
+          o3:   `O3 (ISPU=${aqiResult.ispuO3})`,
+          no2:  `NO2 (ISPU=${aqiResult.ispuNO2})`,
+        }[aqiResult.dominant] || aqiResult.dominant;
 
-      console.log(
-        `⚠️  DOMINAN ${aqiResult.dominant.toUpperCase()} in ${room.name}: AQI ${aqiResult.aqi} (${dominantLabel})`
-      );
-      console.log('└────────────────────────────────────────────────────────────────────────────────────');
+        console.log(
+          `⚠️  DOMINAN ${aqiResult.dominant.toUpperCase()} in ${room.name}: AQI ${aqiResult.aqi} (${dominantLabel})`
+        );
+      }
     } catch (error) {
-      console.log('┌────────────────────────────────────────────────────────────────────────────────────');
       console.error(`❌ Error updating IoT room ${room.name}:`, error.message);
-      console.log('└────────────────────────────────────────────────────────────────────────────────────');
     }
   }
+
   
 
-    async updateRoomFromIoTForce(room, iotData, deviceName) {
+      async updateRoomFromIoTForce(room, iotData, deviceName) {
     try {
       if (room.demoMode) {
         console.log(`ℹ️ Skipping force update ${room.name} (demoMode active)`);
         return;
       }
 
-      const optionalNum = (v) =>
-        typeof v === 'number' && Number.isFinite(v) && !Number.isNaN(v) ? v : null;
+      const optNum = (v) =>
+        typeof v === 'number' && Number.isFinite(v) && !Number.isNaN(v)
+          ? v
+          : null;
 
-      const so2 = optionalNum(iotData.so2);
-      const o3 = optionalNum(iotData.o3);
-      const no2 = optionalNum(iotData.no2);
+      const pm25 = optNum(iotData.pm25);
+      const pm10 = optNum(iotData.pm10);
+      const co   = optNum(iotData.co);
+      const so2  = optNum(iotData.so2);
+      const o3   = optNum(iotData.o3);
+      const no2  = optNum(iotData.no2);
+      const temperature = optNum(iotData.temperature);
+      const humidity    = optNum(iotData.humidity);
 
-      if (
-        iotData.aqi < 0 ||
-        iotData.pm25 < 0 ||
-        iotData.pm10 < 0 ||
-        (so2 != null && so2 < 0) ||
-        (o3 != null && o3 < 0) ||
-        (no2 != null && no2 < 0)
-      ) {
+      const hasError = [pm25, pm10, co, so2, o3, no2, temperature, humidity]
+        .some((v) => v !== null && v < 0);
+
+      if (hasError) {
         await this.handleDeviceError(room, deviceName);
         return;
       }
 
-      const aqiResult = calculateAQI(
-        iotData.pm25,
-        iotData.pm10,
-        iotData.co,
-        so2,
-        o3,
-        no2
-      );
+      const aqiResult = calculateAQI(pm25, pm10, co, so2, o3, no2);
 
       room.currentAQI = aqiResult.aqi;
       room.currentData = {
-        pm25: iotData.pm25,
-        pm10: iotData.pm10,
-        co: iotData.co,
-        so2,
-        o3,
-        no2,
-        temperature: iotData.temperature,
-        humidity: iotData.humidity,
+        pm25, pm10, co, so2, o3, no2,
+        temperature, humidity,
         updatedAt: new Date(),
       };
       room.updatedAt = new Date();
       await room.save();
 
-      const historicalData = new SensorData({
+      await new SensorData({
         roomId: room._id,
         roomName: room.name,
         buildingName: room.buildingName,
         aqi: aqiResult.aqi,
-        pm25: iotData.pm25,
-        pm10: iotData.pm10,
-        co: iotData.co,
-        so2,
-        o3,
-        no2,
-        temperature: iotData.temperature,
-        humidity: iotData.humidity,
+        pm25, pm10, co, so2, o3, no2,
+        temperature, humidity,
         category: aqiResult.category,
         timestamp: new Date(),
-      });
-      await historicalData.save();
+      }).save();
 
       this.broadcastRoomUpdate(room, iotData, 'iot', deviceName);
 
       console.log(
-        `✅ FORCE-updated IoT room ${room.name}: AQI ${aqiResult.aqi} (${aqiResult.dominant.toUpperCase()})`
+        `✅ FORCE-updated IoT room ${room.name}: AQI ${aqiResult.aqi ?? 'null'} (${aqiResult.dominant ?? 'none'})`
       );
     } catch (error) {
       console.error(`❌ Error force-updating room ${room.name}:`, error.message);
     }
   }
 
-  /**
-   * FIXED: handle device error (aqi=-1, pm<0).
-   * Strategi SAMA dengan simulationService:
-   *  - Catat ke SensorData (untuk history)
-   *  - JANGAN overwrite room.currentAQI/currentData
-   *  - Broadcast notification ke dashboard
-   */
   async handleDeviceError(room, deviceName) {
     try {
-       await new SensorData({
+      // Catat sebagai error (-1) untuk history
+      await new SensorData({
         roomId: room._id,
         roomName: room.name,
         buildingName: room.buildingName,
         aqi: -1,
-        pm25: -1,
-        pm10: -1,
-        co: -1,
-        so2: -1,
-        o3: -1,
-        no2: -1,
-        temperature: -1,
-        humidity: -1,
+        pm25: -1, pm10: -1, co: -1, so2: -1, o3: -1, no2: -1,
+        temperature: -1, humidity: -1,
         category: 'error',
         timestamp: new Date(),
       }).save();
@@ -452,15 +399,11 @@ class IoTService {
           timestamp: new Date(),
         });
       }
-      console.log('┌──────────────────────────────────────────────────────────────────────────────');
       console.log(
         `⚠️ IoT SENSOR ERROR in ${room.name} (device: ${deviceName}) — room retained last good value`
       );
-      console.log('└──────────────────────────────────────────────────────────────────────────────');
     } catch (err) {
-      console.log('┌────────────────────────────────────────────────────────────────────────────────────');
       console.error(`❌ Error handling device error for ${room.name}:`, err.message);
-      console.log('└────────────────────────────────────────────────────────────────────────────────────');
     }
   }
 

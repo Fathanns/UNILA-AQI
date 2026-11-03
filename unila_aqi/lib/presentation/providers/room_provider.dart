@@ -355,10 +355,24 @@ class RoomProvider with ChangeNotifier {
         result.sort((a, b) => a.name.compareTo(b.name));
         break;
       case 'AQI Terbaik':
-        result.sort((a, b) => a.currentAQI.compareTo(b.currentAQI));
+        result.sort((a, b) {
+          final aV = a.currentAQI;
+          final bV = b.currentAQI;
+          if (aV == null && bV == null) return 0;
+          if (aV == null) return 1; // null ditaruh di akhir
+          if (bV == null) return -1;
+          return aV.compareTo(bV);
+        });
         break;
       case 'AQI Terburuk':
-        result.sort((a, b) => b.currentAQI.compareTo(a.currentAQI));
+        result.sort((a, b) {
+          final aV = a.currentAQI;
+          final bV = b.currentAQI;
+          if (aV == null && bV == null) return 0;
+          if (aV == null) return 1;
+          if (bV == null) return -1;
+          return bV.compareTo(aV);
+        });
         break;
     }
 

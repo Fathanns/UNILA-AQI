@@ -139,8 +139,6 @@ router.get('/:roomId/history', async (req, res) => {
             hour: { $hour: "$timestamp" },
             interval: "$timeInterval"
           },
-          // FIXED: $first (bukan $last) agar titik merepresentasikan
-          // nilai pada awal slot — cocok dengan label "14:00", "14:30".
           timestamp: { $first: "$timestamp" },
           aqi: { $first: "$aqi" },
           pm25: { $first: "$pm25" },
@@ -152,7 +150,6 @@ router.get('/:roomId/history', async (req, res) => {
           temperature: { $first: "$temperature" },
           humidity: { $first: "$humidity" },
           category: { $first: "$category" },
-          // Simpan semua data mentah slot (untuk tooltip / audit)
           rawData: { $push: "$$ROOT" }
         }
       },
@@ -189,7 +186,6 @@ router.get('/:roomId/history', async (req, res) => {
           temperature: 1,
           humidity: 1,
           category: 1,
-          rawData: 1
         }
       }
     ];

@@ -16,7 +16,8 @@ class AppColors {
   static const Color aqiUnhealthySensitive = Color(0xFFFFC107); 
   static const Color aqiUnhealthy = Color(0xFFDC3545);         
   static const Color aqiHazardous = Color(0xFF37474F);         
-  static const Color aqiError = Color(0xFF9E9E9E);   
+  static const Color aqiError = Color(0xFF9E9E9E);
+  static const Color aqiNoData = Color(0xFFBDBDBD);
 
   // Neutral Colors
   static const Color background = Color(0xFFF8F9FA);
