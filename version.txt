@@ -924,7 +924,6 @@ const sensorDataSchema = new mongoose.Schema({
   },
   roomName: { type: String, required: true },
   buildingName: { type: String, required: true },
-  // FIXED: semua field nullable
   aqi: { type: Number, default: null },
   pm25: { type: Number, default: null },
   pm10: { type: Number, default: null },
@@ -936,10 +935,20 @@ const sensorDataSchema = new mongoose.Schema({
   humidity: { type: Number, default: null },
   category: {
     type: String,
-    // FIXED: tambah 'no_data'
     enum: ['baik', 'sedang', 'tidak_sehat', 'sangat_tidak_sehat', 'berbahaya', 'error', 'no_data'],
     required: true
   },
+  
+  isAnomaly: {
+    type: Boolean,
+    default: false,
+    index: true,
+  },
+  anomalyType: {
+    type: String,
+    default: null,
+  },
+
   timestamp: {
     type: Date,
     default: Date.now,
@@ -949,6 +958,7 @@ const sensorDataSchema = new mongoose.Schema({
 
 sensorDataSchema.index({ roomId: 1, timestamp: -1 });
 sensorDataSchema.index({ timestamp: -1 });
+sensorDataSchema.index({ roomId: 1, timestamp: 1, isAnomaly: 1 });
 
 module.exports = mongoose.model('SensorData', sensorDataSchema);
 
@@ -2675,6 +2685,162 @@ router.get('/:roomId/history', async (req, res) => {
   }
 });
 
+router.get('/:roomId/monthly', async (req, res) => {
+  try {
+    const { roomId } = req.params;
+    const year  = parseInt(req.query.year, 10);
+    const month = parseInt(req.query.month, 10);
+
+    if (!mongoose.Types.ObjectId.isValid(roomId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid room ID format',
+      });
+    }
+
+    if (isNaN(year) || year < 2000 || year > 2100) {
+      return res.status(400).json({
+        success: false,
+        message: 'Parameter year tidak valid',
+      });
+    }
+
+    if (isNaN(month) || month < 1 || month > 12) {
+      return res.status(400).json({
+        success: false,
+        message: 'Parameter month tidak valid (1-12)',
+      });
+    }
+
+    const startOfMonth = new Date(year, month - 1, 1, 0, 0, 0, 0);
+    const endOfMonth   = new Date(year, month, 0, 23, 59, 59, 999);
+
+    console.log(
+      `📊 Monthly trend → room ${roomId} | ${year}-${String(month).padStart(2, '0')} | ` +
+      `${startOfMonth.toISOString()} → ${endOfMonth.toISOString()}`
+    );
+
+    const allParams = [
+      'aqi', 'pm25', 'pm10', 'co', 'so2', 'o3', 'no2',
+      'temperature', 'humidity',
+    ];
+
+    // Accumulator tahap 1: per tanggal
+    const dailyAcc = {};
+    allParams.forEach((p) => {
+      dailyAcc[`daily_max_${p}`] = { $max: `$${p}` };
+      dailyAcc[`daily_avg_${p}`] = { $avg: `$${p}` };
+      dailyAcc[`daily_min_${p}`] = { $min: `$${p}` };
+    });
+
+    // Accumulator tahap 2: per hari-dalam-minggu
+    const monthlyAcc = { weekCount: { $sum: 1 } };
+    allParams.forEach((p) => {
+      monthlyAcc[`max_${p}`] = { $max: `$daily_max_${p}` };
+      monthlyAcc[`avg_${p}`] = { $avg: `$daily_avg_${p}` };
+      monthlyAcc[`min_${p}`] = { $min: `$daily_min_${p}` };
+    });
+
+    const pipeline = [
+      // 1. Filter: room + rentang bulan + BUKAN anomali + BUKAN error (-1)
+      {
+        $match: {
+          roomId: toObjectId(roomId),
+          timestamp: { $gte: startOfMonth, $lte: endOfMonth },
+          isAnomaly: { $ne: true },   // exclude spike & error simulasi
+          aqi: { $gte: 0 },           // exclude error (-1), aman untuk legacy
+        },
+      },
+      // 2. Hitung index hari dalam minggu (Senin=1 .. Minggu=7)
+      //    MongoDB $dayOfWeek: 1=Sun, 2=Mon, ..., 7=Sat
+      //    Formula: ((dow + 5) % 7) + 1
+      {
+        $addFields: {
+          dayOfWeekMonSun: {
+            $add: [
+              { $mod: [{ $add: [{ $dayOfWeek: '$timestamp' }, 5] }, 7] },
+              1,
+            ],
+          },
+        },
+      },
+      // 3. Group per tanggal (hari kalender)
+      {
+        $group: {
+          _id: {
+            day: { $dayOfMonth: '$timestamp' },
+            dow: '$dayOfWeekMonSun',
+          },
+          ...dailyAcc,
+        },
+      },
+      // 4. Group per hari-dalam-minggu
+      {
+        $group: {
+          _id: '$_id.dow',
+          ...monthlyAcc,
+        },
+      },
+      // 5. Urutkan Senin..Minggu
+      { $sort: { _id: 1 } },
+    ];
+
+    const rawResult = await SensorData.aggregate(pipeline);
+
+    const dayNames = [
+      'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu',
+    ];
+
+    const round1 = (v) =>
+      typeof v === 'number' && !Number.isNaN(v)
+        ? Math.round(v * 10) / 10
+        : null;
+
+    const days = [];
+    for (let i = 1; i <= 7; i++) {
+      const found = rawResult.find((r) => r._id === i);
+
+      const values = {};
+      allParams.forEach((p) => {
+        values[p] = {
+          max: found ? round1(found[`max_${p}`]) : null,
+          avg: found ? round1(found[`avg_${p}`]) : null,
+          min: found ? round1(found[`min_${p}`]) : null,
+        };
+      });
+
+      // Hari dianggap punya data bila minimal AQI punya nilai valid
+      const hasData = values.aqi.max !== null;
+
+      days.push({
+        day: i,
+        dayName: dayNames[i - 1],
+        hasData,
+        weekCount: found?.weekCount ?? 0,
+        values,
+      });
+    }
+
+    res.json({
+      success: true,
+      year,
+      month,
+      roomId,
+      startDate: startOfMonth,
+      endDate: endOfMonth,
+      days,
+      message: 'Monthly trend data loaded',
+    });
+  } catch (error) {
+    console.error('Error fetching monthly trend:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching monthly trend',
+      error: error.message,
+    });
+  }
+});
+
 module.exports = router;
 
 ---------------------------------------------------------------------------------------------------------------------------------------
@@ -3026,7 +3192,7 @@ class IoTService {
       room.updatedAt = new Date();
       await room.save();
 
-      await new SensorData({
+       await new SensorData({
         roomId: room._id,
         roomName: room.name,
         buildingName: room.buildingName,
@@ -3035,6 +3201,8 @@ class IoTService {
         temperature, humidity,
         category: aqiResult.category,
         timestamp: new Date(),
+        isAnomaly: iotData.isAnomaly === true,
+        anomalyType: iotData.anomalyType || null,
       }).save();
 
       this.broadcastRoomUpdate(room, normalizedData, 'iot', deviceName);
@@ -3125,6 +3293,9 @@ class IoTService {
         temperature, humidity,
         category: aqiResult.category,
         timestamp: new Date(),
+
+        isAnomaly: iotData.isAnomaly === true,
+        anomalyType: iotData.anomalyType || null,
       }).save();
 
       this.broadcastRoomUpdate(room, iotData, 'iot', deviceName);
@@ -3149,6 +3320,8 @@ class IoTService {
         temperature: -1, humidity: -1,
         category: 'error',
         timestamp: new Date(),
+        isAnomaly: true,
+        anomalyType: 'error',
       }).save();
 
       if (this.io) {
@@ -3440,7 +3613,7 @@ class SimulationService {
 
       await room.save();
 
-      const historicalData = new SensorData({
+       const historicalData = new SensorData({
         roomId: room._id,
         roomName: room.name,
         buildingName: room.buildingName,
@@ -3454,7 +3627,9 @@ class SimulationService {
         temperature: sensorData.temperature,
         humidity: sensorData.humidity,
         category: sensorData.category,
-        timestamp: new Date()
+        timestamp: new Date(),
+        isAnomaly: sensorData.isAnomaly === true,
+        anomalyType: sensorData.anomalyType || null,
       });
 
       await historicalData.save();
@@ -3505,7 +3680,9 @@ class SimulationService {
         pm25: -1, pm10: -1, co: -1, so2: -1, o3: -1, no2: -1,
         temperature: -1, humidity: -1,
         category: 'error',
-        timestamp: new Date()
+        timestamp: new Date(),
+        isAnomaly: true,
+        anomalyType: 'error',
       }).save();
 
       if (this.io) {
@@ -10238,6 +10415,31 @@ class AppColors {
 }
 
 ---------------------------------------------------------------------------------------------------------------------------------------
+unila_aqi/lib/core/constants/parameter_colors.dart
+
+import 'package:flutter/material.dart';
+import 'colors.dart';
+
+class ParameterColors {
+  ParameterColors._();
+
+  static const Map<String, Color> colors = {
+    'aqi':  AppColors.primary,               // biru
+    'pm25': AppColors.aqiUnhealthy,          // merah
+    'pm10': AppColors.aqiUnhealthySensitive, // kuning
+    'o3':   AppColors.aqiGood,               // hijau
+    'co':          Color(0xFF607D8B), // Blue Grey 500
+    'so2':         Color(0xFF795548), // Brown 500
+    'no2':         Color(0xFF9C27B0), // Purple 500
+    'temperature': Color(0xFFFF9800), // Orange 500
+    'humidity':    Color(0xFF00BCD4), // Cyan 500
+  };
+
+  static Color of(String parameter) =>
+      colors[parameter] ?? AppColors.textHint;
+}
+
+---------------------------------------------------------------------------------------------------------------------------------------
 lib/core/services/api_service.dart:
 
 import 'dart:convert';
@@ -10611,7 +10813,38 @@ class ApiService {
   void dispose() {
     _client.close();
   }
+    Future<dynamic> getMonthlyTrend(
+    String roomId, {
+    required int year,
+    required int month,
+  }) async {
+    try {
+      final headers = await _getHeaders();
+
+      final response = await http.get(
+        Uri.parse('$baseUrl/sensor-data/$roomId/monthly?year=$year&month=$month'),
+        headers: headers,
+      );
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body);
+      } else {
+        return {
+          'success': false,
+          'error': 'Monthly trend request failed: ${response.statusCode}',
+          'statusCode': response.statusCode,
+        };
+      }
+    } catch (e) {
+      return {
+        'success': false,
+        'error': e.toString(),
+      };
+    }
+  }
 }
+
+
 
 ---------------------------------------------------------------------------------------------------------------------------------------
 C:\develop\UNILA-AQI\unila_aqi\lib\core\services\auth_service.dart
@@ -12771,6 +13004,102 @@ class IoTDevice {
   }
 
   bool get isOnline => status == 'online';
+}
+
+
+---------------------------------------------------------------------------------------------------------------------------------------
+C:\develop\UNILA-AQI\unila_aqi\lib\data\models\monthly_trend.dart
+
+class MonthlyTrendResponse {
+  final int year;
+  final int month;
+  final List<MonthlyDayData> days;
+
+  MonthlyTrendResponse({
+    required this.year,
+    required this.month,
+    required this.days,
+  });
+
+  factory MonthlyTrendResponse.fromJson(Map<String, dynamic> json) {
+    final daysRaw = json['days'] as List? ?? const [];
+    return MonthlyTrendResponse(
+      year: (json['year'] as num?)?.toInt() ?? DateTime.now().year,
+      month: (json['month'] as num?)?.toInt() ?? DateTime.now().month,
+      days: daysRaw
+          .whereType<Map>()
+          .map((e) => MonthlyDayData.fromJson(Map<String, dynamic>.from(e)))
+          .toList(),
+    );
+  }
+
+  bool get hasAnyData => days.any((d) => d.hasData);
+}
+
+class MonthlyDayData {
+  final int day;          // 1=Senin .. 7=Minggu
+  final String dayName;
+  final bool hasData;
+  final int weekCount;
+  final Map<String, ParamStats> values;
+
+  MonthlyDayData({
+    required this.day,
+    required this.dayName,
+    required this.hasData,
+    required this.weekCount,
+    required this.values,
+  });
+
+  factory MonthlyDayData.fromJson(Map<String, dynamic> json) {
+    final rawValues = json['values'];
+    final map = <String, ParamStats>{};
+    if (rawValues is Map) {
+      rawValues.forEach((k, v) {
+        if (v is Map) {
+          map[k.toString()] =
+              ParamStats.fromJson(Map<String, dynamic>.from(v));
+        }
+      });
+    }
+    return MonthlyDayData(
+      day: (json['day'] as num?)?.toInt() ?? 0,
+      dayName: json['dayName']?.toString() ?? '',
+      hasData: json['hasData'] == true,
+      weekCount: (json['weekCount'] as num?)?.toInt() ?? 0,
+      values: map,
+    );
+  }
+}
+
+class ParamStats {
+  final double? max;
+  final double? avg;
+  final double? min;
+
+  ParamStats({this.max, this.avg, this.min});
+
+  factory ParamStats.fromJson(Map<String, dynamic> json) {
+    double? n(dynamic v) {
+      if (v == null) return null;
+      if (v is num) return v.toDouble();
+      return double.tryParse(v.toString());
+    }
+    return ParamStats(
+      max: n(json['max']),
+      avg: n(json['avg']),
+      min: n(json['min']),
+    );
+  }
+
+  double? byMetric(String metric) {
+    switch (metric) {
+      case 'max': return max;
+      case 'avg': return avg;
+      case 'min': return min;
+      default: return null;
+    }
+  }
 }
 
 ---------------------------------------------------------------------------------------------------------------------------------------
@@ -20091,6 +20420,7 @@ import '../../../data/repositories/aqi_info_repository.dart';
 import '../../../data/models/aqi_info.dart';
 import '../../../core/constants/colors.dart';
 
+
 class AQIInfoScreen extends StatefulWidget {
   const AQIInfoScreen({super.key});
 
@@ -22017,6 +22347,7 @@ import 'package:unila_aqi/data/models/room.dart';
 import 'package:unila_aqi/data/repositories/room_repository.dart';
 import 'package:unila_aqi/presentation/widgets/chart/history_chart.dart';
 import '../../widgets/common/server_status_indicator.dart';
+import 'package:unila_aqi/presentation/widgets/chart/monthly_trend_chart.dart';
 
 enum _RecSeverity { normal, warning, danger }
 
@@ -22035,6 +22366,9 @@ class RoomDetailScreen extends StatefulWidget {
 class _RoomDetailScreenState extends State<RoomDetailScreen> {
   final SocketService _socketService = SocketService();
   final RoomRepository _roomRepository = RoomRepository();
+
+  final GlobalKey<HistoryChartState> _historyKey =
+      GlobalKey<HistoryChartState>();
 
   String? _lastNotificationMessage;
   DateTime? _lastNotificationTime;
@@ -22632,67 +22966,9 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
               ),
             ],
           ),
-          const SizedBox(height: 12),
-          _buildParameterStatus(),
           const SizedBox(height: 16),
           ...recommendations.map(_buildRecommendationItem),
         ],
-      ),
-    );
-  }
-
-  Widget _buildParameterStatus() {
-    final data = _currentRoomData.currentData;
-    final aqi = _currentRoomData.currentAQI;
-
-    return Wrap(
-      spacing: 10,
-      runSpacing: 10,
-      children: [
-        _buildStatusChip(
-            'AQI: ${aqi?.toString() ?? '—'}', Helpers.getAQIColor(aqi)),
-        if (data.hasPM25)
-          _buildStatusChip('PM2.5: ${data.pm25!.toStringAsFixed(1)}',
-              Helpers.getPM25Color(data.pm25)),
-        if (data.hasPM10)
-          _buildStatusChip('PM10: ${data.pm10!.toStringAsFixed(1)}',
-              Helpers.getPM10Color(data.pm10)),
-        if (data.hasCO)
-          _buildStatusChip(
-              'CO: ${data.co!.round()}', Helpers.getCOColor(data.co)),
-        if (data.hasSO2)
-          _buildStatusChip('SO2: ${data.so2!.toStringAsFixed(1)}',
-              Helpers.getSO2Color(data.so2)),
-        if (data.hasO3)
-          _buildStatusChip('O3: ${data.o3!.toStringAsFixed(1)}',
-              Helpers.getO3Color(data.o3)),
-        if (data.hasNO2)
-          _buildStatusChip('NO2: ${data.no2!.toStringAsFixed(1)}',
-              Helpers.getNO2Color(data.no2)),
-        if (data.hasTemperature)
-          _buildStatusChip('Suhu: ${data.temperature!.toStringAsFixed(1)}°C',
-              Helpers.getTemperatureColor(data.temperature)),
-        if (data.hasHumidity)
-          _buildStatusChip('Lembab: ${data.humidity!.round()}%',
-              Helpers.getHumidityColor(data.humidity)),
-      ],
-    );
-  }
-
-  Widget _buildStatusChip(String text, Color color) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: color,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Text(
-        text,
-        style: const TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w700,
-          color: Colors.white,
-        ),
       ),
     );
   }
@@ -23017,7 +23293,7 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
             _buildParameterRows(),
             const SizedBox(height: 24),
             _buildHealthRecommendations(),
-            const SizedBox(height: 24),
+            const SizedBox(height: 16),
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(12),
@@ -23035,22 +23311,32 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Row(
+                  Row(
                     children: [
-                      Icon(Icons.timeline, color: Colors.blue, size: 18),
-                      SizedBox(width: 6),
-                      Text(
+                      const Icon(Icons.timeline, color: Colors.blue, size: 18),
+                      const SizedBox(width: 6),
+                      const Text(
                         'GRAFIK HISTORIS',
                         style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
-                      Spacer(),
+                      const Spacer(),
+                      // ✅ BARU: tombol refresh di kanan sejajar judul
+                      IconButton(
+                        onPressed: () => _historyKey.currentState?.refresh(),
+                        icon: const Icon(Icons.refresh, size: 20),
+                        tooltip: 'Refresh grafik',
+                        splashRadius: 20,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 8),
                   HistoryChart(
+                    key: _historyKey,  // ✅ BARU
                     roomId: _currentRoomData.id,
                     roomName: _currentRoomData.name,
                     buildingName: _currentRoomData.buildingName,
@@ -23058,6 +23344,8 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
                 ],
               ),
             ),
+            const SizedBox(height: 16),
+            MonthlyTrendChart(roomId: _currentRoomData.id),
           ],
         ),
       ),
@@ -23801,7 +24089,8 @@ lib/presentation/widgets/chart/history_chart.dart:
 
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
-import 'package:intl/intl.dart';
+import 'package:unila_aqi/core/constants/colors.dart';
+import 'package:unila_aqi/core/constants/parameter_colors.dart';
 import 'package:unila_aqi/core/services/api_service.dart';
 import 'package:unila_aqi/core/utils/helpers.dart';
 import 'package:unila_aqi/data/models/sensor_data.dart';
@@ -23819,10 +24108,10 @@ class HistoryChart extends StatefulWidget {
   });
 
   @override
-  _HistoryChartState createState() => _HistoryChartState();
+  State<HistoryChart> createState() => HistoryChartState();
 }
 
-class _HistoryChartState extends State<HistoryChart> {
+class HistoryChartState extends State<HistoryChart> {
   List<SensorData> _historyData = [];
   DateTime _selectedDate = DateTime.now();
   String _selectedParameter = 'aqi';
@@ -23849,17 +24138,23 @@ class _HistoryChartState extends State<HistoryChart> {
     'humidity': 'Kelembaban',
   };
 
-  final Map<String, Color> _parameterColors = {
-    'aqi': Colors.blue,
-    'pm25': Colors.red,
-    'pm10': Colors.orange,
-    'co': Colors.green,
-    'so2': Colors.brown,
-    'o3': Colors.cyan,
-    'no2': Colors.indigo,
-    'temperature': Colors.purple,
-    'humidity': Colors.teal,
-  };
+  static const List<String> _dayNames = [
+    'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu',
+  ];
+  static const List<String> _monthNames = [
+    'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+    'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember',
+  ];
+
+  String _formatSelectedDate(DateTime d) {
+    final dayName = _dayNames[d.weekday - 1];
+    final monthName = _monthNames[d.month - 1];
+    return '$dayName, ${d.day} $monthName ${d.year}';
+  }
+
+  Future<void> refresh() async {
+    await _loadHistoryData();
+  }
 
   @override
   void initState() {
@@ -23899,7 +24194,6 @@ class _HistoryChartState extends State<HistoryChart> {
     }
   }
 
-  /// Hanya parameter yang punya minimal satu nilai non-null di history.
   List<String> get _availableParameters {
     return _allParameters.where((p) {
       return _historyData.any((d) => _valueFor(d, p) != null);
@@ -23994,6 +24288,24 @@ class _HistoryChartState extends State<HistoryChart> {
     }
   }
 
+  Future<void> _changeDay(int delta) async {
+    final today = DateTime.now();
+    final todayStart = DateTime(today.year, today.month, today.day);
+    final minDate = todayStart.subtract(const Duration(days: 30));
+
+    final candidate = DateTime(
+      _selectedDate.year,
+      _selectedDate.month,
+      _selectedDate.day + delta,
+    );
+
+    if (candidate.isAfter(todayStart)) return;
+    if (candidate.isBefore(minDate)) return;
+
+    setState(() => _selectedDate = candidate);
+    await _loadHistoryData();
+  }
+
   List<FlSpot> _getDataPoints() {
     final spots = <FlSpot>[];
     for (int i = 0; i < _historyData.length; i++) {
@@ -24032,7 +24344,7 @@ class _HistoryChartState extends State<HistoryChart> {
 
   Widget _buildChart() {
     final spots = _getDataPoints();
-    final color = _parameterColors[_selectedParameter]!;
+    final color = ParameterColors.of(_selectedParameter);
 
     final screenWidth = MediaQuery.of(context).size.width;
     final availableViewport = screenWidth - (_containerPadding * 2);
@@ -24046,48 +24358,53 @@ class _HistoryChartState extends State<HistoryChart> {
       height: 350,
       padding: const EdgeInsets.all(_containerPadding),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppColors.primary.withOpacity(0.04),
         borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
+        border: Border.all(color: AppColors.primary.withOpacity(0.25)),
       ),
       child: Column(
         children: [
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                'Grafik ${_parameterLabels[_selectedParameter]}',
-                style:
-                    const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-              ),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: color.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
+              Expanded(
                 child: Row(
                   children: [
-                    Container(
-                      width: 12,
-                      height: 12,
-                      decoration:
-                          BoxDecoration(color: color, shape: BoxShape.circle),
+                    Flexible(
+                      child: Text(
+                        'Grafik ${_parameterLabels[_selectedParameter]}',
+                        style: const TextStyle(
+                            fontSize: 16, fontWeight: FontWeight.w600),
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
-                    const SizedBox(width: 4),
-                    Text(
-                      _parameterLabels[_selectedParameter]!,
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                        color: color,
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: color.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 12,
+                            height: 12,
+                            decoration: BoxDecoration(
+                                color: color, shape: BoxShape.circle),
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            _parameterLabels[_selectedParameter]!,
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                              color: color,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],
@@ -24271,50 +24588,52 @@ class _HistoryChartState extends State<HistoryChart> {
 
   Widget _buildParameterSelector() {
     final available = _availableParameters;
-    if (available.isEmpty) return const SizedBox.shrink();
+    if (available.isEmpty) return const SizedBox(height: 40);
 
-    return Container(
-      height: 50,
-      margin: const EdgeInsets.only(bottom: 16),
+    return SizedBox(
+      height: 40,
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
         itemCount: available.length,
         itemBuilder: (context, index) {
           final parameter = available[index];
           final isSelected = _selectedParameter == parameter;
-          final color = _parameterColors[parameter]!;
+          final color = ParameterColors.of(parameter);
 
           return GestureDetector(
             onTap: () => setState(() => _selectedParameter = parameter),
             child: Container(
-              margin: const EdgeInsets.only(right: 8),
+              margin: const EdgeInsets.only(right: 6),
               padding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
-                color: isSelected ? color : color.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(25),
-                border: Border.all(
-                  color: isSelected ? color : Colors.transparent,
-                  width: 2,
-                ),
+                // ✅ Selected = warna parameter itu sendiri
+                color: isSelected
+                    ? color
+                    : AppColors.primary.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(20),
               ),
               child: Row(
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   Container(
-                    width: 12,
-                    height: 12,
+                    width: 8,
+                    height: 8,
                     decoration: BoxDecoration(
                       color: isSelected ? Colors.white : color,
                       shape: BoxShape.circle,
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  Text(
-                    _parameterLabels[parameter]!,
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: isSelected ? Colors.white : color,
+                  const SizedBox(width: 6),
+                  Center(
+                    child: Text(
+                      _parameterLabels[parameter]!,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: isSelected ? Colors.white : color,
+                        fontFamily: 'Inter',
+                      ),
                     ),
                   ),
                 ],
@@ -24328,46 +24647,45 @@ class _HistoryChartState extends State<HistoryChart> {
 
   Widget _buildDateSelector() {
     return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.border),
       ),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const SizedBox(height: 4),
-              Text(
-                DateFormat('EEEE, dd MMMM yyyy').format(_selectedDate),
-                style: const TextStyle(
-                    fontSize: 16, fontWeight: FontWeight.w600),
-              ),
-            ],
+          IconButton(
+            icon: const Icon(Icons.chevron_left),
+            onPressed: () => _changeDay(-1),
+            tooltip: 'Hari sebelumnya',
           ),
-          Row(
-            children: [
-              IconButton(
-                onPressed: () => _selectDate(context),
-                icon: const Icon(Icons.calendar_today),
-                tooltip: 'Pilih tanggal lain',
+          Expanded(
+            child: InkWell(
+              onTap: () => _selectDate(context),
+              borderRadius: BorderRadius.circular(8),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Column(
+                  children: [
+                    Text(
+                      _formatSelectedDate(_selectedDate),
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        fontFamily: 'Inter',
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
               ),
-              IconButton(
-                onPressed: _isLoading ? null : _loadHistoryData,
-                icon: const Icon(Icons.refresh),
-                tooltip: 'Refresh data',
-              ),
-            ],
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.chevron_right),
+            onPressed: () => _changeDay(1),
+            tooltip: 'Hari berikutnya',
           ),
         ],
       ),
@@ -24380,7 +24698,9 @@ class _HistoryChartState extends State<HistoryChart> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _buildDateSelector(),
+        const SizedBox(height: 10),
         _buildParameterSelector(),
+        const SizedBox(height: 12),
         if (_isLoading)
           Container(
             height: 350,
@@ -24428,6 +24748,763 @@ class _HistoryChartState extends State<HistoryChart> {
         else
           _buildChart(),
       ],
+    );
+  }
+}
+
+---------------------------------------------------------------------------------------------------------------------------------------
+unila_aqi/lib/presentation/widgets/chart/monthly_trend_chart.dart
+
+import 'package:flutter/material.dart';
+import 'package:unila_aqi/core/constants/colors.dart';
+import 'package:unila_aqi/core/constants/parameter_colors.dart';
+import 'package:unila_aqi/core/services/api_service.dart';
+import 'package:unila_aqi/core/utils/helpers.dart';
+import 'package:unila_aqi/data/models/monthly_trend.dart';
+
+class MonthlyTrendChart extends StatefulWidget {
+  final String roomId;
+
+  const MonthlyTrendChart({super.key, required this.roomId});
+
+  @override
+  State<MonthlyTrendChart> createState() => _MonthlyTrendChartState();
+}
+
+class _MonthlyTrendChartState extends State<MonthlyTrendChart> {
+  late int _year;
+  late int _month;
+  String _parameter = 'aqi';
+
+  bool _isLoading = false;
+  String _error = '';
+  MonthlyTrendResponse? _response;
+
+  static const Map<String, String> _paramLabels = {
+    'aqi': 'AQI',
+    'pm25': 'PM2.5',
+    'pm10': 'PM10',
+    'co': 'CO',
+    'so2': 'SO2',
+    'o3': 'O3',
+    'no2': 'NO2',
+    'temperature': 'Suhu',
+    'humidity': 'Kelembaban',
+  };
+
+  static const Map<String, String> _paramUnits = {
+    'aqi': '',
+    'pm25': 'μg/m³',
+    'pm10': 'μg/m³',
+    'co': 'μg/m³',
+    'so2': 'μg/m³',
+    'o3': 'μg/m³',
+    'no2': 'μg/m³',
+    'temperature': '°C',
+    'humidity': '%',
+  };
+
+  static const List<String> _paramOrder = [
+    'aqi', 'pm25', 'pm10', 'co', 'so2', 'o3', 'no2',
+    'temperature', 'humidity',
+  ];
+
+  static const List<String> _monthNames = [
+    'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+    'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember',
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    final now = DateTime.now();
+    _year = now.year;
+    _month = now.month;
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    if (!mounted) return;
+    final hadData = _response != null && _response!.hasAnyData;
+
+    setState(() {
+      _isLoading = !hadData;
+      _error = '';
+    });
+
+    final result = await ApiService()
+        .getMonthlyTrend(widget.roomId, year: _year, month: _month);
+
+    if (!mounted) return;
+
+    if (result is Map && result['success'] == true) {
+      setState(() {
+        _response = MonthlyTrendResponse.fromJson(
+          Map<String, dynamic>.from(result),
+        );
+        _isLoading = false;
+      });
+    } else {
+      final errStr = (result is Map) ? result['error']?.toString() ?? '' : '';
+      setState(() {
+        _isLoading = false;
+        _error = Helpers.isNetworkError(errStr)
+            ? 'Tidak dapat memuat trend bulanan karena server tidak dapat dihubungi.'
+            : 'Gagal memuat trend bulanan.';
+      });
+      if (Helpers.isNetworkError(errStr)) {
+        Helpers.showServerError(context);
+      } else {
+        Helpers.showSnackBar(context, 'Gagal memuat trend bulanan',
+            isError: true);
+      }
+    }
+  }
+
+  Future<void> _changeMonth(int delta) async {
+    final now = DateTime.now();
+    int newMonth = _month + delta;
+    int newYear = _year;
+
+    if (newMonth < 1) {
+      newMonth = 12;
+      newYear -= 1;
+    } else if (newMonth > 12) {
+      newMonth = 1;
+      newYear += 1;
+    }
+
+    final candidate = DateTime(newYear, newMonth);
+    final current = DateTime(now.year, now.month);
+    if (candidate.isAfter(current)) return;
+
+    setState(() {
+      _year = newYear;
+      _month = newMonth;
+    });
+    await _loadData();
+  }
+
+  Future<void> _pickMonthYear() async {
+    final picked = await showModalBottomSheet<DateTime>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => _MonthYearPickerSheet(
+        initialYear: _year,
+        initialMonth: _month,
+      ),
+    );
+
+    if (picked != null) {
+      setState(() {
+        _year = picked.year;
+        _month = picked.month;
+      });
+      await _loadData();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.bar_chart_rounded,
+                  color: Colors.blue, size: 18),
+              const SizedBox(width: 6),
+              const Expanded(
+                child: Text(
+                  'TREND HARIAN BULANAN',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              IconButton(
+                onPressed: _isLoading ? null : _loadData,
+                icon: const Icon(Icons.refresh, size: 20),
+                tooltip: 'Refresh trend bulanan',
+                splashRadius: 20,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          _buildMonthYearSelector(),
+          const SizedBox(height: 10),
+          _buildParameterChips(),
+          const SizedBox(height: 12),
+          if (_isLoading)
+            const SizedBox(
+              height: 200,
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else if (_error.isNotEmpty)
+            _buildErrorState()
+          else if (_response == null || !_response!.hasAnyData)
+            _buildEmptyState()
+          else
+            ..._buildAllCharts(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMonthYearSelector() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(
+        children: [
+          IconButton(
+            icon: const Icon(Icons.chevron_left),
+            onPressed: () => _changeMonth(-1),
+            tooltip: 'Bulan sebelumnya',
+          ),
+          Expanded(
+            child: InkWell(
+              onTap: _pickMonthYear,
+              borderRadius: BorderRadius.circular(8),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Column(
+                  children: [
+                    Text(
+                      '${_monthNames[_month - 1]} $_year',
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        fontFamily: 'Inter',
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.chevron_right),
+            onPressed: () => _changeMonth(1),
+            tooltip: 'Bulan berikutnya',
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildParameterChips() {
+    return SizedBox(
+      height: 40,
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        itemCount: _paramOrder.length,
+        itemBuilder: (context, index) {
+          final p = _paramOrder[index];
+          final isSelected = _parameter == p;
+          final color = ParameterColors.of(p);
+
+          return GestureDetector(
+            onTap: () => setState(() => _parameter = p),
+            child: Container(
+              margin: const EdgeInsets.only(right: 6),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                // ✅ Selected = warna parameter itu sendiri
+                color: isSelected
+                    ? color
+                    : AppColors.primary.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 8,
+                    height: 8,
+                    decoration: BoxDecoration(
+                      color: isSelected ? Colors.white : color,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Center(
+                    child: Text(
+                      _paramLabels[p] ?? p,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: isSelected ? Colors.white : color,
+                        fontFamily: 'Inter',
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  List<Widget> _buildAllCharts() {
+    final resp = _response!;
+    final unit = _paramUnits[_parameter] ?? '';
+    final label = _paramLabels[_parameter] ?? _parameter;
+
+    final baseColor = ParameterColors.of(_parameter);
+
+    return [
+      _MonthlyBarChart(
+        title: 'Tertinggi',
+        subtitle: 'Nilai $label tertinggi dalam bulan ini',
+        days: resp.days,
+        parameter: _parameter,
+        metric: 'max',
+        unit: unit,
+        color: baseColor,
+      ),
+      const SizedBox(height: 12),
+      _MonthlyBarChart(
+        title: 'Rata-rata',
+        subtitle: 'Rata-rata nilai $label harian dalam bulan ini',
+        days: resp.days,
+        parameter: _parameter,
+        metric: 'avg',
+        unit: unit,
+        color: baseColor,
+      ),
+      const SizedBox(height: 12),
+      _MonthlyBarChart(
+        title: 'Terendah',
+        subtitle: 'Nilai $label terendah dari semua hari sejenis dalam bulan ini',
+        days: resp.days,
+        parameter: _parameter,
+        metric: 'min',
+        unit: unit,
+        color: baseColor,
+      ),
+    ];
+  }
+
+  Widget _buildErrorState() {
+    return SizedBox(
+      height: 200,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.error_outline, size: 48, color: AppColors.textHint),
+          const SizedBox(height: 12),
+          Text(
+            _error,
+            textAlign: TextAlign.center,
+            style:
+                const TextStyle(fontSize: 12.5, color: AppColors.textSecondary),
+          ),
+          const SizedBox(height: 12),
+          ElevatedButton.icon(
+            onPressed: _loadData,
+            icon: const Icon(Icons.refresh, size: 16),
+            label: const Text('Coba Lagi'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return SizedBox(
+      height: 200,
+      child: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.bar_chart_outlined,
+                size: 48, color: AppColors.textHint),
+            const SizedBox(height: 12),
+            Text(
+              'Tidak ada data di ${_monthNames[_month - 1]} $_year',
+              style: const TextStyle(color: AppColors.textHint),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              '(atau semua data adalah anomali/error)',
+              style: TextStyle(fontSize: 11, color: AppColors.textHint),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ============================================================
+// BAR CHART PER METRIK
+// ============================================================
+class _MonthlyBarChart extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final List<MonthlyDayData> days;
+  final String parameter;
+  final String metric;
+  final String unit;
+  final Color color;
+
+  const _MonthlyBarChart({
+    required this.title,
+    required this.subtitle,
+    required this.days,
+    required this.parameter,
+    required this.metric,
+    required this.unit,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final values = days
+        .map((d) => d.values[parameter]?.byMetric(metric))
+        .toList(growable: false);
+
+    final maxVal = values
+        .whereType<double>()
+        .fold<double>(0.0, (a, b) => b > a ? b : a);
+    final chartMax = maxVal > 0 ? maxVal * 1.15 : 1.0;
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(10, 10, 10, 8),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.04),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withOpacity(0.25)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                title,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: color,
+                  fontFamily: 'Inter',
+                ),
+              ),
+              if (unit.isNotEmpty) ...[
+                const SizedBox(width: 4),
+                Text(
+                  '($unit)',
+                  style: const TextStyle(
+                    fontSize: 10,
+                    color: AppColors.textHint,
+                    fontFamily: 'Inter',
+                  ),
+                ),
+              ],
+            ],
+          ),
+          const SizedBox(height: 2),
+          Text(
+            subtitle,
+            style: const TextStyle(
+              fontSize: 10.5,
+              color: AppColors.textSecondary,
+              fontFamily: 'Inter',
+            ),
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            height: 140,
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final labelSpace = 30.0;
+                final barAreaHeight = constraints.maxHeight - labelSpace;
+
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: List.generate(days.length, (i) {
+                    final day = days[i];
+                    final value = values[i];
+                    final hasData = value != null;
+
+                    final barHeight = hasData
+                        ? (value / chartMax) * barAreaHeight
+                        : 0.0;
+
+                    return Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 2),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                            SizedBox(
+                              height: 14,
+                              child: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: Text(
+                                  hasData
+                                      ? _formatValue(value, parameter)
+                                      : '—',
+                                  style: TextStyle(
+                                    fontSize: 9.5,
+                                    fontWeight: FontWeight.w700,
+                                    color: hasData
+                                        ? AppColors.textPrimary
+                                        : AppColors.textHint,
+                                    fontFamily: 'Inter',
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Container(
+                              height: hasData && barHeight > 4
+                                  ? barHeight
+                                  : 4,
+                              width: double.infinity,
+                              decoration: BoxDecoration(
+                                color: hasData
+                                    ? color
+                                    : Colors.grey.withOpacity(0.3),
+                                borderRadius: const BorderRadius.vertical(
+                                  top: Radius.circular(4),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            SizedBox(
+                              height: 12,
+                              child: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: Text(
+                                  _dayShort(day.dayName),
+                                  style: const TextStyle(
+                                    fontSize: 9.5,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.textSecondary,
+                                    fontFamily: 'Inter',
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static String _formatValue(double v, String parameter) {
+    if (parameter == 'aqi') return v.round().toString();
+    if (parameter == 'humidity') return v.round().toString();
+    if (parameter == 'co') return v.round().toString();
+    return v.toStringAsFixed(1);
+  }
+
+  static String _dayShort(String dayName) {
+    const map = {
+      'Senin': 'Sen',
+      'Selasa': 'Sel',
+      'Rabu': 'Rab',
+      'Kamis': 'Kam',
+      'Jumat': 'Jum',
+      'Sabtu': 'Sab',
+      'Minggu': 'Min',
+    };
+    return map[dayName] ?? dayName;
+  }
+}
+
+// ============================================================
+// MONTH/YEAR PICKER BOTTOM SHEET
+// ============================================================
+class _MonthYearPickerSheet extends StatefulWidget {
+  final int initialYear;
+  final int initialMonth;
+
+  const _MonthYearPickerSheet({
+    required this.initialYear,
+    required this.initialMonth,
+  });
+
+  @override
+  State<_MonthYearPickerSheet> createState() => _MonthYearPickerSheetState();
+}
+
+class _MonthYearPickerSheetState extends State<_MonthYearPickerSheet> {
+  late int _year;
+  late int _month;
+
+  static const List<String> _monthNames = [
+    'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+    'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember',
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _year = widget.initialYear;
+    _month = widget.initialMonth;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final now = DateTime.now();
+    final minYear = now.year - 5;
+    final maxYear = now.year;
+    final years = List.generate(maxYear - minYear + 1, (i) => minYear + i);
+
+    return Padding(
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom,
+      ),
+      child: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Pilih Bulan & Tahun',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 12),
+              DropdownButton<int>(
+                value: _year,
+                isExpanded: true,
+                onChanged: (v) => setState(() => _year = v ?? _year),
+                items: years
+                    .map((y) => DropdownMenuItem(value: y, child: Text('$y')))
+                    .toList(),
+              ),
+              const SizedBox(height: 12),
+              GridView.count(
+                crossAxisCount: 3,
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                childAspectRatio: 2.2,
+                mainAxisSpacing: 8,
+                crossAxisSpacing: 8,
+                children: List.generate(12, (i) {
+                  final m = i + 1;
+                  final isSelected = m == _month;
+                  final isFuture = (_year == now.year && m > now.month);
+
+                  return GestureDetector(
+                    onTap: isFuture
+                        ? null
+                        : () {
+                            setState(() => _month = m);
+                          },
+                    child: Container(
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: isSelected
+                            ? AppColors.primary
+                            : (isFuture
+                                ? Colors.grey.withOpacity(0.08)
+                                : AppColors.surface),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: isSelected
+                              ? AppColors.primary
+                              : AppColors.border,
+                        ),
+                      ),
+                      child: Text(
+                        _monthNames[i],
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          fontWeight:
+                              isSelected ? FontWeight.w700 : FontWeight.w500,
+                          color: isSelected
+                              ? Colors.white
+                              : (isFuture
+                                  ? AppColors.textDisabled
+                                  : AppColors.textPrimary),
+                        ),
+                      ),
+                    ),
+                  );
+                }),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('Batal'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () => Navigator.pop(
+                        context,
+                        DateTime(_year, _month),
+                      ),
+                      child: const Text('Terapkan'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

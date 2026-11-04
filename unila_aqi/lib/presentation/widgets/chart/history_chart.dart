@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
-import 'package:intl/intl.dart';
+import 'package:unila_aqi/core/constants/colors.dart';
+import 'package:unila_aqi/core/constants/parameter_colors.dart';
 import 'package:unila_aqi/core/services/api_service.dart';
 import 'package:unila_aqi/core/utils/helpers.dart';
 import 'package:unila_aqi/data/models/sensor_data.dart';
@@ -18,10 +19,10 @@ class HistoryChart extends StatefulWidget {
   });
 
   @override
-  _HistoryChartState createState() => _HistoryChartState();
+  State<HistoryChart> createState() => HistoryChartState();
 }
 
-class _HistoryChartState extends State<HistoryChart> {
+class HistoryChartState extends State<HistoryChart> {
   List<SensorData> _historyData = [];
   DateTime _selectedDate = DateTime.now();
   String _selectedParameter = 'aqi';
@@ -48,17 +49,23 @@ class _HistoryChartState extends State<HistoryChart> {
     'humidity': 'Kelembaban',
   };
 
-  final Map<String, Color> _parameterColors = {
-    'aqi': Colors.blue,
-    'pm25': Colors.red,
-    'pm10': Colors.orange,
-    'co': Colors.green,
-    'so2': Colors.brown,
-    'o3': Colors.cyan,
-    'no2': Colors.indigo,
-    'temperature': Colors.purple,
-    'humidity': Colors.teal,
-  };
+  static const List<String> _dayNames = [
+    'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu',
+  ];
+  static const List<String> _monthNames = [
+    'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+    'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember',
+  ];
+
+  String _formatSelectedDate(DateTime d) {
+    final dayName = _dayNames[d.weekday - 1];
+    final monthName = _monthNames[d.month - 1];
+    return '$dayName, ${d.day} $monthName ${d.year}';
+  }
+
+  Future<void> refresh() async {
+    await _loadHistoryData();
+  }
 
   @override
   void initState() {
@@ -98,7 +105,6 @@ class _HistoryChartState extends State<HistoryChart> {
     }
   }
 
-  /// Hanya parameter yang punya minimal satu nilai non-null di history.
   List<String> get _availableParameters {
     return _allParameters.where((p) {
       return _historyData.any((d) => _valueFor(d, p) != null);
@@ -193,6 +199,24 @@ class _HistoryChartState extends State<HistoryChart> {
     }
   }
 
+  Future<void> _changeDay(int delta) async {
+    final today = DateTime.now();
+    final todayStart = DateTime(today.year, today.month, today.day);
+    final minDate = todayStart.subtract(const Duration(days: 30));
+
+    final candidate = DateTime(
+      _selectedDate.year,
+      _selectedDate.month,
+      _selectedDate.day + delta,
+    );
+
+    if (candidate.isAfter(todayStart)) return;
+    if (candidate.isBefore(minDate)) return;
+
+    setState(() => _selectedDate = candidate);
+    await _loadHistoryData();
+  }
+
   List<FlSpot> _getDataPoints() {
     final spots = <FlSpot>[];
     for (int i = 0; i < _historyData.length; i++) {
@@ -231,7 +255,7 @@ class _HistoryChartState extends State<HistoryChart> {
 
   Widget _buildChart() {
     final spots = _getDataPoints();
-    final color = _parameterColors[_selectedParameter]!;
+    final color = ParameterColors.of(_selectedParameter);
 
     final screenWidth = MediaQuery.of(context).size.width;
     final availableViewport = screenWidth - (_containerPadding * 2);
@@ -245,48 +269,53 @@ class _HistoryChartState extends State<HistoryChart> {
       height: 350,
       padding: const EdgeInsets.all(_containerPadding),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppColors.primary.withOpacity(0.04),
         borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
+        border: Border.all(color: AppColors.primary.withOpacity(0.25)),
       ),
       child: Column(
         children: [
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                'Grafik ${_parameterLabels[_selectedParameter]}',
-                style:
-                    const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-              ),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: color.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
+              Expanded(
                 child: Row(
                   children: [
-                    Container(
-                      width: 12,
-                      height: 12,
-                      decoration:
-                          BoxDecoration(color: color, shape: BoxShape.circle),
+                    Flexible(
+                      child: Text(
+                        'Grafik ${_parameterLabels[_selectedParameter]}',
+                        style: const TextStyle(
+                            fontSize: 16, fontWeight: FontWeight.w600),
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
-                    const SizedBox(width: 4),
-                    Text(
-                      _parameterLabels[_selectedParameter]!,
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                        color: color,
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: color.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 12,
+                            height: 12,
+                            decoration: BoxDecoration(
+                                color: color, shape: BoxShape.circle),
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            _parameterLabels[_selectedParameter]!,
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                              color: color,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],
@@ -470,50 +499,52 @@ class _HistoryChartState extends State<HistoryChart> {
 
   Widget _buildParameterSelector() {
     final available = _availableParameters;
-    if (available.isEmpty) return const SizedBox.shrink();
+    if (available.isEmpty) return const SizedBox(height: 40);
 
-    return Container(
-      height: 50,
-      margin: const EdgeInsets.only(bottom: 16),
+    return SizedBox(
+      height: 40,
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
         itemCount: available.length,
         itemBuilder: (context, index) {
           final parameter = available[index];
           final isSelected = _selectedParameter == parameter;
-          final color = _parameterColors[parameter]!;
+          final color = ParameterColors.of(parameter);
 
           return GestureDetector(
             onTap: () => setState(() => _selectedParameter = parameter),
             child: Container(
-              margin: const EdgeInsets.only(right: 8),
+              margin: const EdgeInsets.only(right: 6),
               padding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
-                color: isSelected ? color : color.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(25),
-                border: Border.all(
-                  color: isSelected ? color : Colors.transparent,
-                  width: 2,
-                ),
+                // ✅ Selected = warna parameter itu sendiri
+                color: isSelected
+                    ? color
+                    : AppColors.primary.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(20),
               ),
               child: Row(
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   Container(
-                    width: 12,
-                    height: 12,
+                    width: 8,
+                    height: 8,
                     decoration: BoxDecoration(
                       color: isSelected ? Colors.white : color,
                       shape: BoxShape.circle,
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  Text(
-                    _parameterLabels[parameter]!,
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: isSelected ? Colors.white : color,
+                  const SizedBox(width: 6),
+                  Center(
+                    child: Text(
+                      _parameterLabels[parameter]!,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: isSelected ? Colors.white : color,
+                        fontFamily: 'Inter',
+                      ),
                     ),
                   ),
                 ],
@@ -527,46 +558,45 @@ class _HistoryChartState extends State<HistoryChart> {
 
   Widget _buildDateSelector() {
     return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.border),
       ),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const SizedBox(height: 4),
-              Text(
-                DateFormat('EEEE, dd MMMM yyyy').format(_selectedDate),
-                style: const TextStyle(
-                    fontSize: 16, fontWeight: FontWeight.w600),
-              ),
-            ],
+          IconButton(
+            icon: const Icon(Icons.chevron_left),
+            onPressed: () => _changeDay(-1),
+            tooltip: 'Hari sebelumnya',
           ),
-          Row(
-            children: [
-              IconButton(
-                onPressed: () => _selectDate(context),
-                icon: const Icon(Icons.calendar_today),
-                tooltip: 'Pilih tanggal lain',
+          Expanded(
+            child: InkWell(
+              onTap: () => _selectDate(context),
+              borderRadius: BorderRadius.circular(8),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Column(
+                  children: [
+                    Text(
+                      _formatSelectedDate(_selectedDate),
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        fontFamily: 'Inter',
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
               ),
-              IconButton(
-                onPressed: _isLoading ? null : _loadHistoryData,
-                icon: const Icon(Icons.refresh),
-                tooltip: 'Refresh data',
-              ),
-            ],
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.chevron_right),
+            onPressed: () => _changeDay(1),
+            tooltip: 'Hari berikutnya',
           ),
         ],
       ),
@@ -579,7 +609,9 @@ class _HistoryChartState extends State<HistoryChart> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _buildDateSelector(),
+        const SizedBox(height: 10),
         _buildParameterSelector(),
+        const SizedBox(height: 12),
         if (_isLoading)
           Container(
             height: 350,

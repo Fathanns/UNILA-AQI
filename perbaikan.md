@@ -22,7 +22,7 @@
 
 - ~~lengkapi partikel ispu lainnya, dan buat jika tidak ada data json di field partikel yang diterima, dibuat catch nya~~
 - tambahkan daily data nya dalam sebulan: highest, rata-rata, lowest
-- tambahkan breakpoint co di informasi dan bantuan
+- ~~tambahkan breakpoint co di informasi dan bantuan~~
 
 error
 - ~~error Ketika edit Gedung dan refresh di dashboard~~

@@ -3,6 +3,7 @@ import '../../../data/repositories/aqi_info_repository.dart';
 import '../../../data/models/aqi_info.dart';
 import '../../../core/constants/colors.dart';
 
+
 class AQIInfoScreen extends StatefulWidget {
   const AQIInfoScreen({super.key});
 

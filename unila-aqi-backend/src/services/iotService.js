@@ -267,7 +267,7 @@ class IoTService {
       room.updatedAt = new Date();
       await room.save();
 
-      await new SensorData({
+       await new SensorData({
         roomId: room._id,
         roomName: room.name,
         buildingName: room.buildingName,
@@ -276,6 +276,8 @@ class IoTService {
         temperature, humidity,
         category: aqiResult.category,
         timestamp: new Date(),
+        isAnomaly: iotData.isAnomaly === true,
+        anomalyType: iotData.anomalyType || null,
       }).save();
 
       this.broadcastRoomUpdate(room, normalizedData, 'iot', deviceName);
@@ -366,6 +368,9 @@ class IoTService {
         temperature, humidity,
         category: aqiResult.category,
         timestamp: new Date(),
+
+        isAnomaly: iotData.isAnomaly === true,
+        anomalyType: iotData.anomalyType || null,
       }).save();
 
       this.broadcastRoomUpdate(room, iotData, 'iot', deviceName);
@@ -390,6 +395,8 @@ class IoTService {
         temperature: -1, humidity: -1,
         category: 'error',
         timestamp: new Date(),
+        isAnomaly: true,
+        anomalyType: 'error',
       }).save();
 
       if (this.io) {

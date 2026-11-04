@@ -369,4 +369,34 @@ class ApiService {
   void dispose() {
     _client.close();
   }
+    Future<dynamic> getMonthlyTrend(
+    String roomId, {
+    required int year,
+    required int month,
+  }) async {
+    try {
+      final headers = await _getHeaders();
+
+      final response = await http.get(
+        Uri.parse('$baseUrl/sensor-data/$roomId/monthly?year=$year&month=$month'),
+        headers: headers,
+      );
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body);
+      } else {
+        return {
+          'success': false,
+          'error': 'Monthly trend request failed: ${response.statusCode}',
+          'statusCode': response.statusCode,
+        };
+      }
+    } catch (e) {
+      return {
+        'success': false,
+        'error': e.toString(),
+      };
+    }
+  }
 }
+

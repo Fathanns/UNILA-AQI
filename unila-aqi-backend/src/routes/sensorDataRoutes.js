@@ -232,4 +232,160 @@ router.get('/:roomId/history', async (req, res) => {
   }
 });
 
+router.get('/:roomId/monthly', async (req, res) => {
+  try {
+    const { roomId } = req.params;
+    const year  = parseInt(req.query.year, 10);
+    const month = parseInt(req.query.month, 10);
+
+    if (!mongoose.Types.ObjectId.isValid(roomId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid room ID format',
+      });
+    }
+
+    if (isNaN(year) || year < 2000 || year > 2100) {
+      return res.status(400).json({
+        success: false,
+        message: 'Parameter year tidak valid',
+      });
+    }
+
+    if (isNaN(month) || month < 1 || month > 12) {
+      return res.status(400).json({
+        success: false,
+        message: 'Parameter month tidak valid (1-12)',
+      });
+    }
+
+    const startOfMonth = new Date(year, month - 1, 1, 0, 0, 0, 0);
+    const endOfMonth   = new Date(year, month, 0, 23, 59, 59, 999);
+
+    console.log(
+      `📊 Monthly trend → room ${roomId} | ${year}-${String(month).padStart(2, '0')} | ` +
+      `${startOfMonth.toISOString()} → ${endOfMonth.toISOString()}`
+    );
+
+    const allParams = [
+      'aqi', 'pm25', 'pm10', 'co', 'so2', 'o3', 'no2',
+      'temperature', 'humidity',
+    ];
+
+    // Accumulator tahap 1: per tanggal
+    const dailyAcc = {};
+    allParams.forEach((p) => {
+      dailyAcc[`daily_max_${p}`] = { $max: `$${p}` };
+      dailyAcc[`daily_avg_${p}`] = { $avg: `$${p}` };
+      dailyAcc[`daily_min_${p}`] = { $min: `$${p}` };
+    });
+
+    // Accumulator tahap 2: per hari-dalam-minggu
+    const monthlyAcc = { weekCount: { $sum: 1 } };
+    allParams.forEach((p) => {
+      monthlyAcc[`max_${p}`] = { $max: `$daily_max_${p}` };
+      monthlyAcc[`avg_${p}`] = { $avg: `$daily_avg_${p}` };
+      monthlyAcc[`min_${p}`] = { $min: `$daily_min_${p}` };
+    });
+
+    const pipeline = [
+      // 1. Filter: room + rentang bulan + BUKAN anomali + BUKAN error (-1)
+      {
+        $match: {
+          roomId: toObjectId(roomId),
+          timestamp: { $gte: startOfMonth, $lte: endOfMonth },
+          isAnomaly: { $ne: true },   // exclude spike & error simulasi
+          aqi: { $gte: 0 },           // exclude error (-1), aman untuk legacy
+        },
+      },
+      // 2. Hitung index hari dalam minggu (Senin=1 .. Minggu=7)
+      //    MongoDB $dayOfWeek: 1=Sun, 2=Mon, ..., 7=Sat
+      //    Formula: ((dow + 5) % 7) + 1
+      {
+        $addFields: {
+          dayOfWeekMonSun: {
+            $add: [
+              { $mod: [{ $add: [{ $dayOfWeek: '$timestamp' }, 5] }, 7] },
+              1,
+            ],
+          },
+        },
+      },
+      // 3. Group per tanggal (hari kalender)
+      {
+        $group: {
+          _id: {
+            day: { $dayOfMonth: '$timestamp' },
+            dow: '$dayOfWeekMonSun',
+          },
+          ...dailyAcc,
+        },
+      },
+      // 4. Group per hari-dalam-minggu
+      {
+        $group: {
+          _id: '$_id.dow',
+          ...monthlyAcc,
+        },
+      },
+      // 5. Urutkan Senin..Minggu
+      { $sort: { _id: 1 } },
+    ];
+
+    const rawResult = await SensorData.aggregate(pipeline);
+
+    const dayNames = [
+      'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu',
+    ];
+
+    const round1 = (v) =>
+      typeof v === 'number' && !Number.isNaN(v)
+        ? Math.round(v * 10) / 10
+        : null;
+
+    const days = [];
+    for (let i = 1; i <= 7; i++) {
+      const found = rawResult.find((r) => r._id === i);
+
+      const values = {};
+      allParams.forEach((p) => {
+        values[p] = {
+          max: found ? round1(found[`max_${p}`]) : null,
+          avg: found ? round1(found[`avg_${p}`]) : null,
+          min: found ? round1(found[`min_${p}`]) : null,
+        };
+      });
+
+      // Hari dianggap punya data bila minimal AQI punya nilai valid
+      const hasData = values.aqi.max !== null;
+
+      days.push({
+        day: i,
+        dayName: dayNames[i - 1],
+        hasData,
+        weekCount: found?.weekCount ?? 0,
+        values,
+      });
+    }
+
+    res.json({
+      success: true,
+      year,
+      month,
+      roomId,
+      startDate: startOfMonth,
+      endDate: endOfMonth,
+      days,
+      message: 'Monthly trend data loaded',
+    });
+  } catch (error) {
+    console.error('Error fetching monthly trend:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching monthly trend',
+      error: error.message,
+    });
+  }
+});
+
 module.exports = router;

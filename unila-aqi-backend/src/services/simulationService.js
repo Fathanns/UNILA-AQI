@@ -128,7 +128,7 @@ class SimulationService {
 
       await room.save();
 
-      const historicalData = new SensorData({
+       const historicalData = new SensorData({
         roomId: room._id,
         roomName: room.name,
         buildingName: room.buildingName,
@@ -142,7 +142,9 @@ class SimulationService {
         temperature: sensorData.temperature,
         humidity: sensorData.humidity,
         category: sensorData.category,
-        timestamp: new Date()
+        timestamp: new Date(),
+        isAnomaly: sensorData.isAnomaly === true,
+        anomalyType: sensorData.anomalyType || null,
       });
 
       await historicalData.save();
@@ -193,7 +195,9 @@ class SimulationService {
         pm25: -1, pm10: -1, co: -1, so2: -1, o3: -1, no2: -1,
         temperature: -1, humidity: -1,
         category: 'error',
-        timestamp: new Date()
+        timestamp: new Date(),
+        isAnomaly: true,
+        anomalyType: 'error',
       }).save();
 
       if (this.io) {

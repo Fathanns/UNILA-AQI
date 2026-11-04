@@ -8,7 +8,6 @@ const sensorDataSchema = new mongoose.Schema({
   },
   roomName: { type: String, required: true },
   buildingName: { type: String, required: true },
-  // FIXED: semua field nullable
   aqi: { type: Number, default: null },
   pm25: { type: Number, default: null },
   pm10: { type: Number, default: null },
@@ -20,10 +19,20 @@ const sensorDataSchema = new mongoose.Schema({
   humidity: { type: Number, default: null },
   category: {
     type: String,
-    // FIXED: tambah 'no_data'
     enum: ['baik', 'sedang', 'tidak_sehat', 'sangat_tidak_sehat', 'berbahaya', 'error', 'no_data'],
     required: true
   },
+  
+  isAnomaly: {
+    type: Boolean,
+    default: false,
+    index: true,
+  },
+  anomalyType: {
+    type: String,
+    default: null,
+  },
+
   timestamp: {
     type: Date,
     default: Date.now,
@@ -33,5 +42,6 @@ const sensorDataSchema = new mongoose.Schema({
 
 sensorDataSchema.index({ roomId: 1, timestamp: -1 });
 sensorDataSchema.index({ timestamp: -1 });
+sensorDataSchema.index({ roomId: 1, timestamp: 1, isAnomaly: 1 });
 
 module.exports = mongoose.model('SensorData', sensorDataSchema);

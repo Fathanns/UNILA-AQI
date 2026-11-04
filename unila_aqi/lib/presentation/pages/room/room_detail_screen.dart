@@ -7,6 +7,7 @@ import 'package:unila_aqi/data/models/room.dart';
 import 'package:unila_aqi/data/repositories/room_repository.dart';
 import 'package:unila_aqi/presentation/widgets/chart/history_chart.dart';
 import '../../widgets/common/server_status_indicator.dart';
+import 'package:unila_aqi/presentation/widgets/chart/monthly_trend_chart.dart';
 
 enum _RecSeverity { normal, warning, danger }
 
@@ -25,6 +26,9 @@ class RoomDetailScreen extends StatefulWidget {
 class _RoomDetailScreenState extends State<RoomDetailScreen> {
   final SocketService _socketService = SocketService();
   final RoomRepository _roomRepository = RoomRepository();
+
+  final GlobalKey<HistoryChartState> _historyKey =
+      GlobalKey<HistoryChartState>();
 
   String? _lastNotificationMessage;
   DateTime? _lastNotificationTime;
@@ -622,67 +626,9 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
               ),
             ],
           ),
-          const SizedBox(height: 12),
-          _buildParameterStatus(),
           const SizedBox(height: 16),
           ...recommendations.map(_buildRecommendationItem),
         ],
-      ),
-    );
-  }
-
-  Widget _buildParameterStatus() {
-    final data = _currentRoomData.currentData;
-    final aqi = _currentRoomData.currentAQI;
-
-    return Wrap(
-      spacing: 10,
-      runSpacing: 10,
-      children: [
-        _buildStatusChip(
-            'AQI: ${aqi?.toString() ?? '—'}', Helpers.getAQIColor(aqi)),
-        if (data.hasPM25)
-          _buildStatusChip('PM2.5: ${data.pm25!.toStringAsFixed(1)}',
-              Helpers.getPM25Color(data.pm25)),
-        if (data.hasPM10)
-          _buildStatusChip('PM10: ${data.pm10!.toStringAsFixed(1)}',
-              Helpers.getPM10Color(data.pm10)),
-        if (data.hasCO)
-          _buildStatusChip(
-              'CO: ${data.co!.round()}', Helpers.getCOColor(data.co)),
-        if (data.hasSO2)
-          _buildStatusChip('SO2: ${data.so2!.toStringAsFixed(1)}',
-              Helpers.getSO2Color(data.so2)),
-        if (data.hasO3)
-          _buildStatusChip('O3: ${data.o3!.toStringAsFixed(1)}',
-              Helpers.getO3Color(data.o3)),
-        if (data.hasNO2)
-          _buildStatusChip('NO2: ${data.no2!.toStringAsFixed(1)}',
-              Helpers.getNO2Color(data.no2)),
-        if (data.hasTemperature)
-          _buildStatusChip('Suhu: ${data.temperature!.toStringAsFixed(1)}°C',
-              Helpers.getTemperatureColor(data.temperature)),
-        if (data.hasHumidity)
-          _buildStatusChip('Lembab: ${data.humidity!.round()}%',
-              Helpers.getHumidityColor(data.humidity)),
-      ],
-    );
-  }
-
-  Widget _buildStatusChip(String text, Color color) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: color,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Text(
-        text,
-        style: const TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w700,
-          color: Colors.white,
-        ),
       ),
     );
   }
@@ -1007,7 +953,7 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
             _buildParameterRows(),
             const SizedBox(height: 24),
             _buildHealthRecommendations(),
-            const SizedBox(height: 24),
+            const SizedBox(height: 16),
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(12),
@@ -1025,22 +971,32 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Row(
+                  Row(
                     children: [
-                      Icon(Icons.timeline, color: Colors.blue, size: 18),
-                      SizedBox(width: 6),
-                      Text(
+                      const Icon(Icons.timeline, color: Colors.blue, size: 18),
+                      const SizedBox(width: 6),
+                      const Text(
                         'GRAFIK HISTORIS',
                         style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
-                      Spacer(),
+                      const Spacer(),
+                      // ✅ BARU: tombol refresh di kanan sejajar judul
+                      IconButton(
+                        onPressed: () => _historyKey.currentState?.refresh(),
+                        icon: const Icon(Icons.refresh, size: 20),
+                        tooltip: 'Refresh grafik',
+                        splashRadius: 20,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 8),
                   HistoryChart(
+                    key: _historyKey,  // ✅ BARU
                     roomId: _currentRoomData.id,
                     roomName: _currentRoomData.name,
                     buildingName: _currentRoomData.buildingName,
@@ -1048,6 +1004,8 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
                 ],
               ),
             ),
+            const SizedBox(height: 16),
+            MonthlyTrendChart(roomId: _currentRoomData.id),
           ],
         ),
       ),
