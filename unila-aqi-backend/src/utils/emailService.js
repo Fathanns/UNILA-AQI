@@ -1,28 +1,63 @@
 const nodemailer = require('nodemailer');
 
-// Konfigurasi email (dari env)
-const EMAIL_USER = process.env.EMAIL_USER || 'mayangsarigizi@gmail.com';
-const EMAIL_PASS = process.env.EMAIL_PASS || 'coie fjza nkdr kvug';
+const EMAIL_USER = process.env.EMAIL_USER;
+const EMAIL_PASS = process.env.EMAIL_PASS;
 
-// Buat transporter Gmail
+if (!EMAIL_USER || !EMAIL_PASS) {
+  console.error('❌ FATAL: EMAIL_USER dan EMAIL_PASS wajib di-set.');
+  console.error('   Lokal  : tambahkan ke file .env lalu restart server.');
+  console.error('   Render : tambahkan ke Environment Variables di dashboard Render.');
+  console.error('   Nilai  : EMAIL_PASS harus berupa Gmail App Password (16 karakter),');
+  console.error('            bukan password login Gmail biasa.');
+  process.exit(1);
+}
+
+// Masking untuk log startup (jangan pernah log password)
+const maskedUser = (() => {
+  const parts = EMAIL_USER.split('@');
+  if (parts.length !== 2) return '***';
+  const [name, domain] = parts;
+  const visible = name.slice(0, Math.min(3, name.length));
+  return `${visible}***@${domain}`;
+})();
+
+console.log(`📧 Email service configured for: ${maskedUser}`);
+
+
 const transporter = nodemailer.createTransport({
   service: 'gmail',
+  secure: true,
   auth: {
     user: EMAIL_USER,
     pass: EMAIL_PASS,
   },
+  // Timeout agar tidak menggantung jika Gmail tidak merespons
+  connectionTimeout: 10000, // 10 detik
+  greetingTimeout: 10000,
+  socketTimeout: 15000,
 });
 
-/**
- * Generate 6-digit code
- */
+// Verifikasi koneksi saat startup (non-blocking, hanya log)
+transporter.verify((error) => {
+  if (error) {
+    console.error('⚠️  Email transporter verification failed:', error.message);
+    console.error('   Cek kembali EMAIL_USER / EMAIL_PASS di environment variables.');
+    console.error('   Jika EMAIL_PASS adalah password login biasa, ubah ke Gmail App Password.');
+  } else {
+    console.log('✅ Email transporter ready (Gmail SMTP)');
+  }
+});
+
+// ============================================================
+// 3) GENERATOR KODE 6-DIGIT
+// ============================================================
 const generateResetCode = () => {
   return Math.floor(100000 + Math.random() * 900000).toString();
 };
 
-/**
- * Kirim email berisi kode reset password
- */
+// ============================================================
+// 4) TEMPLATE EMAIL — RESET PASSWORD
+// ============================================================
 const sendResetCodeEmail = async (toEmail, code, username) => {
   const mailOptions = {
     from: `"Unila AQI" <${EMAIL_USER}>`,
@@ -45,12 +80,12 @@ const sendResetCodeEmail = async (toEmail, code, username) => {
             ${code}
           </div>
           <p style="color: #6C757D; font-size: 14px;">
-            Kode ini berlaku selama <strong>15 menit</strong>. 
+            Kode ini berlaku selama <strong>15 menit</strong>.
             Jika Anda tidak meminta reset password, abaikan email ini.
           </p>
           <hr style="border: none; border-top: 1px solid #dee2e6; margin: 24px 0;">
           <p style="color: #adb5bd; font-size: 12px; text-align: center; margin: 0;">
-            © 2025 Unila Air Quality Index
+            © ${new Date().getFullYear()} Unila Air Quality Index
           </p>
         </div>
       </div>
@@ -60,9 +95,6 @@ const sendResetCodeEmail = async (toEmail, code, username) => {
   return await transporter.sendMail(mailOptions);
 };
 
-/**
- * Kirim email berisi kode verifikasi perubahan email
- */
 const sendEmailChangeCodeEmail = async (toEmail, code, username) => {
   const mailOptions = {
     from: `"Unila AQI" <${EMAIL_USER}>`,
@@ -90,7 +122,7 @@ const sendEmailChangeCodeEmail = async (toEmail, code, username) => {
           </p>
           <hr style="border: none; border-top: 1px solid #dee2e6; margin: 24px 0;">
           <p style="color: #adb5bd; font-size: 12px; text-align: center; margin: 0;">
-            © 2025 Unila Air Quality Index
+            © ${new Date().getFullYear()} Unila Air Quality Index
           </p>
         </div>
       </div>
