@@ -1,12 +1,12 @@
 const nodemailer = require('nodemailer');
 
 // ============================================================
-// 1) KONFIGURASI EMAIL (SMTP CUSTOM)
+// KONFIGURASI EMAIL (SENDCOREX / EMAILSBIT SMTP)
 // ============================================================
 const SMTP_HOST = process.env.SMTP_HOST || 'smtp.emailsbit.com';
 const SMTP_PORT = parseInt(process.env.SMTP_PORT || '588', 10);
 const SMTP_USER = process.env.SMTP_USERNAME;
-const SMTP_PASS = process.env.SMTP_PASSWORD;
+const SMTP_PASS = process.env.SMTP_PASSWORD; // Diambil dari Environment Render
 const SMTP_FROM = process.env.SMTP_FROM || 'unilaaqi@inboxtaken.com';
 
 if (!SMTP_USER || !SMTP_PASS) {
@@ -23,10 +23,10 @@ const transporter = nodemailer.createTransport({
     user: SMTP_USER,
     pass: SMTP_PASS,
   },
-  connectionTimeout: 15000, // Toleransi 15 detik
+  connectionTimeout: 15000, // Toleransi 15 detik agar tidak langsung timeout
 });
 
-// Verifikasi koneksi saat startup (non-blocking)
+// Verifikasi koneksi saat server menyala
 transporter.verify((error) => {
   if (error) {
     console.error('⚠️  SMTP transporter verification failed:', error.message);
@@ -41,7 +41,7 @@ const generateResetCode = () => {
 
 const sendResetCodeEmail = async (toEmail, code, username) => {
   const mailOptions = {
-    from: `"Unila AQI" <${SMTP_FROM}>`, // Harus menggunakan domain dari SMTP_FROM
+    from: `"Unila AQI" <${SMTP_FROM}>`, 
     to: toEmail,
     subject: 'Kode Reset Password - Unila AQI',
     html: `
