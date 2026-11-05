@@ -397,11 +397,6 @@ class _MonthlyTrendChartState extends State<MonthlyTrendChart> {
               'Tidak ada data di ${_monthNames[_month - 1]} $_year',
               style: const TextStyle(color: AppColors.textHint),
             ),
-            const SizedBox(height: 4),
-            const Text(
-              '(atau semua data adalah anomali/error)',
-              style: TextStyle(fontSize: 11, color: AppColors.textHint),
-            ),
           ],
         ),
       ),
