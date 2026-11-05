@@ -1,13 +1,13 @@
 const axios = require('axios');
 
 // ============================================================
-// 1) KONFIGURASI EMAIL (MENGGUNAKAN HTTP API, BUKAN SMTP)
+// 1) KONFIGURASI EMAIL (SENDGRID API)
 // ============================================================
-const RESEND_API_KEY = process.env.RESEND_API_KEY;
-const EMAIL_USER = process.env.EMAIL_USER; // Tetap gunakan env ini sebagai alamat pengirim
+const SENDGRID_API_KEY = process.env.SENDGRID_API_KEY;
+const SENDER_EMAIL = process.env.EMAIL_USER || 'fathannursidiq01@gmail.com'; // Email yang diverifikasi di SendGrid
 
-if (!RESEND_API_KEY) {
-  console.error('❌ FATAL: RESEND_API_KEY wajib di-set di Render Environment Variables.');
+if (!SENDGRID_API_KEY) {
+  console.error('❌ FATAL: SENDGRID_API_KEY wajib di-set di Render Environment Variables.');
   process.exit(1);
 }
 
@@ -15,26 +15,38 @@ const generateResetCode = () => {
   return Math.floor(100000 + Math.random() * 900000).toString();
 };
 
-const sendEmailViaResend = async (toEmail, subject, htmlContent) => {
+const sendEmailViaSendGrid = async (toEmail, subject, htmlContent) => {
   try {
     const response = await axios.post(
-      'https://api.resend.com/emails',
+      'https://api.sendgrid.com/v3/mail/send',
       {
-        from: 'Unila AQI <onboarding@resend.dev>', // Resend free tier wajib pakai domain ini untuk testing
-        to: [toEmail],
-        subject: subject,
-        html: htmlContent,
+        personalizations: [
+          {
+            to: [{ email: toEmail }],
+            subject: subject,
+          },
+        ],
+        from: {
+          email: SENDER_EMAIL,
+          name: 'Unila AQI',
+        },
+        content: [
+          {
+            type: 'text/html',
+            value: htmlContent,
+          },
+        ],
       },
       {
         headers: {
-          Authorization: `Bearer ${RESEND_API_KEY}`,
+          Authorization: `Bearer ${SENDGRID_API_KEY}`,
           'Content-Type': 'application/json',
         },
       }
     );
     return response.data;
   } catch (error) {
-    console.error('❌ Resend API Error:', error.response?.data || error.message);
+    console.error('❌ SendGrid API Error:', error.response?.data || error.message);
     throw error;
   }
 };
@@ -56,7 +68,7 @@ const sendResetCodeEmail = async (toEmail, code, username) => {
       </div>
     </div>
   `;
-  return await sendEmailViaResend(toEmail, 'Kode Reset Password - Unila AQI', htmlContent);
+  return await sendEmailViaSendGrid(toEmail, 'Kode Reset Password - Unila AQI', htmlContent);
 };
 
 const sendEmailChangeCodeEmail = async (toEmail, code, username) => {
@@ -76,7 +88,7 @@ const sendEmailChangeCodeEmail = async (toEmail, code, username) => {
       </div>
     </div>
   `;
-  return await sendEmailViaResend(toEmail, 'Kode Verifikasi Perubahan Email - Unila AQI', htmlContent);
+  return await sendEmailViaSendGrid(toEmail, 'Kode Verifikasi Perubahan Email - Unila AQI', htmlContent);
 };
 
 module.exports = {
