@@ -1,8 +1,8 @@
 class AppConstants {
   // API Configuration
-  static const String apiBaseUrl = 'http://10.0.2.2:5000/api'; // For Android emulator
-  // static const String apiBaseUrl = 'http://localhost:5000/api'; // For iOS simulator
-  static const String socketUrl = 'http://10.0.2.2:5000'; // WebSocket URL
+  static const String apiBaseUrl = 'https://unila-aqi.onrender.com/api'; // For Android emulator
+  
+  static const String socketUrl = 'https://unila-aqi.onrender.com'; // WebSocket URL
   
   // App Information
   static const String appName = 'UNILA Air Quality Index';

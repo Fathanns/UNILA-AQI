@@ -66,7 +66,7 @@ class SocketService {
 
       // Create new socket connection with optimized settings
       _socket = IO.io(
-        'http://10.0.2.2:5000', // Use localhost for emulator
+        'https://unila-aqi.onrender.com', // Use localhost for emulator
         IO.OptionBuilder()
           .setTransports(['websocket', 'polling']) // Prefer WebSocket
           .enableAutoConnect()

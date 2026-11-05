@@ -1,0 +1,16 @@
+app = "unila-aqi-backend"   # ganti dengan nama unik, misal: unila-aqi-backend-<nama>
+primary_region = "sin"      # region terdekat (Singapore)
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "5000"
+  NODE_ENV = "production"
+
+[http_service]
+  internal_port = 5000
+  force_https = true
+  auto_stop_machines = false   # penting untuk Socket.IO agar koneksi tetap hidup
+  auto_start_machines = true
+  min_machines_running = 1
