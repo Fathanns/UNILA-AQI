@@ -4597,88 +4597,98 @@ module.exports = {
 };
 
 ---------------------------------------------------------------------------------------------------------------------------------------
-
 src/utils/emailService.js
-
-const axios = require('axios');
+const nodemailer = require('nodemailer');
 
 // ============================================================
-// 1) KONFIGURASI EMAIL (MENGGUNAKAN HTTP API, BUKAN SMTP)
+// KONFIGURASI EMAIL (SENDCOREX / EMAILSBIT SMTP)
 // ============================================================
-const RESEND_API_KEY = process.env.RESEND_API_KEY;
-const EMAIL_USER = process.env.EMAIL_USER; // Tetap gunakan env ini sebagai alamat pengirim
+const SMTP_HOST = process.env.SMTP_HOST || 'smtp.emailsbit.com';
+const SMTP_PORT = parseInt(process.env.SMTP_PORT || '588', 10);
+const SMTP_USER = process.env.SMTP_USERNAME;
+const SMTP_PASS = process.env.SMTP_PASSWORD; // Diambil dari Environment Render
+const SMTP_FROM = process.env.SMTP_FROM || 'unilaaqi@inboxtaken.com';
 
-if (!RESEND_API_KEY) {
-  console.error('❌ FATAL: RESEND_API_KEY wajib di-set di Render Environment Variables.');
+if (!SMTP_USER || !SMTP_PASS) {
+  console.error('❌ FATAL: SMTP_USERNAME dan SMTP_PASSWORD wajib di-set di Render Environment Variables.');
   process.exit(1);
 }
+
+const transporter = nodemailer.createTransport({
+  host: SMTP_HOST,
+  port: SMTP_PORT,
+  secure: false,       // Wajib false untuk STARTTLS (port 588)
+  requireTLS: true,    // Memaksa koneksi dienkripsi via STARTTLS
+  auth: {
+    user: SMTP_USER,
+    pass: SMTP_PASS,
+  },
+  connectionTimeout: 15000, // Toleransi 15 detik agar tidak langsung timeout
+});
+
+// Verifikasi koneksi saat server menyala
+transporter.verify((error) => {
+  if (error) {
+    console.error('⚠️  SMTP transporter verification failed:', error.message);
+  } else {
+    console.log('✅ SMTP transporter ready (EmailSbit/Sendcorex)');
+  }
+});
 
 const generateResetCode = () => {
   return Math.floor(100000 + Math.random() * 900000).toString();
 };
 
-const sendEmailViaResend = async (toEmail, subject, htmlContent) => {
-  try {
-    const response = await axios.post(
-      'https://api.resend.com/emails',
-      {
-        from: 'Unila AQI <onboarding@resend.dev>', // Resend free tier wajib pakai domain ini untuk testing
-        to: [toEmail],
-        subject: subject,
-        html: htmlContent,
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${RESEND_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
-      }
-    );
-    return response.data;
-  } catch (error) {
-    console.error('❌ Resend API Error:', error.response?.data || error.message);
-    throw error;
-  }
-};
-
 const sendResetCodeEmail = async (toEmail, code, username) => {
-  const htmlContent = `
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-      <div style="background: linear-gradient(135deg, #0066CC, #3388FF); padding: 24px; border-radius: 10px 10px 0 0; text-align: center;">
-        <h1 style="color: white; margin: 0;">Unila AQI</h1>
-      </div>
-      <div style="background: #f8f9fa; padding: 30px; border-radius: 0 0 10px 10px; border: 1px solid #e9ecef;">
-        <h2 style="color: #212529; margin-top: 0;">Reset Password</h2>
-        <p style="color: #495057; font-size: 16px;">Halo <strong>${username}</strong>,</p>
-        <p style="color: #495057; font-size: 16px;">Kode verifikasi reset password Anda:</p>
-        <div style="background: #0066CC; color: white; font-size: 36px; font-weight: bold; text-align: center; padding: 24px; border-radius: 10px; letter-spacing: 10px; margin: 24px 0;">
-          ${code}
+  const mailOptions = {
+    from: `"Unila AQI" <${SMTP_FROM}>`, 
+    to: toEmail,
+    subject: 'Kode Reset Password - Unila AQI',
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <div style="background: linear-gradient(135deg, #0066CC, #3388FF); padding: 24px; border-radius: 10px 10px 0 0; text-align: center;">
+          <h1 style="color: white; margin: 0;">Unila AQI</h1>
         </div>
-        <p style="color: #6C757D; font-size: 14px;">Kode ini berlaku selama <strong>15 menit</strong>.</p>
+        <div style="background: #f8f9fa; padding: 30px; border-radius: 0 0 10px 10px; border: 1px solid #e9ecef;">
+          <h2 style="color: #212529; margin-top: 0;">Reset Password</h2>
+          <p style="color: #495057; font-size: 16px;">Halo <strong>${username}</strong>,</p>
+          <p style="color: #495057; font-size: 16px;">Kode verifikasi reset password Anda:</p>
+          <div style="background: #0066CC; color: white; font-size: 36px; font-weight: bold; text-align: center; padding: 24px; border-radius: 10px; letter-spacing: 10px; margin: 24px 0;">
+            ${code}
+          </div>
+          <p style="color: #6C757D; font-size: 14px;">Kode ini berlaku selama <strong>15 menit</strong>.</p>
+        </div>
       </div>
-    </div>
-  `;
-  return await sendEmailViaResend(toEmail, 'Kode Reset Password - Unila AQI', htmlContent);
+    `,
+  };
+
+  return await transporter.sendMail(mailOptions);
 };
 
 const sendEmailChangeCodeEmail = async (toEmail, code, username) => {
-  const htmlContent = `
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-      <div style="background: linear-gradient(135deg, #0066CC, #3388FF); padding: 24px; border-radius: 10px 10px 0 0; text-align: center;">
-        <h1 style="color: white; margin: 0;">Unila AQI</h1>
-      </div>
-      <div style="background: #f8f9fa; padding: 30px; border-radius: 0 0 10px 10px; border: 1px solid #e9ecef;">
-        <h2 style="color: #212529; margin-top: 0;">Verifikasi Perubahan Email</h2>
-        <p style="color: #495057; font-size: 16px;">Halo <strong>${username}</strong>,</p>
-        <p style="color: #495057; font-size: 16px;">Kode verifikasi perubahan email Anda:</p>
-        <div style="background: #0066CC; color: white; font-size: 36px; font-weight: bold; text-align: center; padding: 24px; border-radius: 10px; letter-spacing: 10px; margin: 24px 0;">
-          ${code}
+  const mailOptions = {
+    from: `"Unila AQI" <${SMTP_FROM}>`,
+    to: toEmail,
+    subject: 'Kode Verifikasi Perubahan Email - Unila AQI',
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <div style="background: linear-gradient(135deg, #0066CC, #3388FF); padding: 24px; border-radius: 10px 10px 0 0; text-align: center;">
+          <h1 style="color: white; margin: 0;">Unila AQI</h1>
         </div>
-        <p style="color: #6C757D; font-size: 14px;">Kode ini berlaku selama <strong>15 menit</strong>.</p>
+        <div style="background: #f8f9fa; padding: 30px; border-radius: 0 0 10px 10px; border: 1px solid #e9ecef;">
+          <h2 style="color: #212529; margin-top: 0;">Verifikasi Perubahan Email</h2>
+          <p style="color: #495057; font-size: 16px;">Halo <strong>${username}</strong>,</p>
+          <p style="color: #495057; font-size: 16px;">Kode verifikasi perubahan email Anda:</p>
+          <div style="background: #0066CC; color: white; font-size: 36px; font-weight: bold; text-align: center; padding: 24px; border-radius: 10px; letter-spacing: 10px; margin: 24px 0;">
+            ${code}
+          </div>
+          <p style="color: #6C757D; font-size: 14px;">Kode ini berlaku selama <strong>15 menit</strong>.</p>
+        </div>
       </div>
-    </div>
-  `;
-  return await sendEmailViaResend(toEmail, 'Kode Verifikasi Perubahan Email - Unila AQI', htmlContent);
+    `,
+  };
+
+  return await transporter.sendMail(mailOptions);
 };
 
 module.exports = {
@@ -5748,10 +5758,16 @@ testApi();
 .env:
 
 PORT=5000
-MONGODB_URI=mongodb+srv://fathannursidiq:9KqOgqTElMa6XyzA@unila-aqi-cluster.b4zcdqm.mongodb.net/?appName=unila-aqi-cluster
+MONGODB_URI=mongodb+srv://fathannursidiq:cVrpZXkJPWDESF2F@unila-aqi-cluster.oxakb3w.mongodb.net/
 JWT_SECRET=unila_aqi_secret_key_2025_vvyynnssxx141
 NODE_ENV=development
 
+SMTP_HOST=smtp.emailsbit.com
+SMTP_PORT=588
+SMTP_SECURITY=STARTTLS
+SMTP_USERNAME=graph-73ce09cc9b504d94
+SMTP_PASSWORD=YOUR_PASSWORD
+SMTP_FROM=unilaaqi@inboxtaken.com
 
 ---------------------------------------------------------------------------------------------------------------------------------------
 
@@ -25322,11 +25338,6 @@ class _MonthlyTrendChartState extends State<MonthlyTrendChart> {
             Text(
               'Tidak ada data di ${_monthNames[_month - 1]} $_year',
               style: const TextStyle(color: AppColors.textHint),
-            ),
-            const SizedBox(height: 4),
-            const Text(
-              '(atau semua data adalah anomali/error)',
-              style: TextStyle(fontSize: 11, color: AppColors.textHint),
             ),
           ],
         ),
