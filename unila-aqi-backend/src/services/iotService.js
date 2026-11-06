@@ -120,6 +120,12 @@ class IoTService {
           // room update dari simulationService.
           console.log(BORDER_TOP);
           console.log(`ℹ️ No data change for device ${device.name}, skipping broadcast`);
+          console.log(
+            `✅ FORCE-updated IoT room ${room.name}: AQI ${aqiResult.aqi ?? 'null'} (${aqiResult.dominant ?? 'none'})`
+          );
+          console.log(
+            `⚠️  DOMINAN ${aqiResult.dominant.toUpperCase()} in ${room.name}: AQI ${aqiResult.aqi} (${dominantLabel})`
+          );
           console.log(BORDER_BOTTOM);
         }
 
