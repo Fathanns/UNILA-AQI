@@ -76,125 +76,123 @@ class SimulationService {
   }
 
   async updateRoom(room) {
-    try {
-      const roomType = this.getRoomType(room.name);
+  try {
+    const roomType = this.getRoomType(room.name);
 
-      const normalData = generateSensorData(roomType);
-      const sensorData = simulateAnomaly(normalData);
+    const normalData = generateSensorData(roomType);
+    const sensorData = simulateAnomaly(normalData);
 
-      if (sensorData.isAnomaly && sensorData.anomalyType === 'error') {
-        await this.handleSensorError(room, sensorData);
-        return;
-      }
-
-      const aqiResult = calculateAQI(
-        sensorData.pm25,
-        sensorData.pm10,
-        sensorData.co,
-        sensorData.so2,
-        sensorData.o3,
-        sensorData.no2
-      );
-
-      sensorData.aqi = aqiResult.aqi;
-      sensorData.category = aqiResult.category;
-      sensorData.dominant = aqiResult.dominant;
-      sensorData.ispuPM25 = aqiResult.ispuPM25;
-      sensorData.ispuPM10 = aqiResult.ispuPM10;
-      sensorData.ispuCO = aqiResult.ispuCO;
-      sensorData.ispuSO2 = aqiResult.ispuSO2;
-      sensorData.ispuO3 = aqiResult.ispuO3;
-      sensorData.ispuNO2 = aqiResult.ispuNO2;
-
-      const hasChanged = this._hasDataChanged(room, sensorData);
-
-      // ============================================================
-      // ✅ LOG RINGKASAN SELALU DICETAK — baik data berubah maupun tidak
-      // ============================================================
-      console.log(BORDER_TOP);
-
-      if (!hasChanged) {
-        console.log(`ℹ️  Room ${room.name} data unchanged (exact match), skipping update`);
-      } else {
-        // Simpan + riwayat + broadcast HANYA jika berubah
-        room.currentAQI = sensorData.aqi;
-        room.currentData = {
-          pm25: sensorData.pm25,
-          pm10: sensorData.pm10,
-          co: sensorData.co,
-          so2: sensorData.so2,
-          o3: sensorData.o3,
-          no2: sensorData.no2,
-          temperature: sensorData.temperature,
-          humidity: sensorData.humidity,
-          updatedAt: new Date()
-        };
-        room.updatedAt = new Date();
-
-        await room.save();
-
-        const historicalData = new SensorData({
-          roomId: room._id,
-          roomName: room.name,
-          buildingName: room.buildingName,
-          aqi: sensorData.aqi,
-          pm25: sensorData.pm25,
-          pm10: sensorData.pm10,
-          co: sensorData.co,
-          so2: sensorData.so2,
-          o3: sensorData.o3,
-          no2: sensorData.no2,
-          temperature: sensorData.temperature,
-          humidity: sensorData.humidity,
-          category: sensorData.category,
-          timestamp: new Date(),
-          isAnomaly: sensorData.isAnomaly === true,
-          anomalyType: sensorData.anomalyType || null,
-        });
-
-        await historicalData.save();
-
-        this.broadcastRoomUpdate(room, sensorData);
-        console.log(`📢 Broadcast simulation update for room ${room.name}: AQI ${room.currentAQI}`);
-      }
-
-      // --- Ringkasan AQI (SELALU tampil) ---
-      if (sensorData.isAnomaly) {
-        console.log(
-          `🚨 ANOMALY in ${room.name}: AQI ${sensorData.aqi} (${sensorData.category}) — type: ${sensorData.anomalyType}`
-        );
-      } else {
-        console.log(
-          `✅ Simulation room ${room.name}: AQI ${sensorData.aqi}, ` +
-          `PM2.5=${sensorData.pm25}, PM10=${sensorData.pm10}, ` +
-          `CO=${sensorData.co}, Suhu=${sensorData.temperature}, RH=${sensorData.humidity}`
-        );
-      }
-
-      if (sensorData.dominant) {
-        const dominantLabel = {
-          pm25: `PM2.5 (ISPU=${sensorData.ispuPM25})`,
-          pm10: `PM10 (ISPU=${sensorData.ispuPM10})`,
-          co:   `CO (ISPU=${sensorData.ispuCO})`,
-          so2:  `SO2 (ISPU=${sensorData.ispuSO2})`,
-          o3:   `O3 (ISPU=${sensorData.ispuO3})`,
-          no2:  `NO2 (ISPU=${sensorData.ispuNO2})`,
-        }[sensorData.dominant] || sensorData.dominant;
-
-        console.log(
-          `⚠️  DOMINAN ${sensorData.dominant.toUpperCase()} in ${room.name}: AQI ${sensorData.aqi} (${dominantLabel})`
-        );
-      }
-
-      console.log(BORDER_BOTTOM);
-
-    } catch (error) {
-      // ✅ FIX: error dibungkus border
-      console.log(BORDER_TOP);
-      console.error(`❌ Error updating room ${room.name}:`, error.message);
-      console.log(BORDER_BOTTOM);
+    if (sensorData.isAnomaly && sensorData.anomalyType === 'error') {
+      await this.handleSensorError(room, sensorData);
+      return;
     }
+
+    const aqiResult = calculateAQI(
+      sensorData.pm25,
+      sensorData.pm10,
+      sensorData.co,
+      sensorData.so2,
+      sensorData.o3,
+      sensorData.no2
+    );
+
+    sensorData.aqi = aqiResult.aqi;
+    sensorData.category = aqiResult.category;
+    sensorData.dominant = aqiResult.dominant;
+    sensorData.ispuPM25 = aqiResult.ispuPM25;
+    sensorData.ispuPM10 = aqiResult.ispuPM10;
+    sensorData.ispuCO = aqiResult.ispuCO;
+    sensorData.ispuSO2 = aqiResult.ispuSO2;
+    sensorData.ispuO3 = aqiResult.ispuO3;
+    sensorData.ispuNO2 = aqiResult.ispuNO2;
+
+    const hasChanged = this._hasDataChanged(room, sensorData);
+
+    console.log(BORDER_TOP);
+
+    if (!hasChanged) {
+      console.log(`ℹ️  Room ${room.name} data unchanged (exact match), skipping room update`);
+    } else {
+      // Update room + broadcast HANYA jika berubah
+      room.currentAQI = sensorData.aqi;
+      room.currentData = {
+        pm25: sensorData.pm25,
+        pm10: sensorData.pm10,
+        co: sensorData.co,
+        so2: sensorData.so2,
+        o3: sensorData.o3,
+        no2: sensorData.no2,
+        temperature: sensorData.temperature,
+        humidity: sensorData.humidity,
+        updatedAt: new Date()
+      };
+      room.updatedAt = new Date();
+
+      await room.save();
+
+      this.broadcastRoomUpdate(room, sensorData);
+      console.log(`📢 Broadcast simulation update for room ${room.name}: AQI ${room.currentAQI}`);
+    }
+
+    // ============================================================
+    // ✅ HISTORY SELALU DISIMPAN — baik berubah maupun tidak.
+    // Ini yang membuat chart punya titik di setiap interval.
+    // ============================================================
+    await new SensorData({
+      roomId: room._id,
+      roomName: room.name,
+      buildingName: room.buildingName,
+      aqi: sensorData.aqi,
+      pm25: sensorData.pm25,
+      pm10: sensorData.pm10,
+      co: sensorData.co,
+      so2: sensorData.so2,
+      o3: sensorData.o3,
+      no2: sensorData.no2,
+      temperature: sensorData.temperature,
+      humidity: sensorData.humidity,
+      category: sensorData.category,
+      timestamp: new Date(),
+      isAnomaly: sensorData.isAnomaly === true,
+      anomalyType: sensorData.anomalyType || null,
+    }).save();
+
+    // --- Ringkasan AQI (SELALU tampil) ---
+    if (sensorData.isAnomaly) {
+      console.log(
+        `🚨 ANOMALY in ${room.name}: AQI ${sensorData.aqi} (${sensorData.category}) — type: ${sensorData.anomalyType}`
+      );
+    } else {
+      console.log(
+        `✅ Simulation room ${room.name}: AQI ${sensorData.aqi}, ` +
+        `PM2.5=${sensorData.pm25}, PM10=${sensorData.pm10}, ` +
+        `CO=${sensorData.co}, Suhu=${sensorData.temperature}, RH=${sensorData.humidity}`
+      );
+    }
+
+    if (sensorData.dominant) {
+      const dominantLabel = {
+        pm25: `PM2.5 (ISPU=${sensorData.ispuPM25})`,
+        pm10: `PM10 (ISPU=${sensorData.ispuPM10})`,
+        co:   `CO (ISPU=${sensorData.ispuCO})`,
+        so2:  `SO2 (ISPU=${sensorData.ispuSO2})`,
+        o3:   `O3 (ISPU=${sensorData.ispuO3})`,
+        no2:  `NO2 (ISPU=${sensorData.ispuNO2})`,
+      }[sensorData.dominant] || sensorData.dominant;
+
+      console.log(
+        `⚠️  DOMINAN ${sensorData.dominant.toUpperCase()} in ${room.name}: AQI ${sensorData.aqi} (${dominantLabel})`
+      );
+    }
+
+    console.log(BORDER_BOTTOM);
+
+  } catch (error) {
+    console.log(BORDER_TOP);
+    console.error(`❌ Error updating room ${room.name}:`, error.message);
+    console.log(BORDER_BOTTOM);
   }
+}
 
   async handleSensorError(room, sensorData) {
     try {
