@@ -56,7 +56,7 @@ class SimulationService {
         });
 
         if (rooms.length === 0) {
-          console.log('ℹ️ No active simulation rooms to update');
+          console.log('ℹ️  No active simulation rooms to update');
           return;
         }
 
@@ -108,57 +108,57 @@ class SimulationService {
 
       const hasChanged = this._hasDataChanged(room, sensorData);
 
+      // ============================================================
+      // ✅ LOG RINGKASAN SELALU DICETAK — baik data berubah maupun tidak
+      // ============================================================
+      console.log(BORDER_TOP);
+
       if (!hasChanged) {
-        // ✅ FIX: log "unchanged" dibungkus border
-        console.log(BORDER_TOP);
-        console.log(`ℹ️ Room ${room.name} data unchanged (exact match), skipping update`);
-        console.log(BORDER_BOTTOM);
-        return;
+        console.log(`ℹ️  Room ${room.name} data unchanged (exact match), skipping update`);
+      } else {
+        // Simpan + riwayat + broadcast HANYA jika berubah
+        room.currentAQI = sensorData.aqi;
+        room.currentData = {
+          pm25: sensorData.pm25,
+          pm10: sensorData.pm10,
+          co: sensorData.co,
+          so2: sensorData.so2,
+          o3: sensorData.o3,
+          no2: sensorData.no2,
+          temperature: sensorData.temperature,
+          humidity: sensorData.humidity,
+          updatedAt: new Date()
+        };
+        room.updatedAt = new Date();
+
+        await room.save();
+
+        const historicalData = new SensorData({
+          roomId: room._id,
+          roomName: room.name,
+          buildingName: room.buildingName,
+          aqi: sensorData.aqi,
+          pm25: sensorData.pm25,
+          pm10: sensorData.pm10,
+          co: sensorData.co,
+          so2: sensorData.so2,
+          o3: sensorData.o3,
+          no2: sensorData.no2,
+          temperature: sensorData.temperature,
+          humidity: sensorData.humidity,
+          category: sensorData.category,
+          timestamp: new Date(),
+          isAnomaly: sensorData.isAnomaly === true,
+          anomalyType: sensorData.anomalyType || null,
+        });
+
+        await historicalData.save();
+
+        this.broadcastRoomUpdate(room, sensorData);
+        console.log(`📢 Broadcast simulation update for room ${room.name}: AQI ${room.currentAQI}`);
       }
 
-      room.currentAQI = sensorData.aqi;
-      room.currentData = {
-        pm25: sensorData.pm25,
-        pm10: sensorData.pm10,
-        co: sensorData.co,
-        so2: sensorData.so2,
-        o3: sensorData.o3,
-        no2: sensorData.no2,
-        temperature: sensorData.temperature,
-        humidity: sensorData.humidity,
-        updatedAt: new Date()
-      };
-      room.updatedAt = new Date();
-
-      await room.save();
-
-      const historicalData = new SensorData({
-        roomId: room._id,
-        roomName: room.name,
-        buildingName: room.buildingName,
-        aqi: sensorData.aqi,
-        pm25: sensorData.pm25,
-        pm10: sensorData.pm10,
-        co: sensorData.co,
-        so2: sensorData.so2,
-        o3: sensorData.o3,
-        no2: sensorData.no2,
-        temperature: sensorData.temperature,
-        humidity: sensorData.humidity,
-        category: sensorData.category,
-        timestamp: new Date(),
-        isAnomaly: sensorData.isAnomaly === true,
-        anomalyType: sensorData.anomalyType || null,
-      });
-
-      await historicalData.save();
-
-      // ✅ FIX: broadcast dipanggil DULU, log broadcast dicetak di dalam border
-      this.broadcastRoomUpdate(room, sensorData);
-
-      console.log(BORDER_TOP);
-      console.log(`📢 Broadcast simulation update for room ${room.name}: AQI ${room.currentAQI}`);
-
+      // --- Ringkasan AQI (SELALU tampil) ---
       if (sensorData.isAnomaly) {
         console.log(
           `🚨 ANOMALY in ${room.name}: AQI ${sensorData.aqi} (${sensorData.category}) — type: ${sensorData.anomalyType}`
@@ -185,7 +185,9 @@ class SimulationService {
           `⚠️  DOMINAN ${sensorData.dominant.toUpperCase()} in ${room.name}: AQI ${sensorData.aqi} (${dominantLabel})`
         );
       }
+
       console.log(BORDER_BOTTOM);
+
     } catch (error) {
       // ✅ FIX: error dibungkus border
       console.log(BORDER_TOP);
@@ -215,7 +217,7 @@ class SimulationService {
       // ✅ FIX: log sensor error dibungkus border
       console.log(BORDER_TOP);
       console.log(
-        `⚠️ SENSOR ERROR in ${room.name} (data invalid, room retained last good value)`
+        `⚠️  SENSOR ERROR in ${room.name} (data invalid, room retained last good value)`
       );
       console.log(BORDER_BOTTOM);
     } catch (err) {

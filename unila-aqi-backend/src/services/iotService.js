@@ -285,7 +285,7 @@ class IoTService {
       console.log(BORDER_TOP);
 
       if (!hasRoomDataChanged) {
-        console.log(`ℹ️ Room ${room.name} data unchanged (exact match), skipping update`);
+        console.log(`ℹ️  Room ${room.name} data unchanged (exact match), skipping update`);
       } else {
         // Simpan + riwayat + broadcast HANYA jika berubah
         room.currentAQI = normalizedData.aqi;
