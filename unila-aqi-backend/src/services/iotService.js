@@ -40,7 +40,7 @@ class IoTService {
     }
   }
 
-    async pollAllIoTDevices() {
+  async pollAllIoTDevices() {
     // ✅ Serialize: hanya satu service yang mencetak log pada satu waktu.
     const { runExclusive } = require('../utils/serviceLock');
 
@@ -101,7 +101,6 @@ class IoTService {
         await device.save();
 
         if (hasChanged || !lastData) {
-
           const rooms = await Room.find({
             iotDeviceId: device._id.toString()
           });
@@ -163,7 +162,7 @@ class IoTService {
     return updates;
   }
 
-     isValidIoTData(data) {
+  isValidIoTData(data) {
     if (!data || typeof data !== 'object') return false;
     
     const knownFields = [
@@ -173,7 +172,7 @@ class IoTService {
     return knownFields.some((k) => k in data);
   }
 
-   _hasDataChanged(oldData, newData) {
+  _hasDataChanged(oldData, newData) {
     if (!oldData || !newData) return true;
 
     const changed = (oldV, newV) => {
@@ -195,7 +194,7 @@ class IoTService {
     );
   }
 
-    async updateRoomFromIoT(room, iotData, deviceName) {
+  async updateRoomFromIoT(room, iotData, deviceName) {
     try {
       if (room.demoMode) {
         console.log(`ℹ️ Skipping room ${room.name} (demoMode active)`);
@@ -267,7 +266,7 @@ class IoTService {
       room.updatedAt = new Date();
       await room.save();
 
-       await new SensorData({
+      await new SensorData({
         roomId: room._id,
         roomName: room.name,
         buildingName: room.buildingName,
@@ -282,6 +281,8 @@ class IoTService {
 
       this.broadcastRoomUpdate(room, normalizedData, 'iot', deviceName);
 
+      console.log('┌────────────────────────────────────────────────────────────────────────────────────');
+
       if (normalizedData.aqi == null) {
         console.log(
           `ℹ️ IoT room ${room.name} (device ${deviceName}): tidak ada data valid — status no_data`
@@ -292,9 +293,9 @@ class IoTService {
         );
       } else {
         console.log(
-          `✅ IoT room ${room.name}: AQI ${normalizedData.aqi} (${aqiResult.dominant}), ` +
-          `PM2.5=${pm25}, PM10=${pm10}, CO=${co}, SO2=${so2}, O3=${o3}, NO2=${no2}, ` +
-          `Suhu=${temperature}, RH=${humidity}`
+          `✅ IoT room ${room.name}: AQI ${normalizedData.aqi}, ` +
+          `PM2.5=${pm25}, PM10=${pm10}, ` +
+          `CO=${co}, Suhu=${temperature}, RH=${humidity}`
         );
       }
 
@@ -312,14 +313,14 @@ class IoTService {
           `⚠️  DOMINAN ${aqiResult.dominant.toUpperCase()} in ${room.name}: AQI ${aqiResult.aqi} (${dominantLabel})`
         );
       }
+      console.log('└────────────────────────────────────────────────────────────────────────────────────');
+
     } catch (error) {
       console.error(`❌ Error updating IoT room ${room.name}:`, error.message);
     }
   }
 
-  
-
-      async updateRoomFromIoTForce(room, iotData, deviceName) {
+  async updateRoomFromIoTForce(room, iotData, deviceName) {
     try {
       if (room.demoMode) {
         console.log(`ℹ️ Skipping force update ${room.name} (demoMode active)`);
@@ -368,7 +369,6 @@ class IoTService {
         temperature, humidity,
         category: aqiResult.category,
         timestamp: new Date(),
-
         isAnomaly: iotData.isAnomaly === true,
         anomalyType: iotData.anomalyType || null,
       }).save();
@@ -398,6 +398,9 @@ class IoTService {
         isAnomaly: true,
         anomalyType: 'error',
       }).save();
+
+      // ✅ NOTIFIKASI SOCKET.IO DIHAPUS
+      // (Tidak ada emit 'notification' agar Flutter tidak menampilkan Snackbar)
 
       console.log(
         `⚠️ IoT SENSOR ERROR in ${room.name} (device: ${deviceName}) — room retained last good value`

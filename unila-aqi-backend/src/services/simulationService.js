@@ -41,9 +41,7 @@ class SimulationService {
     }
   }
 
-    async updateAllRooms() {
-    // ✅ Serialize: pastikan siklus simulasi ini selesai dulu
-    // sebelum IoT service boleh mencetak log-nya (dan sebaliknya).
+  async updateAllRooms() {
     const { runExclusive } = require('../utils/serviceLock');
 
     return runExclusive(async () => {
@@ -58,8 +56,6 @@ class SimulationService {
           return;
         }
 
-        // 🔄 Header di dalam lock → selalu tercetak pertama
-        // sebelum log room manapun (simulation atau IoT).
         console.log(`\n🔄 Updating ${rooms.length} simulation rooms...`);
 
         for (const room of rooms) {
@@ -85,8 +81,7 @@ class SimulationService {
         return;
       }
 
-      // ✅ AQI dihitung dari PM2.5, PM10, dan CO — ambil yang dominan
-       const aqiResult = calculateAQI(
+      const aqiResult = calculateAQI(
         sensorData.pm25,
         sensorData.pm10,
         sensorData.co,
@@ -113,7 +108,7 @@ class SimulationService {
       }
 
       room.currentAQI = sensorData.aqi;
-       room.currentData = {
+      room.currentData = {
         pm25: sensorData.pm25,
         pm10: sensorData.pm10,
         co: sensorData.co,
@@ -128,7 +123,7 @@ class SimulationService {
 
       await room.save();
 
-       const historicalData = new SensorData({
+      const historicalData = new SensorData({
         roomId: room._id,
         roomName: room.name,
         buildingName: room.buildingName,
@@ -153,8 +148,6 @@ class SimulationService {
 
       this.broadcastRoomUpdate(room, sensorData);
 
-      // Log ringkasan data room (simulasi) — format sama dengan IoT
-      // Contoh: ✅ Simulation room H17: AQI 28, PM2.5=..., PM10=..., CO=..., Suhu=..., RH=...
       if (sensorData.isAnomaly) {
         console.log(
           `🚨 ANOMALY in ${room.name}: AQI ${sensorData.aqi} (${sensorData.category}) — type: ${sensorData.anomalyType}`
@@ -167,7 +160,6 @@ class SimulationService {
         );
       }
 
-      // Log parameter dominan (setelah ringkasan partikel)
       const dominantLabel = {
         pm25: `PM2.5 (ISPU=${sensorData.ispuPM25})`,
         pm10: `PM10 (ISPU=${sensorData.ispuPM10})`,
@@ -199,6 +191,10 @@ class SimulationService {
         isAnomaly: true,
         anomalyType: 'error',
       }).save();
+
+      // ✅ NOTIFIKASI SOCKET.IO DIHAPUS
+      // (Tidak ada emit 'notification' agar Flutter tidak menampilkan Snackbar)
+
       console.log('┌────────────────────────────────────────────────────────────────────────────────────');
       console.log(
         `⚠️ SENSOR ERROR in ${room.name} (data invalid, room retained last good value)`
@@ -207,7 +203,7 @@ class SimulationService {
     } catch (err) {
       console.log('┌────────────────────────────────────────────────────────────────────────────────────');
       console.error(`❌ Error handling sensor error for ${room.name}:`, err.message);
-       console.log('└────────────────────────────────────────────────────────────────────────────────────');
+      console.log('└────────────────────────────────────────────────────────────────────────────────────');
     }
   }
 
