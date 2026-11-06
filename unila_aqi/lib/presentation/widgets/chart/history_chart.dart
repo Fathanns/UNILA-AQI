@@ -647,11 +647,15 @@ class HistoryChartState extends State<HistoryChart> {
             child: const Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(Icons.insert_chart_outlined, size: 48, color: Colors.grey),
-                SizedBox(height: 16),
+                Icon(Icons.bar_chart_outlined,
+                size: 48, color: AppColors.textHint),
+                SizedBox(height: 12),
                 Text(
                   'Tidak ada data history untuk tanggal ini',
-                  style: TextStyle(color: Colors.grey),
+                  style: TextStyle(
+                    color: AppColors.textHint,
+                    fontFamily: 'Inter',
+                  ),
                 ),
               ],
             ),

@@ -201,7 +201,7 @@ class _MonthlyTrendChartState extends State<MonthlyTrendChart> {
           const SizedBox(height: 12),
           if (_isLoading)
             const SizedBox(
-              height: 200,
+              height: 350,
               child: Center(child: CircularProgressIndicator()),
             )
           else if (_error.isNotEmpty)
@@ -360,32 +360,37 @@ class _MonthlyTrendChartState extends State<MonthlyTrendChart> {
 
   Widget _buildErrorState() {
     return SizedBox(
-      height: 200,
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Icon(Icons.error_outline, size: 48, color: AppColors.textHint),
-          const SizedBox(height: 12),
-          Text(
-            _error,
-            textAlign: TextAlign.center,
-            style:
-                const TextStyle(fontSize: 12.5, color: AppColors.textSecondary),
-          ),
-          const SizedBox(height: 12),
-          ElevatedButton.icon(
-            onPressed: _loadData,
-            icon: const Icon(Icons.refresh, size: 16),
-            label: const Text('Coba Lagi'),
-          ),
-        ],
+      height: 350, // ← samakan dengan tinggi chart di HistoryChart
+      child: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.error_outline, size: 48, color: AppColors.textHint),
+            const SizedBox(height: 12),
+            Text(
+              _error,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 12.5,
+                color: AppColors.textSecondary,
+                fontFamily: 'Inter',
+              ),
+            ),
+            const SizedBox(height: 12),
+            ElevatedButton.icon(
+              onPressed: _loadData,
+              icon: const Icon(Icons.refresh, size: 16),
+              label: const Text('Coba Lagi'),
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildEmptyState() {
+   Widget _buildEmptyState() {
     return SizedBox(
-      height: 200,
+      height: 350, // ← samakan dengan tinggi chart di HistoryChart
       child: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
