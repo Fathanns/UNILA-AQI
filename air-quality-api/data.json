@@ -1,7 +1,6 @@
 {
   "success": true,
   "data": {
-    "aqi": 74,
     "pm25": 100,
     "pm10": 150,
     "co": 2000,
