@@ -7,6 +7,10 @@ const {
   simulateAnomaly,
 } = require('../utils/dataGenerator');
 
+// Helper border — konsisten dengan iotService.js
+const BORDER_TOP = '┌────────────────────────────────────────────────────────────────────────────────────';
+const BORDER_BOTTOM = '└────────────────────────────────────────────────────────────────────────────────────';
+
 class SimulationService {
   constructor() {
     this.isRunning = false;
@@ -64,7 +68,9 @@ class SimulationService {
 
         console.log(`\n🕒 Updated ${rooms.length} rooms at ${new Date().toLocaleTimeString()} \n`);
       } catch (error) {
+        console.log(BORDER_TOP);
         console.error('❌ Error in updateAllRooms:', error.message);
+        console.log(BORDER_BOTTOM);
       }
     });
   }
@@ -103,7 +109,10 @@ class SimulationService {
       const hasChanged = this._hasDataChanged(room, sensorData);
 
       if (!hasChanged) {
+        // ✅ FIX: log "unchanged" dibungkus border
+        console.log(BORDER_TOP);
         console.log(`ℹ️ Room ${room.name} data unchanged (exact match), skipping update`);
+        console.log(BORDER_BOTTOM);
         return;
       }
 
@@ -144,9 +153,11 @@ class SimulationService {
 
       await historicalData.save();
 
-      console.log('┌────────────────────────────────────────────────────────────────────────────────────');
-
+      // ✅ FIX: broadcast dipanggil DULU, log broadcast dicetak di dalam border
       this.broadcastRoomUpdate(room, sensorData);
+
+      console.log(BORDER_TOP);
+      console.log(`📢 Broadcast simulation update for room ${room.name}: AQI ${room.currentAQI}`);
 
       if (sensorData.isAnomaly) {
         console.log(
@@ -160,20 +171,26 @@ class SimulationService {
         );
       }
 
-      const dominantLabel = {
-        pm25: `PM2.5 (ISPU=${sensorData.ispuPM25})`,
-        pm10: `PM10 (ISPU=${sensorData.ispuPM10})`,
-        co:   `CO (ISPU=${sensorData.ispuCO})`,
-      }[sensorData.dominant] || sensorData.dominant;
+      if (sensorData.dominant) {
+        const dominantLabel = {
+          pm25: `PM2.5 (ISPU=${sensorData.ispuPM25})`,
+          pm10: `PM10 (ISPU=${sensorData.ispuPM10})`,
+          co:   `CO (ISPU=${sensorData.ispuCO})`,
+          so2:  `SO2 (ISPU=${sensorData.ispuSO2})`,
+          o3:   `O3 (ISPU=${sensorData.ispuO3})`,
+          no2:  `NO2 (ISPU=${sensorData.ispuNO2})`,
+        }[sensorData.dominant] || sensorData.dominant;
 
-      console.log(
-        `⚠️  DOMINAN ${sensorData.dominant.toUpperCase()} in ${room.name}: AQI ${sensorData.aqi} (${dominantLabel})`
-      );
-      console.log('└────────────────────────────────────────────────────────────────────────────────────');
+        console.log(
+          `⚠️  DOMINAN ${sensorData.dominant.toUpperCase()} in ${room.name}: AQI ${sensorData.aqi} (${dominantLabel})`
+        );
+      }
+      console.log(BORDER_BOTTOM);
     } catch (error) {
-      console.log('┌────────────────────────────────────────────────────────────────────────────────────');
+      // ✅ FIX: error dibungkus border
+      console.log(BORDER_TOP);
       console.error(`❌ Error updating room ${room.name}:`, error.message);
-      console.log('└────────────────────────────────────────────────────────────────────────────────────');
+      console.log(BORDER_BOTTOM);
     }
   }
 
@@ -195,15 +212,16 @@ class SimulationService {
       // ✅ NOTIFIKASI SOCKET.IO DIHAPUS
       // (Tidak ada emit 'notification' agar Flutter tidak menampilkan Snackbar)
 
-      console.log('┌────────────────────────────────────────────────────────────────────────────────────');
+      // ✅ FIX: log sensor error dibungkus border
+      console.log(BORDER_TOP);
       console.log(
         `⚠️ SENSOR ERROR in ${room.name} (data invalid, room retained last good value)`
       );
-      console.log('└────────────────────────────────────────────────────────────────────────────────────');
+      console.log(BORDER_BOTTOM);
     } catch (err) {
-      console.log('┌────────────────────────────────────────────────────────────────────────────────────');
+      console.log(BORDER_TOP);
       console.error(`❌ Error handling sensor error for ${room.name}:`, err.message);
-      console.log('└────────────────────────────────────────────────────────────────────────────────────');
+      console.log(BORDER_BOTTOM);
     }
   }
 
@@ -230,6 +248,8 @@ class SimulationService {
   }
 
   broadcastRoomUpdate(room, data) {
+    // ✅ FIX: method ini sekarang HANYA emit Socket.IO.
+    // Log broadcast dicetak oleh updateRoom() di dalam border.
     if (this.io) {
       const updateData = {
         roomId: room._id,
@@ -251,8 +271,6 @@ class SimulationService {
         building: room.buildingName,
         timestamp: new Date()
       });
-
-      console.log(`📢 Broadcast simulation update for room ${room.name}: AQI ${room.currentAQI}`);
     }
   }
 

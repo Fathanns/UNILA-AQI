@@ -2981,7 +2981,10 @@ class IoTService {
     this.io = io;
     console.log(`🚀 Starting IoT Service (polling every ${this.pollingInterval/1000}s)...`);
 
-    this.task = cron.schedule('*/30 * * * * *', async () => {
+    // 🔥 PERBAIKAN: IoT berjalan di detik ke-15 dan ke-45.
+    // Simulasi berjalan di detik ke-0 dan ke-30. 
+    // Ini mencegah keduanya bertabrakan (race condition) di detik yang sama.
+    this.task = cron.schedule('15,45 * * * * *', async () => {
       await this.pollAllIoTDevices();
     });
 
@@ -3067,6 +3070,7 @@ class IoTService {
             await this.updateRoomFromIoT(room, iotData, device.name);
           }
         } else {
+          // Log ini muncul jika device mengirim data yang SAMA PERSIS dengan 30 detik lalu
           console.log(`ℹ️ No data change for device ${device.name}, skipping broadcast`);
         }
 
@@ -3209,9 +3213,8 @@ class IoTService {
       );
 
       if (!hasRoomDataChanged) {
-        console.log(
-          `ℹ️ Room ${room.name} data unchanged (exact match), skipping update`
-        );
+        // 🔥 PERBAIKAN: Menambahkan log jika data di database sama persis dengan data IoT
+        console.log(`ℹ️ Room ${room.name} data unchanged (exact match), skipping update`);
         return;
       }
 
@@ -3239,8 +3242,9 @@ class IoTService {
 
       this.broadcastRoomUpdate(room, normalizedData, 'iot', deviceName);
 
+      // ✅ PERBAIKAN: Log detail dibuat persis seperti di simulationService
       console.log('┌────────────────────────────────────────────────────────────────────────────────────');
-
+      
       if (normalizedData.aqi == null) {
         console.log(
           `ℹ️ IoT room ${room.name} (device ${deviceName}): tidak ada data valid — status no_data`
@@ -3357,8 +3361,7 @@ class IoTService {
         anomalyType: 'error',
       }).save();
 
-      // ✅ NOTIFIKASI SOCKET.IO DIHAPUS
-      // (Tidak ada emit 'notification' agar Flutter tidak menampilkan Snackbar)
+      // ✅ NOTIFIKASI SOCKET.IO DIHAPUS (Sesuai permintaan Anda)
 
       console.log(
         `⚠️ IoT SENSOR ERROR in ${room.name} (device: ${deviceName}) — room retained last good value`
