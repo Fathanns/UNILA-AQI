@@ -107,26 +107,15 @@ class IoTService {
         device.lastUpdate = new Date();
         await device.save();
 
-        if (hasChanged || !lastData) {
-          const rooms = await Room.find({
-            iotDeviceId: device._id.toString()
-          });
+        // ✅ SELALU panggil updateRoomFromIoT — biarkan method itu
+        // yang memutuskan perlu save/broadcast atau tidak,
+        // TAPI tetap mencetak ringkasan AQI setiap polling.
+        const rooms = await Room.find({
+          iotDeviceId: device._id.toString()
+        });
 
-          for (const room of rooms) {
-            await this.updateRoomFromIoT(room, iotData, device.name);
-          }
-        } else {
-          // ✅ FIX: log ini dibungkus border agar konsisten dengan log
-          // room update dari simulationService.
-          console.log(BORDER_TOP);
-          console.log(`ℹ️ No data change for device ${device.name}, skipping broadcast`);
-          console.log(
-            `✅ FORCE-updated IoT room ${room.name}: AQI ${aqiResult.aqi ?? 'null'} (${aqiResult.dominant ?? 'none'})`
-          );
-          console.log(
-            `⚠️  DOMINAN ${aqiResult.dominant.toUpperCase()} in ${room.name}: AQI ${aqiResult.aqi} (${dominantLabel})`
-          );
-          console.log(BORDER_BOTTOM);
+        for (const room of rooms) {
+          await this.updateRoomFromIoT(room, iotData, device.name);
         }
 
         return { success: true, changed: hasChanged };
@@ -290,43 +279,42 @@ class IoTService {
         normalizedData
       );
 
+      // ============================================================
+      // ✅ LOG RINGKASAN SELALU DICETAK — baik data berubah maupun tidak
+      // ============================================================
+      console.log(BORDER_TOP);
+
       if (!hasRoomDataChanged) {
-        // ✅ FIX: log "unchanged" dibungkus border
-        console.log(BORDER_TOP);
         console.log(`ℹ️ Room ${room.name} data unchanged (exact match), skipping update`);
-        console.log(BORDER_BOTTOM);
-        return;
+      } else {
+        // Simpan + riwayat + broadcast HANYA jika berubah
+        room.currentAQI = normalizedData.aqi;
+        room.currentData = {
+          pm25, pm10, co, so2, o3, no2,
+          temperature, humidity,
+          updatedAt: new Date(),
+        };
+        room.updatedAt = new Date();
+        await room.save();
+
+        await new SensorData({
+          roomId: room._id,
+          roomName: room.name,
+          buildingName: room.buildingName,
+          aqi: normalizedData.aqi,
+          pm25, pm10, co, so2, o3, no2,
+          temperature, humidity,
+          category: aqiResult.category,
+          timestamp: new Date(),
+          isAnomaly: iotData.isAnomaly === true,
+          anomalyType: iotData.anomalyType || null,
+        }).save();
+
+        this.broadcastRoomUpdate(room, normalizedData, 'iot', deviceName);
+        console.log(`📢 Broadcast IoT update for room ${room.name}: AQI ${room.currentAQI}`);
       }
 
-      room.currentAQI = normalizedData.aqi;
-      room.currentData = {
-        pm25, pm10, co, so2, o3, no2,
-        temperature, humidity,
-        updatedAt: new Date(),
-      };
-      room.updatedAt = new Date();
-      await room.save();
-
-      await new SensorData({
-        roomId: room._id,
-        roomName: room.name,
-        buildingName: room.buildingName,
-        aqi: normalizedData.aqi,
-        pm25, pm10, co, so2, o3, no2,
-        temperature, humidity,
-        category: aqiResult.category,
-        timestamp: new Date(),
-        isAnomaly: iotData.isAnomaly === true,
-        anomalyType: iotData.anomalyType || null,
-      }).save();
-
-      // ✅ FIX: broadcast dipanggil DULU, tapi log broadcast-nya
-      // dicetak DI DALAM border (setelah BORDER_TOP).
-      this.broadcastRoomUpdate(room, normalizedData, 'iot', deviceName);
-
-      console.log(BORDER_TOP);
-      console.log(`📢 Broadcast IoT update for room ${room.name}: AQI ${room.currentAQI}`);
-
+      // --- Ringkasan AQI (SELALU tampil) ---
       if (normalizedData.aqi == null) {
         console.log(
           `ℹ️ IoT room ${room.name} (device ${deviceName}): tidak ada data valid — status no_data`
@@ -349,6 +337,7 @@ class IoTService {
           `⚠️  DOMINAN ${aqiResult.dominant.toUpperCase()} in ${room.name}: AQI ${aqiResult.aqi} (${dominantLabel})`
         );
       }
+
       console.log(BORDER_BOTTOM);
 
     } catch (error) {
