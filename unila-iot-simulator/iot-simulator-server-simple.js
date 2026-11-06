@@ -465,7 +465,7 @@ const server = http.createServer((req, res) => {
     }
 
     try {
-      if (pathname === '/health' && method === 'GET') {
+      if (pathname === '/health' && (method === 'GET' || method === 'HEAD')) {
         const now = new Date();
         const currentSecond = Math.floor(Date.now() / 1000);
         const current30SecondBlock = Math.floor(currentSecond / 30);
