@@ -399,13 +399,6 @@ class IoTService {
         anomalyType: 'error',
       }).save();
 
-      if (this.io) {
-        this.io.to(room._id.toString()).emit('notification', {
-          type: 'error',
-          message: `Device "${deviceName}" pada ${room.name} melaporkan error. Room tetap menampilkan nilai valid terakhir.`,
-          timestamp: new Date(),
-        });
-      }
       console.log(
         `⚠️ IoT SENSOR ERROR in ${room.name} (device: ${deviceName}) — room retained last good value`
       );

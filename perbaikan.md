@@ -17,6 +17,10 @@
 
 - ~~perbaiki responsif halaman device iot~~
 
+- samakan desain catch saat data kosong di kedua chart
+
+- pada data error atau tidak ada, chart history di buat tidak ada data, jangan -1
+
 
 *FITUR*
 

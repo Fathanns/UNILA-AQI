@@ -199,14 +199,6 @@ class SimulationService {
         isAnomaly: true,
         anomalyType: 'error',
       }).save();
-
-      if (this.io) {
-        this.io.to(room._id.toString()).emit('notification', {
-          type: 'error',
-          message: `Sensor pada ${room.name} melaporkan error (data tidak valid).`,
-          timestamp: new Date(),
-        });
-      }
       console.log('┌────────────────────────────────────────────────────────────────────────────────────');
       console.log(
         `⚠️ SENSOR ERROR in ${room.name} (data invalid, room retained last good value)`
