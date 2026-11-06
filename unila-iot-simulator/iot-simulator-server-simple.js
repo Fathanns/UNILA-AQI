@@ -527,7 +527,7 @@ const server = http.createServer((req, res) => {
         return;
       }
 
-            if (pathname.startsWith('/data/') && method === 'GET') {
+      if (pathname.startsWith('/data/') && method === 'GET') {
         const deviceId = pathname.split('/')[2];
 
         if (!deviceId) {
@@ -842,8 +842,11 @@ const server = http.createServer((req, res) => {
   });
 });
 
-const PORT = process.env.IOT_PORT || 3002;
-const HOST = process.env.IOT_HOST || 'localhost';
+// ============================================================
+// DEPLOY RENDER: bind 0.0.0.0 & gunakan process.env.PORT
+// ============================================================
+const PORT = process.env.PORT || process.env.IOT_PORT || 3002;
+const HOST = '0.0.0.0'; // ✅ WAJIB untuk Render / Docker / VPS
 
 server.listen(PORT, HOST, () => {
   console.log('🚀 UNILA AQI IoT Simulator - 30 SECOND UPDATES');

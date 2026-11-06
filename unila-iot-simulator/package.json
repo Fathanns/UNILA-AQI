@@ -7,6 +7,9 @@
     "start": "node iot-simulator-server-simple.js",
     "dev": "node iot-simulator-server-simple.js"
   },
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "keywords": ["iot", "aqi", "unila", "sensor", "simulator"],
   "author": "UNILA AQI Team",
   "license": "MIT"

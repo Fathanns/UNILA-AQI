@@ -24478,12 +24478,22 @@ class HistoryChartState extends State<HistoryChart> {
     await _loadHistoryData();
   }
 
+  // ============================================================
+  // CHART DATA POINTS
+  // Semua index dimasukkan sebagai spot. Titik dengan nilai null
+  // (IoT tidak kirim) ATAU negatif (error -1) ditaruh di minY
+  // (= bawah chart) supaya dot tetap terlihat.
+  // ============================================================
   List<FlSpot> _getDataPoints() {
+    final bottomY = _getMinY();
     final spots = <FlSpot>[];
     for (int i = 0; i < _historyData.length; i++) {
       final y = _valueFor(_historyData[i], _selectedParameter);
-      if (y == null) continue;
-      spots.add(FlSpot(i.toDouble(), y));
+      if (y == null || y < 0) {
+        spots.add(FlSpot(i.toDouble(), bottomY));
+      } else {
+        spots.add(FlSpot(i.toDouble(), y));
+      }
     }
     return spots;
   }
@@ -24688,23 +24698,49 @@ class HistoryChartState extends State<HistoryChart> {
                             final time =
                                 '${data.timestamp.hour.toString().padLeft(2, '0')}:${data.timestamp.minute.toString().padLeft(2, '0')}';
 
+                            // Deteksi no-data: null (IoT) atau negatif (error -1)
+                            final rawValue =
+                                _valueFor(data, _selectedParameter);
+                            final isNoData =
+                                rawValue == null || rawValue < 0;
+
+                            if (isNoData) {
+                              return LineTooltipItem(
+                                'Waktu: $time\n\nTidak ada data',
+                                const TextStyle(
+                                  color: Colors.black87,
+                                  fontWeight: FontWeight.w500,
+                                  fontSize: 12,
+                                ),
+                              );
+                            }
+
+                            // Breakdown: hanya field valid (non-null DAN >= 0)
                             final values = <String, String>{
-                              if (data.aqi != null) 'AQI': '${data.aqi}',
-                              if (data.pm25 != null)
-                                'PM2.5': '${data.pm25!.toStringAsFixed(1)} μg/m³',
-                              if (data.pm10 != null)
-                                'PM10': '${data.pm10!.toStringAsFixed(1)} μg/m³',
-                              if (data.co != null)
+                              if (data.aqi != null && data.aqi! >= 0)
+                                'AQI': '${data.aqi}',
+                              if (data.pm25 != null && data.pm25! >= 0)
+                                'PM2.5':
+                                    '${data.pm25!.toStringAsFixed(1)} μg/m³',
+                              if (data.pm10 != null && data.pm10! >= 0)
+                                'PM10':
+                                    '${data.pm10!.toStringAsFixed(1)} μg/m³',
+                              if (data.co != null && data.co! >= 0)
                                 'CO': '${data.co!.round()} μg/m³',
-                              if (data.so2 != null)
-                                'SO2': '${data.so2!.toStringAsFixed(1)} μg/m³',
-                              if (data.o3 != null)
+                              if (data.so2 != null && data.so2! >= 0)
+                                'SO2':
+                                    '${data.so2!.toStringAsFixed(1)} μg/m³',
+                              if (data.o3 != null && data.o3! >= 0)
                                 'O3': '${data.o3!.toStringAsFixed(1)} μg/m³',
-                              if (data.no2 != null)
-                                'NO2': '${data.no2!.toStringAsFixed(1)} μg/m³',
-                              if (data.temperature != null)
-                                'Suhu': '${data.temperature!.toStringAsFixed(1)}°C',
-                              if (data.humidity != null)
+                              if (data.no2 != null && data.no2! >= 0)
+                                'NO2':
+                                    '${data.no2!.toStringAsFixed(1)} μg/m³',
+                              if (data.temperature != null &&
+                                  data.temperature! >= 0)
+                                'Suhu':
+                                    '${data.temperature!.toStringAsFixed(1)}°C',
+                              if (data.humidity != null &&
+                                  data.humidity! >= 0)
                                 'Kelembaban': '${data.humidity!.round()}%',
                             };
 
@@ -24734,12 +24770,16 @@ class HistoryChartState extends State<HistoryChart> {
     );
   }
 
+  // ============================================================
+  // Skala Y: skip null DAN negatif (keduanya = no-data)
+  // sehingga minY/maxY hanya mencerminkan data valid.
+  // ============================================================
   double _getMinY() {
     if (_historyData.isEmpty) return 0.0;
     double minValue = double.infinity;
     for (var data in _historyData) {
       final value = _valueFor(data, _selectedParameter);
-      if (value == null) continue;
+      if (value == null || value < 0) continue;
       if (value < minValue) minValue = value;
     }
     if (minValue == double.infinity) return 0.0;
@@ -24751,7 +24791,7 @@ class HistoryChartState extends State<HistoryChart> {
     double maxValue = double.negativeInfinity;
     for (var data in _historyData) {
       final value = _valueFor(data, _selectedParameter);
-      if (value == null) continue;
+      if (value == null || value < 0) continue;
       if (value > maxValue) maxValue = value;
     }
     if (maxValue == double.negativeInfinity) return 100.0;
@@ -24779,7 +24819,6 @@ class HistoryChartState extends State<HistoryChart> {
               padding:
                   const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
-                // ✅ Selected = warna parameter itu sendiri
                 color: isSelected
                     ? color
                     : AppColors.primary.withOpacity(0.08),
@@ -24909,7 +24948,7 @@ class HistoryChartState extends State<HistoryChart> {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Icon(Icons.bar_chart_outlined,
-                size: 48, color: AppColors.textHint),
+                    size: 48, color: AppColors.textHint),
                 SizedBox(height: 12),
                 Text(
                   'Tidak ada data history untuk tanggal ini',
@@ -27107,7 +27146,7 @@ const server = http.createServer((req, res) => {
         return;
       }
 
-            if (pathname.startsWith('/data/') && method === 'GET') {
+      if (pathname.startsWith('/data/') && method === 'GET') {
         const deviceId = pathname.split('/')[2];
 
         if (!deviceId) {
@@ -27422,8 +27461,11 @@ const server = http.createServer((req, res) => {
   });
 });
 
-const PORT = process.env.IOT_PORT || 3002;
-const HOST = process.env.IOT_HOST || 'localhost';
+// ============================================================
+// DEPLOY RENDER: bind 0.0.0.0 & gunakan process.env.PORT
+// ============================================================
+const PORT = process.env.PORT || process.env.IOT_PORT || 3002;
+const HOST = '0.0.0.0'; // ✅ WAJIB untuk Render / Docker / VPS
 
 server.listen(PORT, HOST, () => {
   console.log('🚀 UNILA AQI IoT Simulator - 30 SECOND UPDATES');
@@ -28940,6 +28982,9 @@ C:\develop\UNILA-AQI\unila-iot-simulator\package.json
   "scripts": {
     "start": "node iot-simulator-server-simple.js",
     "dev": "node iot-simulator-server-simple.js"
+  },
+  "engines": {
+    "node": ">=20.0.0"
   },
   "keywords": ["iot", "aqi", "unila", "sensor", "simulator"],
   "author": "UNILA AQI Team",
