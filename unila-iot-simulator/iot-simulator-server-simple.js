@@ -236,12 +236,12 @@ function generate30SecondBasedData(deviceId) {
   const state = deviceStates.get(deviceId);
 
   // Cache 30 detik
-  if (secondDataCache.has(deviceId)) {
-    const cached = secondDataCache.get(deviceId);
-    if (cached.block30 === current30SecondBlock) {
-      return cached.data;
-    }
-  }
+  //if (secondDataCache.has(deviceId)) {
+   // const cached = secondDataCache.get(deviceId);
+   // if (cached.block30 === current30SecondBlock) {
+     // return cached.data;
+   // }
+  //}
 
   const slot = getTimeSlot(hour);
   const r = TIME_RANGES[slot];
