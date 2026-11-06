@@ -60,13 +60,14 @@ class SimulationService {
           return;
         }
 
-        console.log(`\n🔄 Updating ${rooms.length} simulation rooms...`);
+        console.log(`🔄 Updating ${rooms.length} simulation rooms...`);
 
         for (const room of rooms) {
           await this.updateRoom(room);
         }
 
-        console.log(`\n🕒 Updated ${rooms.length} rooms at ${new Date().toLocaleTimeString()} \n`);
+        console.log(`\n🕒 Updated ${rooms.length} rooms at ${new Date().toLocaleTimeString()}`);
+        console.log('\n=====================================================================================\n');
       } catch (error) {
         console.log(BORDER_TOP);
         console.error('❌ Error in updateAllRooms:', error.message);

@@ -246,6 +246,11 @@ class HistoryChartState extends State<HistoryChart> {
     return spots;
   }
 
+  // ============================================================
+  // ✅ FIX: Label sumbu-X hanya ditampilkan pada slot :00 dan :30.
+  // Backend sudah rebuild `timestamp` ke slot (detik = 0), tapi
+  // guard ini melindungi terhadap cache lama / data sebelum fix.
+  // ============================================================
   SideTitles _getBottomTitles() {
     return SideTitles(
       showTitles: true,
@@ -258,13 +263,17 @@ class HistoryChartState extends State<HistoryChart> {
           return const SizedBox.shrink();
         }
         final data = _historyData[index];
-        if (data.timestamp.minute != 0) return const SizedBox.shrink();
+
+        // ✅ FIX: hanya tampilkan label pada slot :00 dan :30
+        final m = data.timestamp.minute;
+        if (m != 0 && m != 30) return const SizedBox.shrink();
 
         final hourLabel = data.timestamp.hour.toString().padLeft(2, '0');
+        final minLabel = m.toString().padLeft(2, '0');
         return Padding(
           padding: const EdgeInsets.only(top: 8.0),
           child: Text(
-            '$hourLabel:00',
+            '$hourLabel:$minLabel',
             style: const TextStyle(fontSize: 10, color: Colors.grey),
           ),
         );
@@ -443,8 +452,12 @@ class HistoryChartState extends State<HistoryChart> {
                               return null;
                             }
                             final data = _historyData[index];
+
+                            // ✅ FIX: bulatkan menit ke slot :00/:30 untuk
+                            // tooltip juga (tahan terhadap cache lama).
+                            final m = data.timestamp.minute < 30 ? 0 : 30;
                             final time =
-                                '${data.timestamp.hour.toString().padLeft(2, '0')}:${data.timestamp.minute.toString().padLeft(2, '0')}';
+                                '${data.timestamp.hour.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}';
 
                             // Deteksi no-data: null (IoT) atau negatif (error -1)
                             final rawValue =

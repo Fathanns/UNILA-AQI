@@ -2533,6 +2533,9 @@ router.get('/:roomId', async (req, res) => {
 //   - $hour & $minute diberi timezone "+07:00" agar label
 //     chart menunjukkan jam WIB, bukan UTC.
 //   - Fallback raw data juga diformat ke WIB (bukan UTC).
+//   - ✅ BARU: timestamp hasil group di-rebuild via $dateFromParts
+//     sehingga SELALU jatuh tepat di menit :00 atau :30 (detik = 0).
+//     Ini mencegah label aneh seperti 16:46 di chart frontend.
 //
 // Pipeline:
 //   1. $match      — filter roomId + rentang tanggal WIB
@@ -2540,7 +2543,8 @@ router.get('/:roomId', async (req, res) => {
 //   3. $sort       — urutkan ascending (WAJIB untuk $first)
 //   4. $group      — per (hour, interval), ambil $first
 //   5. $sort       — urutkan hasil akhir kronologis
-//   6. $project    — format timeLabel "HH:MM" (WIB)
+//   6. $project    — rebuild timestamp ke slot (detik = 0),
+//                    format timeLabel "HH:MM" (WIB)
 // ============================================================
 router.get('/:roomId/history', async (req, res) => {
   try {
@@ -2629,22 +2633,42 @@ router.get('/:roomId/history', async (req, res) => {
       {
         $project: {
           _id: 0,
-          timestamp: 1,
+          // ✅ FIX: rebuild timestamp dari slot (hour + interval, detik = 0)
+          // sehingga selalu jatuh tepat di menit :00 atau :30.
+          // Frontend history_chart.dart menggunakan field ini untuk
+          // menampilkan label jam di sumbu-X.
+          timestamp: {
+            $dateFromParts: {
+              year:   { $year:   { date: '$timestamp', timezone: '+07:00' } },
+              month:  { $month:  { date: '$timestamp', timezone: '+07:00' } },
+              day:    { $dayOfMonth: { date: '$timestamp', timezone: '+07:00' } },
+              hour:   '$_id.hour',
+              minute: '$_id.interval',
+              second: 0,
+              millisecond: 0,
+              timezone: '+07:00',
+            },
+          },
           hour: '$_id.hour',
           interval: '$_id.interval',
           timeLabel: {
             $concat: [
-              { $toString: '$_id.hour' },
+              {
+                $cond: {
+                  if: { $lt: ['$_id.hour', 10] },
+                  then: { $concat: ['0', { $toString: '$_id.hour' }] },
+                  else: { $toString: '$_id.hour' },
+                },
+              },
               ':',
               {
                 $cond: {
                   if: { $lt: ['$_id.interval', 10] },
-                  then: '0',
-                  else: ''
-                }
+                  then: { $concat: ['0', { $toString: '$_id.interval' }] },
+                  else: { $toString: '$_id.interval' },
+                },
               },
-              { $toString: '$_id.interval' }
-            ]
+            ],
           },
           aqi: 1,
           pm25: 1,
@@ -2671,11 +2695,28 @@ router.get('/:roomId/history', async (req, res) => {
 
       return res.json({
         success: true,
-        // ✅ FIX: format timeLabel ke WIB (bukan getHours() yang UTC)
-        data: rawData.map((item) => ({
-          ...item.toObject(),
-          timeLabel: formatWIBTimeLabel(item.timestamp)
-        })),
+        // ✅ FIX: bulatkan timestamp ke slot 30 menit terdekat (detik = 0)
+        // dan format timeLabel ke WIB (bukan getHours() yang UTC).
+        data: rawData.map((item) => {
+          const obj = item.toObject();
+
+          const wibMs = new Date(item.timestamp).getTime() + WIB_OFFSET_MS;
+          const wibDate = new Date(wibMs);
+          const roundedMinute = wibDate.getUTCMinutes() < 30 ? 0 : 30;
+          const roundedWib = new Date(Date.UTC(
+            wibDate.getUTCFullYear(),
+            wibDate.getUTCMonth(),
+            wibDate.getUTCDate(),
+            wibDate.getUTCHours(),
+            roundedMinute,
+            0,
+            0,
+          ));
+
+          obj.timestamp = new Date(roundedWib.getTime() - WIB_OFFSET_MS);
+          obj.timeLabel = formatWIBTimeLabel(obj.timestamp);
+          return obj;
+        }),
         aggregated: false,
         count: rawData.length,
         message: 'Raw data loaded'
@@ -2963,6 +3004,10 @@ const IoTDevice = require('../models/IoTDevice');
 const SensorData = require('../models/SensorData');
 const { getAQICategory, calculateAQI } = require('../utils/aqiCalculator');
 
+// Helper border — dipakai konsisten di semua log blok
+const BORDER_TOP = '┌────────────────────────────────────────────────────────────────────────────────────';
+const BORDER_BOTTOM = '└────────────────────────────────────────────────────────────────────────────────────';
+
 class IoTService {
   constructor() {
     this.isRunning = false;
@@ -2982,7 +3027,7 @@ class IoTService {
     console.log(`🚀 Starting IoT Service (polling every ${this.pollingInterval/1000}s)...`);
 
     // 🔥 PERBAIKAN: IoT berjalan di detik ke-15 dan ke-45.
-    // Simulasi berjalan di detik ke-0 dan ke-30. 
+    // Simulasi berjalan di detik ke-0 dan ke-30.
     // Ini mencegah keduanya bertabrakan (race condition) di detik yang sama.
     this.task = cron.schedule('15,45 * * * * *', async () => {
       await this.pollAllIoTDevices();
@@ -3033,7 +3078,7 @@ class IoTService {
 
         console.log(`\n✅ IoT polling completed: ${successfulPolls}/${devices.length} successful`);
         console.log(`🕒 Updated at ${new Date().toLocaleTimeString()}`);
-        console.log ('\n=====================================================================================')
+        console.log('\n=====================================================================================\n');
       } catch (error) {
         console.error('❌ Error in pollAllIoTDevices:', error.message);
       }
@@ -3061,29 +3106,32 @@ class IoTService {
         device.lastUpdate = new Date();
         await device.save();
 
-        if (hasChanged || !lastData) {
-          const rooms = await Room.find({
-            iotDeviceId: device._id.toString()
-          });
+        // ✅ SELALU panggil updateRoomFromIoT — biarkan method itu
+        // yang memutuskan perlu save/broadcast atau tidak,
+        // TAPI tetap mencetak ringkasan AQI setiap polling.
+        const rooms = await Room.find({
+          iotDeviceId: device._id.toString()
+        });
 
-          for (const room of rooms) {
-            await this.updateRoomFromIoT(room, iotData, device.name);
-          }
-        } else {
-          // Log ini muncul jika device mengirim data yang SAMA PERSIS dengan 30 detik lalu
-          console.log(`ℹ️ No data change for device ${device.name}, skipping broadcast`);
+        for (const room of rooms) {
+          await this.updateRoomFromIoT(room, iotData, device.name);
         }
 
         return { success: true, changed: hasChanged };
       }
 
+      // Device tidak mengembalikan success
+      console.log(BORDER_TOP);
+      console.error(`❌ Device ${device.name} did not return success`);
+      console.log(BORDER_BOTTOM);
       return { success: false, error: 'Device did not return success' };
     } catch (error) {
       device.status = 'offline';
       await device.save();
-      console.log('┌──────────────────────────────────────────────────────────────────────────────');
+      // ✅ FIX: log error polling dibungkus border
+      console.log(BORDER_TOP);
       console.error(`❌ Error polling device ${device.name}:`, error.message);
-      console.log('└──────────────────────────────────────────────────────────────────────────────');
+      console.log(BORDER_BOTTOM);
       return { success: false, error: error.message };
     }
   }
@@ -3126,7 +3174,7 @@ class IoTService {
 
   isValidIoTData(data) {
     if (!data || typeof data !== 'object') return false;
-    
+
     const knownFields = [
       'aqi', 'pm25', 'pm10', 'co', 'so2', 'o3', 'no2',
       'temperature', 'humidity'
@@ -3156,10 +3204,28 @@ class IoTService {
     );
   }
 
+  /**
+   * Bangun label dominan dari aqiResult.
+   * Helper kecil agar konsisten dipakai di updateRoomFromIoT & Force.
+   */
+  _dominantLabel(aqiResult) {
+    if (!aqiResult || !aqiResult.dominant) return null;
+    return {
+      pm25: `PM2.5 (ISPU=${aqiResult.ispuPM25})`,
+      pm10: `PM10 (ISPU=${aqiResult.ispuPM10})`,
+      co:   `CO (ISPU=${aqiResult.ispuCO})`,
+      so2:  `SO2 (ISPU=${aqiResult.ispuSO2})`,
+      o3:   `O3 (ISPU=${aqiResult.ispuO3})`,
+      no2:  `NO2 (ISPU=${aqiResult.ispuNO2})`,
+    }[aqiResult.dominant] || aqiResult.dominant;
+  }
+
   async updateRoomFromIoT(room, iotData, deviceName) {
     try {
       if (room.demoMode) {
+        console.log(BORDER_TOP);
         console.log(`ℹ️ Skipping room ${room.name} (demoMode active)`);
+        console.log(BORDER_BOTTOM);
         return;
       }
 
@@ -3212,39 +3278,42 @@ class IoTService {
         normalizedData
       );
 
+      // ============================================================
+      // ✅ LOG RINGKASAN SELALU DICETAK — baik data berubah maupun tidak
+      // ============================================================
+      console.log(BORDER_TOP);
+
       if (!hasRoomDataChanged) {
-        // 🔥 PERBAIKAN: Menambahkan log jika data di database sama persis dengan data IoT
-        console.log(`ℹ️ Room ${room.name} data unchanged (exact match), skipping update`);
-        return;
+        console.log(`ℹ️  Room ${room.name} data unchanged (exact match), skipping update`);
+      } else {
+        // Simpan + riwayat + broadcast HANYA jika berubah
+        room.currentAQI = normalizedData.aqi;
+        room.currentData = {
+          pm25, pm10, co, so2, o3, no2,
+          temperature, humidity,
+          updatedAt: new Date(),
+        };
+        room.updatedAt = new Date();
+        await room.save();
+
+        await new SensorData({
+          roomId: room._id,
+          roomName: room.name,
+          buildingName: room.buildingName,
+          aqi: normalizedData.aqi,
+          pm25, pm10, co, so2, o3, no2,
+          temperature, humidity,
+          category: aqiResult.category,
+          timestamp: new Date(),
+          isAnomaly: iotData.isAnomaly === true,
+          anomalyType: iotData.anomalyType || null,
+        }).save();
+
+        this.broadcastRoomUpdate(room, normalizedData, 'iot', deviceName);
+        console.log(`📢 Broadcast IoT update for room ${room.name}: AQI ${room.currentAQI}`);
       }
 
-      room.currentAQI = normalizedData.aqi;
-      room.currentData = {
-        pm25, pm10, co, so2, o3, no2,
-        temperature, humidity,
-        updatedAt: new Date(),
-      };
-      room.updatedAt = new Date();
-      await room.save();
-
-      await new SensorData({
-        roomId: room._id,
-        roomName: room.name,
-        buildingName: room.buildingName,
-        aqi: normalizedData.aqi,
-        pm25, pm10, co, so2, o3, no2,
-        temperature, humidity,
-        category: aqiResult.category,
-        timestamp: new Date(),
-        isAnomaly: iotData.isAnomaly === true,
-        anomalyType: iotData.anomalyType || null,
-      }).save();
-
-      this.broadcastRoomUpdate(room, normalizedData, 'iot', deviceName);
-
-      // ✅ PERBAIKAN: Log detail dibuat persis seperti di simulationService
-      console.log('┌────────────────────────────────────────────────────────────────────────────────────');
-      
+      // --- Ringkasan AQI (SELALU tampil) ---
       if (normalizedData.aqi == null) {
         console.log(
           `ℹ️ IoT room ${room.name} (device ${deviceName}): tidak ada data valid — status no_data`
@@ -3262,58 +3331,84 @@ class IoTService {
       }
 
       if (aqiResult.dominant) {
-        const dominantLabel = {
-          pm25: `PM2.5 (ISPU=${aqiResult.ispuPM25})`,
-          pm10: `PM10 (ISPU=${aqiResult.ispuPM10})`,
-          co:   `CO (ISPU=${aqiResult.ispuCO})`,
-          so2:  `SO2 (ISPU=${aqiResult.ispuSO2})`,
-          o3:   `O3 (ISPU=${aqiResult.ispuO3})`,
-          no2:  `NO2 (ISPU=${aqiResult.ispuNO2})`,
-        }[aqiResult.dominant] || aqiResult.dominant;
-
+        const dominantLabel = this._dominantLabel(aqiResult);
         console.log(
           `⚠️  DOMINAN ${aqiResult.dominant.toUpperCase()} in ${room.name}: AQI ${aqiResult.aqi} (${dominantLabel})`
         );
       }
-      console.log('└────────────────────────────────────────────────────────────────────────────────────');
+
+      console.log(BORDER_BOTTOM);
 
     } catch (error) {
+      console.log(BORDER_TOP);
       console.error(`❌ Error updating IoT room ${room.name}:`, error.message);
+      console.log(BORDER_BOTTOM);
     }
   }
 
-  async updateRoomFromIoTForce(room, iotData, deviceName) {
-    try {
-      if (room.demoMode) {
-        console.log(`ℹ️ Skipping force update ${room.name} (demoMode active)`);
-        return;
-      }
+  async updateRoomFromIoT(room, iotData, deviceName) {
+  try {
+    if (room.demoMode) {
+      console.log(BORDER_TOP);
+      console.log(`ℹ️  Skipping room ${room.name} (demoMode active)`);
+      console.log(BORDER_BOTTOM);
+      return;
+    }
 
-      const optNum = (v) =>
-        typeof v === 'number' && Number.isFinite(v) && !Number.isNaN(v)
-          ? v
-          : null;
+    const optNum = (v) =>
+      typeof v === 'number' && Number.isFinite(v) && !Number.isNaN(v)
+        ? v
+        : null;
 
-      const pm25 = optNum(iotData.pm25);
-      const pm10 = optNum(iotData.pm10);
-      const co   = optNum(iotData.co);
-      const so2  = optNum(iotData.so2);
-      const o3   = optNum(iotData.o3);
-      const no2  = optNum(iotData.no2);
-      const temperature = optNum(iotData.temperature);
-      const humidity    = optNum(iotData.humidity);
+    const pm25 = optNum(iotData.pm25);
+    const pm10 = optNum(iotData.pm10);
+    const co   = optNum(iotData.co);
+    const so2  = optNum(iotData.so2);
+    const o3   = optNum(iotData.o3);
+    const no2  = optNum(iotData.no2);
+    const temperature = optNum(iotData.temperature);
+    const humidity    = optNum(iotData.humidity);
 
-      const hasError = [pm25, pm10, co, so2, o3, no2, temperature, humidity]
-        .some((v) => v !== null && v < 0);
+    const hasError = [pm25, pm10, co, so2, o3, no2, temperature, humidity]
+      .some((v) => v !== null && v < 0);
 
-      if (hasError) {
-        await this.handleDeviceError(room, deviceName);
-        return;
-      }
+    if (hasError) {
+      await this.handleDeviceError(room, deviceName);
+      return;
+    }
 
-      const aqiResult = calculateAQI(pm25, pm10, co, so2, o3, no2);
+    const aqiResult = calculateAQI(pm25, pm10, co, so2, o3, no2);
 
-      room.currentAQI = aqiResult.aqi;
+    const normalizedData = {
+      aqi: aqiResult.aqi,
+      pm25, pm10, co, so2, o3, no2,
+      temperature, humidity,
+      category: aqiResult.category,
+      dominant: aqiResult.dominant,
+    };
+
+    const currentData = room.currentData;
+    const hasRoomDataChanged = this._hasDataChanged(
+      {
+        aqi: room.currentAQI,
+        pm25: currentData.pm25,
+        pm10: currentData.pm10,
+        co: currentData.co,
+        so2: currentData.so2,
+        o3: currentData.o3,
+        no2: currentData.no2,
+        temperature: currentData.temperature,
+        humidity: currentData.humidity,
+      },
+      normalizedData
+    );
+
+    console.log(BORDER_TOP);
+
+    if (!hasRoomDataChanged) {
+      console.log(`ℹ️  Room ${room.name} data unchanged (exact match), skipping room update`);
+    } else {
+      room.currentAQI = normalizedData.aqi;
       room.currentData = {
         pm25, pm10, co, so2, o3, no2,
         temperature, humidity,
@@ -3322,28 +3417,58 @@ class IoTService {
       room.updatedAt = new Date();
       await room.save();
 
-      await new SensorData({
-        roomId: room._id,
-        roomName: room.name,
-        buildingName: room.buildingName,
-        aqi: aqiResult.aqi,
-        pm25, pm10, co, so2, o3, no2,
-        temperature, humidity,
-        category: aqiResult.category,
-        timestamp: new Date(),
-        isAnomaly: iotData.isAnomaly === true,
-        anomalyType: iotData.anomalyType || null,
-      }).save();
-
-      this.broadcastRoomUpdate(room, iotData, 'iot', deviceName);
-
-      console.log(
-        `✅ FORCE-updated IoT room ${room.name}: AQI ${aqiResult.aqi ?? 'null'} (${aqiResult.dominant ?? 'none'})`
-      );
-    } catch (error) {
-      console.error(`❌ Error force-updating room ${room.name}:`, error.message);
+      this.broadcastRoomUpdate(room, normalizedData, 'iot', deviceName);
+      console.log(`📢 Broadcast IoT update for room ${room.name}: AQI ${room.currentAQI}`);
     }
+
+    // ============================================================
+    // ✅ HISTORY SELALU DISIMPAN — baik berubah maupun tidak.
+    // ============================================================
+    await new SensorData({
+      roomId: room._id,
+      roomName: room.name,
+      buildingName: room.buildingName,
+      aqi: normalizedData.aqi,
+      pm25, pm10, co, so2, o3, no2,
+      temperature, humidity,
+      category: aqiResult.category,
+      timestamp: new Date(),
+      isAnomaly: iotData.isAnomaly === true,
+      anomalyType: iotData.anomalyType || null,
+    }).save();
+
+    // --- Ringkasan AQI (SELALU tampil) ---
+    if (normalizedData.aqi == null) {
+      console.log(
+        `ℹ️  IoT room ${room.name} (device ${deviceName}): tidak ada data valid — status no_data`
+      );
+    } else if (normalizedData.aqi > 100) {
+      console.log(
+        `🚨 HIGH AQI in ${room.name} (IoT ${deviceName}): ${normalizedData.aqi} (${aqiResult.category})`
+      );
+    } else {
+      console.log(
+        `✅ IoT room ${room.name}: AQI ${normalizedData.aqi}, ` +
+        `PM2.5=${pm25}, PM10=${pm10}, ` +
+        `CO=${co}, Suhu=${temperature}, RH=${humidity}`
+      );
+    }
+
+    if (aqiResult.dominant) {
+      const dominantLabel = this._dominantLabel(aqiResult);
+      console.log(
+        `⚠️  DOMINAN ${aqiResult.dominant.toUpperCase()} in ${room.name}: AQI ${aqiResult.aqi} (${dominantLabel})`
+      );
+    }
+
+    console.log(BORDER_BOTTOM);
+
+  } catch (error) {
+    console.log(BORDER_TOP);
+    console.error(`❌ Error updating IoT room ${room.name}:`, error.message);
+    console.log(BORDER_BOTTOM);
   }
+}
 
   async handleDeviceError(room, deviceName) {
     try {
@@ -3363,11 +3488,16 @@ class IoTService {
 
       // ✅ NOTIFIKASI SOCKET.IO DIHAPUS (Sesuai permintaan Anda)
 
+      // ✅ FIX: log dibungkus border
+      console.log(BORDER_TOP);
       console.log(
         `⚠️ IoT SENSOR ERROR in ${room.name} (device: ${deviceName}) — room retained last good value`
       );
+      console.log(BORDER_BOTTOM);
     } catch (err) {
+      console.log(BORDER_TOP);
       console.error(`❌ Error handling device error for ${room.name}:`, err.message);
+      console.log(BORDER_BOTTOM);
     }
   }
 
@@ -3404,7 +3534,10 @@ class IoTService {
 
       return { success: true, data: iotData, deviceName: device.name };
     } catch (error) {
+      // ✅ FIX: log error forceUpdateRoom dibungkus border
+      console.log(BORDER_TOP);
       console.error(`❌ forceUpdateRoom(${roomId}) error:`, error.message);
+      console.log(BORDER_BOTTOM);
       return { success: false, error: error.message };
     }
   }
@@ -3437,11 +3570,18 @@ class IoTService {
     } catch (error) {
       device.status = 'offline';
       await device.save().catch(() => {});
+      // ✅ FIX: log error pollDeviceForce dibungkus border
+      console.log(BORDER_TOP);
+      console.error(`❌ pollDeviceForce(${device.name}) error:`, error.message);
+      console.log(BORDER_BOTTOM);
       return { success: false, error: error.message };
     }
   }
 
   broadcastRoomUpdate(room, data, source, deviceName = null) {
+    // ✅ FIX: log broadcast DIPINDAH ke dalam border (dipanggil oleh
+    // updateRoomFromIoT / updateRoomFromIoTForce), jadi method ini
+    // sekarang HANYA emit event Socket.IO — tidak mencetak log apapun.
     if (this.io) {
       const updateData = {
         roomId: room._id,
@@ -3464,8 +3604,6 @@ class IoTService {
         building: room.buildingName,
         timestamp: new Date()
       });
-
-      console.log(`📢 Broadcast IoT update for room ${room.name}: AQI ${room.currentAQI}`);
     }
   }
 
@@ -3524,6 +3662,10 @@ const {
   simulateAnomaly,
 } = require('../utils/dataGenerator');
 
+// Helper border — konsisten dengan iotService.js
+const BORDER_TOP = '┌────────────────────────────────────────────────────────────────────────────────────';
+const BORDER_BOTTOM = '└────────────────────────────────────────────────────────────────────────────────────';
+
 class SimulationService {
   constructor() {
     this.isRunning = false;
@@ -3569,61 +3711,65 @@ class SimulationService {
         });
 
         if (rooms.length === 0) {
-          console.log('ℹ️ No active simulation rooms to update');
+          console.log('ℹ️  No active simulation rooms to update');
           return;
         }
 
-        console.log(`\n🔄 Updating ${rooms.length} simulation rooms...`);
+        console.log(`🔄 Updating ${rooms.length} simulation rooms...`);
 
         for (const room of rooms) {
           await this.updateRoom(room);
         }
 
-        console.log(`\n🕒 Updated ${rooms.length} rooms at ${new Date().toLocaleTimeString()} \n`);
+        console.log(`\n🕒 Updated ${rooms.length} rooms at ${new Date().toLocaleTimeString()}`);
+        console.log('\n=====================================================================================\n');
       } catch (error) {
+        console.log(BORDER_TOP);
         console.error('❌ Error in updateAllRooms:', error.message);
+        console.log(BORDER_BOTTOM);
       }
     });
   }
 
   async updateRoom(room) {
-    try {
-      const roomType = this.getRoomType(room.name);
+  try {
+    const roomType = this.getRoomType(room.name);
 
-      const normalData = generateSensorData(roomType);
-      const sensorData = simulateAnomaly(normalData);
+    const normalData = generateSensorData(roomType);
+    const sensorData = simulateAnomaly(normalData);
 
-      if (sensorData.isAnomaly && sensorData.anomalyType === 'error') {
-        await this.handleSensorError(room, sensorData);
-        return;
-      }
+    if (sensorData.isAnomaly && sensorData.anomalyType === 'error') {
+      await this.handleSensorError(room, sensorData);
+      return;
+    }
 
-      const aqiResult = calculateAQI(
-        sensorData.pm25,
-        sensorData.pm10,
-        sensorData.co,
-        sensorData.so2,
-        sensorData.o3,
-        sensorData.no2
-      );
+    const aqiResult = calculateAQI(
+      sensorData.pm25,
+      sensorData.pm10,
+      sensorData.co,
+      sensorData.so2,
+      sensorData.o3,
+      sensorData.no2
+    );
 
-      sensorData.aqi = aqiResult.aqi;
-      sensorData.category = aqiResult.category;
-      sensorData.dominant = aqiResult.dominant;
-      sensorData.ispuPM25 = aqiResult.ispuPM25;
-      sensorData.ispuPM10 = aqiResult.ispuPM10;
-      sensorData.ispuCO = aqiResult.ispuCO;
-      sensorData.ispuSO2 = aqiResult.ispuSO2;
-      sensorData.ispuO3 = aqiResult.ispuO3;
-      sensorData.ispuNO2 = aqiResult.ispuNO2;
+    sensorData.aqi = aqiResult.aqi;
+    sensorData.category = aqiResult.category;
+    sensorData.dominant = aqiResult.dominant;
+    sensorData.ispuPM25 = aqiResult.ispuPM25;
+    sensorData.ispuPM10 = aqiResult.ispuPM10;
+    sensorData.ispuCO = aqiResult.ispuCO;
+    sensorData.ispuSO2 = aqiResult.ispuSO2;
+    sensorData.ispuO3 = aqiResult.ispuO3;
+    sensorData.ispuNO2 = aqiResult.ispuNO2;
 
-      const hasChanged = this._hasDataChanged(room, sensorData);
+    const hasChanged = this._hasDataChanged(room, sensorData);
 
-      if (!hasChanged) {
-        console.log(`ℹ️ Room ${room.name} data unchanged (exact match), skipping update`);
-        return;
-      }
+    console.log(BORDER_TOP);
 
+    if (!hasChanged) {
+      console.log(`ℹ️  Room ${room.name} data unchanged (exact match), skipping room update`);
+    } else {
+      // Update room + broadcast HANYA jika berubah
       room.currentAQI = sensorData.aqi;
       room.currentData = {
         pm25: sensorData.pm25,
@@ -3640,59 +3786,69 @@ class SimulationService {
 
       await room.save();
 
-      const historicalData = new SensorData({
-        roomId: room._id,
-        roomName: room.name,
-        buildingName: room.buildingName,
-        aqi: sensorData.aqi,
-        pm25: sensorData.pm25,
-        pm10: sensorData.pm10,
-        co: sensorData.co,
-        so2: sensorData.so2,
-        o3: sensorData.o3,
-        no2: sensorData.no2,
-        temperature: sensorData.temperature,
-        humidity: sensorData.humidity,
-        category: sensorData.category,
-        timestamp: new Date(),
-        isAnomaly: sensorData.isAnomaly === true,
-        anomalyType: sensorData.anomalyType || null,
-      });
-
-      await historicalData.save();
-
-      console.log('┌────────────────────────────────────────────────────────────────────────────────────');
-
       this.broadcastRoomUpdate(room, sensorData);
+      console.log(`📢 Broadcast simulation update for room ${room.name}: AQI ${room.currentAQI}`);
+    }
 
-      if (sensorData.isAnomaly) {
-        console.log(
-          `🚨 ANOMALY in ${room.name}: AQI ${sensorData.aqi} (${sensorData.category}) — type: ${sensorData.anomalyType}`
-        );
-      } else {
-        console.log(
-          `✅ Simulation room ${room.name}: AQI ${sensorData.aqi}, ` +
-          `PM2.5=${sensorData.pm25}, PM10=${sensorData.pm10}, ` +
-          `CO=${sensorData.co}, Suhu=${sensorData.temperature}, RH=${sensorData.humidity}`
-        );
-      }
+    // ============================================================
+    // ✅ HISTORY SELALU DISIMPAN — baik berubah maupun tidak.
+    // Ini yang membuat chart punya titik di setiap interval.
+    // ============================================================
+    await new SensorData({
+      roomId: room._id,
+      roomName: room.name,
+      buildingName: room.buildingName,
+      aqi: sensorData.aqi,
+      pm25: sensorData.pm25,
+      pm10: sensorData.pm10,
+      co: sensorData.co,
+      so2: sensorData.so2,
+      o3: sensorData.o3,
+      no2: sensorData.no2,
+      temperature: sensorData.temperature,
+      humidity: sensorData.humidity,
+      category: sensorData.category,
+      timestamp: new Date(),
+      isAnomaly: sensorData.isAnomaly === true,
+      anomalyType: sensorData.anomalyType || null,
+    }).save();
 
+    // --- Ringkasan AQI (SELALU tampil) ---
+    if (sensorData.isAnomaly) {
+      console.log(
+        `🚨 ANOMALY in ${room.name}: AQI ${sensorData.aqi} (${sensorData.category}) — type: ${sensorData.anomalyType}`
+      );
+    } else {
+      console.log(
+        `✅ Simulation room ${room.name}: AQI ${sensorData.aqi}, ` +
+        `PM2.5=${sensorData.pm25}, PM10=${sensorData.pm10}, ` +
+        `CO=${sensorData.co}, Suhu=${sensorData.temperature}, RH=${sensorData.humidity}`
+      );
+    }
+
+    if (sensorData.dominant) {
       const dominantLabel = {
         pm25: `PM2.5 (ISPU=${sensorData.ispuPM25})`,
         pm10: `PM10 (ISPU=${sensorData.ispuPM10})`,
         co:   `CO (ISPU=${sensorData.ispuCO})`,
+        so2:  `SO2 (ISPU=${sensorData.ispuSO2})`,
+        o3:   `O3 (ISPU=${sensorData.ispuO3})`,
+        no2:  `NO2 (ISPU=${sensorData.ispuNO2})`,
       }[sensorData.dominant] || sensorData.dominant;
 
       console.log(
         `⚠️  DOMINAN ${sensorData.dominant.toUpperCase()} in ${room.name}: AQI ${sensorData.aqi} (${dominantLabel})`
       );
-      console.log('└────────────────────────────────────────────────────────────────────────────────────');
-    } catch (error) {
-      console.log('┌────────────────────────────────────────────────────────────────────────────────────');
-      console.error(`❌ Error updating room ${room.name}:`, error.message);
-      console.log('└────────────────────────────────────────────────────────────────────────────────────');
     }
+
+    console.log(BORDER_BOTTOM);
+
+  } catch (error) {
+    console.log(BORDER_TOP);
+    console.error(`❌ Error updating room ${room.name}:`, error.message);
+    console.log(BORDER_BOTTOM);
   }
+}
 
   async handleSensorError(room, sensorData) {
     try {
@@ -3712,15 +3868,16 @@ class SimulationService {
       // ✅ NOTIFIKASI SOCKET.IO DIHAPUS
       // (Tidak ada emit 'notification' agar Flutter tidak menampilkan Snackbar)
 
-      console.log('┌────────────────────────────────────────────────────────────────────────────────────');
+      // ✅ FIX: log sensor error dibungkus border
+      console.log(BORDER_TOP);
       console.log(
-        `⚠️ SENSOR ERROR in ${room.name} (data invalid, room retained last good value)`
+        `⚠️  SENSOR ERROR in ${room.name} (data invalid, room retained last good value)`
       );
-      console.log('└────────────────────────────────────────────────────────────────────────────────────');
+      console.log(BORDER_BOTTOM);
     } catch (err) {
-      console.log('┌────────────────────────────────────────────────────────────────────────────────────');
+      console.log(BORDER_TOP);
       console.error(`❌ Error handling sensor error for ${room.name}:`, err.message);
-      console.log('└────────────────────────────────────────────────────────────────────────────────────');
+      console.log(BORDER_BOTTOM);
     }
   }
 
@@ -3747,6 +3904,8 @@ class SimulationService {
   }
 
   broadcastRoomUpdate(room, data) {
+    // ✅ FIX: method ini sekarang HANYA emit Socket.IO.
+    // Log broadcast dicetak oleh updateRoom() di dalam border.
     if (this.io) {
       const updateData = {
         roomId: room._id,
@@ -3768,8 +3927,6 @@ class SimulationService {
         building: room.buildingName,
         timestamp: new Date()
       });
-
-      console.log(`📢 Broadcast simulation update for room ${room.name}: AQI ${room.currentAQI}`);
     }
   }
 
@@ -24540,6 +24697,11 @@ class HistoryChartState extends State<HistoryChart> {
     return spots;
   }
 
+  // ============================================================
+  // ✅ FIX: Label sumbu-X hanya ditampilkan pada slot :00 dan :30.
+  // Backend sudah rebuild `timestamp` ke slot (detik = 0), tapi
+  // guard ini melindungi terhadap cache lama / data sebelum fix.
+  // ============================================================
   SideTitles _getBottomTitles() {
     return SideTitles(
       showTitles: true,
@@ -24552,13 +24714,17 @@ class HistoryChartState extends State<HistoryChart> {
           return const SizedBox.shrink();
         }
         final data = _historyData[index];
-        if (data.timestamp.minute != 0) return const SizedBox.shrink();
+
+        // ✅ FIX: hanya tampilkan label pada slot :00 dan :30
+        final m = data.timestamp.minute;
+        if (m != 0 && m != 30) return const SizedBox.shrink();
 
         final hourLabel = data.timestamp.hour.toString().padLeft(2, '0');
+        final minLabel = m.toString().padLeft(2, '0');
         return Padding(
           padding: const EdgeInsets.only(top: 8.0),
           child: Text(
-            '$hourLabel:00',
+            '$hourLabel:$minLabel',
             style: const TextStyle(fontSize: 10, color: Colors.grey),
           ),
         );
@@ -24737,8 +24903,12 @@ class HistoryChartState extends State<HistoryChart> {
                               return null;
                             }
                             final data = _historyData[index];
+
+                            // ✅ FIX: bulatkan menit ke slot :00/:30 untuk
+                            // tooltip juga (tahan terhadap cache lama).
+                            final m = data.timestamp.minute < 30 ? 0 : 30;
                             final time =
-                                '${data.timestamp.hour.toString().padLeft(2, '0')}:${data.timestamp.minute.toString().padLeft(2, '0')}';
+                                '${data.timestamp.hour.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}';
 
                             // Deteksi no-data: null (IoT) atau negatif (error -1)
                             final rawValue =
@@ -26845,12 +27015,12 @@ function generate30SecondBasedData(deviceId) {
   const state = deviceStates.get(deviceId);
 
   // Cache 30 detik
-  if (secondDataCache.has(deviceId)) {
-    const cached = secondDataCache.get(deviceId);
-    if (cached.block30 === current30SecondBlock) {
-      return cached.data;
-    }
-  }
+  //if (secondDataCache.has(deviceId)) {
+   // const cached = secondDataCache.get(deviceId);
+   // if (cached.block30 === current30SecondBlock) {
+     // return cached.data;
+   // }
+  //}
 
   const slot = getTimeSlot(hour);
   const r = TIME_RANGES[slot];

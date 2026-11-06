@@ -79,7 +79,7 @@ class IoTService {
 
         console.log(`\n✅ IoT polling completed: ${successfulPolls}/${devices.length} successful`);
         console.log(`🕒 Updated at ${new Date().toLocaleTimeString()}`);
-        console.log('\n=====================================================================================');
+        console.log('\n=====================================================================================\n');
       } catch (error) {
         console.error('❌ Error in pollAllIoTDevices:', error.message);
       }

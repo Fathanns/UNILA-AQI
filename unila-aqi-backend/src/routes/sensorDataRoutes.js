@@ -80,6 +80,9 @@ router.get('/:roomId', async (req, res) => {
 //   - $hour & $minute diberi timezone "+07:00" agar label
 //     chart menunjukkan jam WIB, bukan UTC.
 //   - Fallback raw data juga diformat ke WIB (bukan UTC).
+//   - ✅ BARU: timestamp hasil group di-rebuild via $dateFromParts
+//     sehingga SELALU jatuh tepat di menit :00 atau :30 (detik = 0).
+//     Ini mencegah label aneh seperti 16:46 di chart frontend.
 //
 // Pipeline:
 //   1. $match      — filter roomId + rentang tanggal WIB
@@ -87,7 +90,8 @@ router.get('/:roomId', async (req, res) => {
 //   3. $sort       — urutkan ascending (WAJIB untuk $first)
 //   4. $group      — per (hour, interval), ambil $first
 //   5. $sort       — urutkan hasil akhir kronologis
-//   6. $project    — format timeLabel "HH:MM" (WIB)
+//   6. $project    — rebuild timestamp ke slot (detik = 0),
+//                    format timeLabel "HH:MM" (WIB)
 // ============================================================
 router.get('/:roomId/history', async (req, res) => {
   try {
@@ -176,22 +180,42 @@ router.get('/:roomId/history', async (req, res) => {
       {
         $project: {
           _id: 0,
-          timestamp: 1,
+          // ✅ FIX: rebuild timestamp dari slot (hour + interval, detik = 0)
+          // sehingga selalu jatuh tepat di menit :00 atau :30.
+          // Frontend history_chart.dart menggunakan field ini untuk
+          // menampilkan label jam di sumbu-X.
+          timestamp: {
+            $dateFromParts: {
+              year:   { $year:   { date: '$timestamp', timezone: '+07:00' } },
+              month:  { $month:  { date: '$timestamp', timezone: '+07:00' } },
+              day:    { $dayOfMonth: { date: '$timestamp', timezone: '+07:00' } },
+              hour:   '$_id.hour',
+              minute: '$_id.interval',
+              second: 0,
+              millisecond: 0,
+              timezone: '+07:00',
+            },
+          },
           hour: '$_id.hour',
           interval: '$_id.interval',
           timeLabel: {
             $concat: [
-              { $toString: '$_id.hour' },
+              {
+                $cond: {
+                  if: { $lt: ['$_id.hour', 10] },
+                  then: { $concat: ['0', { $toString: '$_id.hour' }] },
+                  else: { $toString: '$_id.hour' },
+                },
+              },
               ':',
               {
                 $cond: {
                   if: { $lt: ['$_id.interval', 10] },
-                  then: '0',
-                  else: ''
-                }
+                  then: { $concat: ['0', { $toString: '$_id.interval' }] },
+                  else: { $toString: '$_id.interval' },
+                },
               },
-              { $toString: '$_id.interval' }
-            ]
+            ],
           },
           aqi: 1,
           pm25: 1,
@@ -218,11 +242,28 @@ router.get('/:roomId/history', async (req, res) => {
 
       return res.json({
         success: true,
-        // ✅ FIX: format timeLabel ke WIB (bukan getHours() yang UTC)
-        data: rawData.map((item) => ({
-          ...item.toObject(),
-          timeLabel: formatWIBTimeLabel(item.timestamp)
-        })),
+        // ✅ FIX: bulatkan timestamp ke slot 30 menit terdekat (detik = 0)
+        // dan format timeLabel ke WIB (bukan getHours() yang UTC).
+        data: rawData.map((item) => {
+          const obj = item.toObject();
+
+          const wibMs = new Date(item.timestamp).getTime() + WIB_OFFSET_MS;
+          const wibDate = new Date(wibMs);
+          const roundedMinute = wibDate.getUTCMinutes() < 30 ? 0 : 30;
+          const roundedWib = new Date(Date.UTC(
+            wibDate.getUTCFullYear(),
+            wibDate.getUTCMonth(),
+            wibDate.getUTCDate(),
+            wibDate.getUTCHours(),
+            roundedMinute,
+            0,
+            0,
+          ));
+
+          obj.timestamp = new Date(roundedWib.getTime() - WIB_OFFSET_MS);
+          obj.timeLabel = formatWIBTimeLabel(obj.timestamp);
+          return obj;
+        }),
         aggregated: false,
         count: rawData.length,
         message: 'Raw data loaded'
