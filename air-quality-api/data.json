@@ -1,0 +1,14 @@
+{
+  "success": true,
+  "data": {
+    "aqi": 74,
+    "pm25": 100,
+    "pm10": 150,
+    "co": 2000,
+    "so2": 80,
+    "o3": 50,
+    "no2": 60,
+    "temperature": 26.5,
+    "humidity": 55
+  }
+}

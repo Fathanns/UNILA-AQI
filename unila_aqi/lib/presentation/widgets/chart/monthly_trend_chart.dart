@@ -128,21 +128,24 @@ class _MonthlyTrendChartState extends State<MonthlyTrendChart> {
     await _loadData();
   }
 
-  Future<void> _pickMonthYear() async {
-    final picked = await showModalBottomSheet<DateTime>(
+  // ✅ BARU: Menggunakan DatePicker untuk memilih bulan/tahun
+  Future<void> _pickMonthYear(BuildContext context) async {
+    final now = DateTime.now();
+    
+    // Kita gunakan showDatePicker tapi kita sembunyikan harinya (hanya ambil bulan & tahun)
+    final DateTime? picked = await showDatePicker(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (_) => _MonthYearPickerSheet(
-        initialYear: _year,
-        initialMonth: _month,
-      ),
+      initialDate: DateTime(_year, _month),
+      firstDate: DateTime(now.year - 5, 1), // Batas 5 tahun ke belakang
+      lastDate: now, // Batas maksimal hari ini
+      helpText: 'Pilih Bulan & Tahun',
+      initialDatePickerMode: DatePickerMode.year, // Langsung buka mode pilih tahun
     );
 
     if (picked != null) {
+      // Cek jika user memilih bulan/tahun yang sama, tidak perlu load ulang
+      if (picked.year == _year && picked.month == _month) return;
+      
       setState(() {
         _year = picked.year;
         _month = picked.month;
@@ -215,6 +218,7 @@ class _MonthlyTrendChartState extends State<MonthlyTrendChart> {
     );
   }
 
+  // ✅ DIUBAH: Tampilan selector dibuat persis seperti di HistoryChart
   Widget _buildMonthYearSelector() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -232,7 +236,7 @@ class _MonthlyTrendChartState extends State<MonthlyTrendChart> {
           ),
           Expanded(
             child: InkWell(
-              onTap: _pickMonthYear,
+              onTap: () => _pickMonthYear(context), // Memanggil DatePicker
               borderRadius: BorderRadius.circular(8),
               child: Padding(
                 padding: const EdgeInsets.symmetric(vertical: 8),
@@ -245,8 +249,8 @@ class _MonthlyTrendChartState extends State<MonthlyTrendChart> {
                         fontWeight: FontWeight.w700,
                         fontFamily: 'Inter',
                       ),
+                      textAlign: TextAlign.center,
                     ),
-                    const SizedBox(height: 2),
                   ],
                 ),
               ),
@@ -280,7 +284,6 @@ class _MonthlyTrendChartState extends State<MonthlyTrendChart> {
               padding:
                   const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
-                // ✅ Selected = warna parameter itu sendiri
                 color: isSelected
                     ? color
                     : AppColors.primary.withOpacity(0.08),
@@ -360,7 +363,7 @@ class _MonthlyTrendChartState extends State<MonthlyTrendChart> {
 
   Widget _buildErrorState() {
     return SizedBox(
-      height: 350, // ← samakan dengan tinggi chart di HistoryChart
+      height: 350, 
       child: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -388,9 +391,9 @@ class _MonthlyTrendChartState extends State<MonthlyTrendChart> {
     );
   }
 
-   Widget _buildEmptyState() {
+  Widget _buildEmptyState() {
     return SizedBox(
-      height: 350, // ← samakan dengan tinggi chart di HistoryChart
+      height: 350, 
       child: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -598,156 +601,5 @@ class _MonthlyBarChart extends StatelessWidget {
       'Minggu': 'Min',
     };
     return map[dayName] ?? dayName;
-  }
-}
-
-// ============================================================
-// MONTH/YEAR PICKER BOTTOM SHEET
-// ============================================================
-class _MonthYearPickerSheet extends StatefulWidget {
-  final int initialYear;
-  final int initialMonth;
-
-  const _MonthYearPickerSheet({
-    required this.initialYear,
-    required this.initialMonth,
-  });
-
-  @override
-  State<_MonthYearPickerSheet> createState() => _MonthYearPickerSheetState();
-}
-
-class _MonthYearPickerSheetState extends State<_MonthYearPickerSheet> {
-  late int _year;
-  late int _month;
-
-  static const List<String> _monthNames = [
-    'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
-    'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember',
-  ];
-
-  @override
-  void initState() {
-    super.initState();
-    _year = widget.initialYear;
-    _month = widget.initialMonth;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final now = DateTime.now();
-    final minYear = now.year - 5;
-    final maxYear = now.year;
-    final years = List.generate(maxYear - minYear + 1, (i) => minYear + i);
-
-    return Padding(
-      padding: EdgeInsets.only(
-        bottom: MediaQuery.of(context).viewInsets.bottom,
-      ),
-      child: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade300,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                'Pilih Bulan & Tahun',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-              ),
-              const SizedBox(height: 12),
-              DropdownButton<int>(
-                value: _year,
-                isExpanded: true,
-                onChanged: (v) => setState(() => _year = v ?? _year),
-                items: years
-                    .map((y) => DropdownMenuItem(value: y, child: Text('$y')))
-                    .toList(),
-              ),
-              const SizedBox(height: 12),
-              GridView.count(
-                crossAxisCount: 3,
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                childAspectRatio: 2.2,
-                mainAxisSpacing: 8,
-                crossAxisSpacing: 8,
-                children: List.generate(12, (i) {
-                  final m = i + 1;
-                  final isSelected = m == _month;
-                  final isFuture = (_year == now.year && m > now.month);
-
-                  return GestureDetector(
-                    onTap: isFuture
-                        ? null
-                        : () {
-                            setState(() => _month = m);
-                          },
-                    child: Container(
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        color: isSelected
-                            ? AppColors.primary
-                            : (isFuture
-                                ? Colors.grey.withOpacity(0.08)
-                                : AppColors.surface),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                          color: isSelected
-                              ? AppColors.primary
-                              : AppColors.border,
-                        ),
-                      ),
-                      child: Text(
-                        _monthNames[i],
-                        style: TextStyle(
-                          fontSize: 12.5,
-                          fontWeight:
-                              isSelected ? FontWeight.w700 : FontWeight.w500,
-                          color: isSelected
-                              ? Colors.white
-                              : (isFuture
-                                  ? AppColors.textDisabled
-                                  : AppColors.textPrimary),
-                        ),
-                      ),
-                    ),
-                  );
-                }),
-              ),
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: () => Navigator.pop(context),
-                      child: const Text('Batal'),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: () => Navigator.pop(
-                        context,
-                        DateTime(_year, _month),
-                      ),
-                      child: const Text('Terapkan'),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
   }
 }

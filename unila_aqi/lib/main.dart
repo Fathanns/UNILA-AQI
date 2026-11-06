@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 import 'package:unila_aqi/presentation/pages/admin/building_management.dart';
 import 'package:unila_aqi/presentation/pages/admin/iot_management.dart';
@@ -14,10 +15,10 @@ import 'presentation/pages/admin/profile_management.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
+
   // Initialize services
   await StorageService().init();
-  
+
   runApp(
     MultiProvider(
       providers: [
@@ -49,6 +50,19 @@ class MyApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
       initialRoute: '/',
+
+      // ✅ Localization: dukung Bahasa Indonesia
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      supportedLocales: const [
+        Locale('id', 'ID'), // Bahasa Indonesia
+        Locale('en', 'US'), // Fallback (opsional)
+      ],
+      locale: const Locale('id', 'ID'), // Default seluruh app ke Indonesia
+
       routes: {
         '/': (context) => const ModeSelectionScreen(),
         '/dashboard': (context) => const DashboardScreen(isAdminMode: false),

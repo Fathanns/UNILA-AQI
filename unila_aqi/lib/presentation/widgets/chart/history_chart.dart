@@ -180,11 +180,20 @@ class HistoryChartState extends State<HistoryChart> {
 
   Future<void> _selectDate(BuildContext context) async {
     try {
+      // ✅ FIX: Gunakan Localizations.override untuk memaksa bahasa Indonesia
       final DateTime? picked = await showDatePicker(
         context: context,
         initialDate: _selectedDate,
         firstDate: DateTime.now().subtract(const Duration(days: 30)),
         lastDate: DateTime.now(),
+        locale: const Locale('id', 'ID'),
+        builder: (context, child) {
+          return Localizations.override(
+            context: context,
+            locale: const Locale('id', 'ID'),
+            child: child,
+          );
+        },
       );
       if (picked != null && picked != _selectedDate) {
         setState(() => _selectedDate = picked);
