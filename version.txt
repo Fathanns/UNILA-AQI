@@ -2449,7 +2449,7 @@ router.post('/clear', authMiddleware, adminMiddleware, async (req, res) => {
 module.exports = router;
 
 ---------------------------------------------------------------------------------------------------------------------------------------
-sensorDataRoutes.js
+C:\develop\UNILA-AQI\unila-aqi-backend\src\routes\sensorDataRoutes.js
 
 const express = require('express');
 const router = express.Router();
@@ -2465,20 +2465,33 @@ const toObjectId = (id) => {
   }
 };
 
-// GET sensor data for a room dengan data aggregation
-// FIXED: route dibuat PUBLIC (authMiddleware dihapus).
-// Alasan:
-//  - Data historis 24 jam ini identik dengan data live yang sudah tampil
-//    di dashboard publik (endpoint /rooms juga public).
-//  - Visitor (tanpa login) harus bisa melihat grafik historis ruangan,
-//    sama seperti admin.
-//  - Sebelumnya endpoint butuh token → visitor mendapat 401 → grafik
-//    kosong padahal admin normal.
+// ============================================================
+// Helper: Format tanggal WIB
+// ============================================================
+const WIB_OFFSET_MS = 7 * 60 * 60 * 1000;
+
+/** Kembalikan tanggal hari ini (WIB) dalam format YYYY-MM-DD */
+function getTodayWIBDateStr() {
+  const now = new Date();
+  const wib = new Date(now.getTime() + WIB_OFFSET_MS);
+  return wib.toISOString().split('T')[0];
+}
+
+/** Format timestamp menjadi "HH:MM" dalam zona WIB */
+function formatWIBTimeLabel(timestamp) {
+  const wibDate = new Date(new Date(timestamp).getTime() + WIB_OFFSET_MS);
+  const hh = wibDate.getUTCHours().toString().padStart(2, '0');
+  const mm = wibDate.getUTCMinutes().toString().padStart(2, '0');
+  return `${hh}:${mm}`;
+}
+
+// ============================================================
+// GET sensor data for a room (24 jam terakhir)
+// ============================================================
 router.get('/:roomId', async (req, res) => {
   try {
     const { roomId } = req.params;
 
-    // Validasi roomId
     if (!mongoose.Types.ObjectId.isValid(roomId)) {
       return res.status(400).json({
         success: false,
@@ -2490,12 +2503,10 @@ router.get('/:roomId', async (req, res) => {
     const now = new Date();
     const dateFilter = { timestamp: { $gte: new Date(now - 24 * 60 * 60 * 1000) } };
 
-    // Ambil SEMUA data 24 jam (tanpa limit)
     const sensorData = await SensorData.find({
       roomId: toObjectId(roomId),
       ...dateFilter
-    })
-    .sort({ timestamp: 1 });
+    }).sort({ timestamp: 1 });
 
     res.json({
       success: true,
@@ -2513,26 +2524,29 @@ router.get('/:roomId', async (req, res) => {
   }
 });
 
-// GET sensor data by date untuk grafik history
-// FIXED (2026): route ini sekarang mengambil data TEPAT di kelipatan
-// interval (default 30 menit) dengan menggunakan $first setelah $sort,
-// sehingga tiap titik merepresentasikan nilai pada awal slot
-// (14:00, 14:30, 15:00, 15:30, dst) — bukan nilai di akhir slot
-// (yang lebih dekat ke 14:29 / 14:59).
+// ============================================================
+// GET sensor data by date untuk grafik history (WIB aware)
+// ============================================================
+// FIXED (2026-11):
+//   - Query rentang tanggal menggunakan zona WIB (+07:00)
+//     sehingga pukul 00:00 WIB s/d 23:59 WIB terambil penuh.
+//   - $hour & $minute diberi timezone "+07:00" agar label
+//     chart menunjukkan jam WIB, bukan UTC.
+//   - Fallback raw data juga diformat ke WIB (bukan UTC).
 //
 // Pipeline:
-//   1. $match      — filter roomId + rentang tanggal
-//   2. $addFields  — hitung slot interval (0 atau 30 untuk interval=30)
-//   3. $sort       — urutkan ascending (WAJIB untuk $first yang deterministik)
-//   4. $group      — per (hour, interval), ambil $first (= data di awal slot)
-//   5. $sort       — urutkan hasil akhir secara kronologis
-//   6. $project    — format timeLabel "HH:MM" + field yang dibutuhkan chart
+//   1. $match      — filter roomId + rentang tanggal WIB
+//   2. $addFields  — hitung slot interval (WIB)
+//   3. $sort       — urutkan ascending (WAJIB untuk $first)
+//   4. $group      — per (hour, interval), ambil $first
+//   5. $sort       — urutkan hasil akhir kronologis
+//   6. $project    — format timeLabel "HH:MM" (WIB)
+// ============================================================
 router.get('/:roomId/history', async (req, res) => {
   try {
     const { roomId } = req.params;
-    const { date, interval = 30 } = req.query; // interval dalam menit
+    const { date, interval = 30 } = req.query;
 
-    // Validasi roomId
     if (!mongoose.Types.ObjectId.isValid(roomId)) {
       return res.status(400).json({
         success: false,
@@ -2540,27 +2554,29 @@ router.get('/:roomId/history', async (req, res) => {
       });
     }
 
-    // Parse tanggal
+    // ✅ FIX: Waktu WIB (UTC+7)
     let startDate, endDate;
     if (date) {
-      // Jika ada tanggal spesifik
-      const selectedDate = new Date(date);
-      startDate = new Date(selectedDate.setHours(0, 0, 0, 0));
-      endDate = new Date(selectedDate.setHours(23, 59, 59, 999));
+      startDate = new Date(`${date}T00:00:00.000+07:00`);
+      endDate = new Date(`${date}T23:59:59.999+07:00`);
     } else {
-      // Default: hari ini
-      const today = new Date();
-      startDate = new Date(today.setHours(0, 0, 0, 0));
-      endDate = new Date(today.setHours(23, 59, 59, 999));
+      const wibDate = getTodayWIBDateStr();
+      startDate = new Date(`${wibDate}T00:00:00.000+07:00`);
+      endDate = new Date(`${wibDate}T23:59:59.999+07:00`);
     }
 
-    const intervalNum = parseInt(interval);
+    const intervalNum = parseInt(interval, 10);
+    if (isNaN(intervalNum) || intervalNum <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Parameter interval tidak valid',
+      });
+    }
 
     console.log(
-      `📊 Fetching history data for room ${roomId} from ${startDate} to ${endDate} (interval: ${intervalNum}m)`
+      `📊 Fetching history data for room ${roomId} from ${startDate.toISOString()} to ${endDate.toISOString()} (interval: ${intervalNum}m)`
     );
 
-    // Aggregation pipeline untuk data per interval
     const aggregationPipeline = [
       {
         $match: {
@@ -2570,63 +2586,64 @@ router.get('/:roomId/history', async (req, res) => {
       },
       {
         $addFields: {
-          // Buat interval waktu (misal: 30 menit)
-          // minute 0-29 → 0, minute 30-59 → 30 (untuk interval=30)
+          // ✅ FIX: timezone "+07:00" agar $minute ikut WIB
           timeInterval: {
             $subtract: [
-              { $minute: "$timestamp" },
-              { $mod: [{ $minute: "$timestamp" }, intervalNum] }
+              { $minute: { date: '$timestamp', timezone: '+07:00' } },
+              {
+                $mod: [
+                  { $minute: { date: '$timestamp', timezone: '+07:00' } },
+                  intervalNum
+                ]
+              }
             ]
           }
         }
       },
-      // FIXED: sort ascending SEBELUM $group, agar $first di bawah
-      // menghasilkan nilai TEPAT di awal slot (menit :00 / :30).
-      // Tanpa sort, $first mengembalikan dokumen non-deterministik.
       {
-        $sort: { "timestamp": 1 }
+        $sort: { timestamp: 1 }
       },
       {
         $group: {
           _id: {
-            hour: { $hour: "$timestamp" },
-            interval: "$timeInterval"
+            hour: { $hour: { date: '$timestamp', timezone: '+07:00' } },
+            interval: '$timeInterval'
           },
-          timestamp: { $first: "$timestamp" },
-          aqi: { $first: "$aqi" },
-          pm25: { $first: "$pm25" },
-          pm10: { $first: "$pm10" },
-          co: { $first: "$co" },
-          so2: { $first: "$so2" },
-          o3: { $first: "$o3" },
-          no2: { $first: "$no2" },
-          temperature: { $first: "$temperature" },
-          humidity: { $first: "$humidity" },
-          category: { $first: "$category" },
-          rawData: { $push: "$$ROOT" }
+          timestamp: { $first: '$timestamp' },
+          aqi: { $first: '$aqi' },
+          pm25: { $first: '$pm25' },
+          pm10: { $first: '$pm10' },
+          co: { $first: '$co' },
+          so2: { $first: '$so2' },
+          o3: { $first: '$o3' },
+          no2: { $first: '$no2' },
+          temperature: { $first: '$temperature' },
+          humidity: { $first: '$humidity' },
+          category: { $first: '$category' },
+          rawData: { $push: '$$ROOT' }
         }
       },
       {
-        $sort: { "timestamp": 1 }
+        $sort: { timestamp: 1 }
       },
       {
         $project: {
           _id: 0,
           timestamp: 1,
-          hour: "$_id.hour",
-          interval: "$_id.interval",
+          hour: '$_id.hour',
+          interval: '$_id.interval',
           timeLabel: {
             $concat: [
-              { $toString: "$_id.hour" },
-              ":",
+              { $toString: '$_id.hour' },
+              ':',
               {
                 $cond: {
-                  if: { $lt: ["$_id.interval", 10] },
-                  then: "0",
-                  else: ""
+                  if: { $lt: ['$_id.interval', 10] },
+                  then: '0',
+                  else: ''
                 }
               },
-              { $toString: "$_id.interval" }
+              { $toString: '$_id.interval' }
             ]
           },
           aqi: 1,
@@ -2645,19 +2662,19 @@ router.get('/:roomId/history', async (req, res) => {
 
     const aggregatedData = await SensorData.aggregate(aggregationPipeline);
 
-    // Jika tidak ada data, coba ambil data mentah
+    // Fallback: jika tidak ada data agregasi, ambil data mentah
     if (aggregatedData.length === 0) {
       const rawData = await SensorData.find({
         roomId: toObjectId(roomId),
         timestamp: { $gte: startDate, $lte: endDate }
-      })
-      .sort({ timestamp: 1 });
+      }).sort({ timestamp: 1 });
 
       return res.json({
         success: true,
-        data: rawData.map(item => ({
+        // ✅ FIX: format timeLabel ke WIB (bukan getHours() yang UTC)
+        data: rawData.map((item) => ({
           ...item.toObject(),
-          timeLabel: `${item.timestamp.getHours()}:${item.timestamp.getMinutes().toString().padStart(2, '0')}`
+          timeLabel: formatWIBTimeLabel(item.timestamp)
         })),
         aggregated: false,
         count: rawData.length,
@@ -2670,11 +2687,10 @@ router.get('/:roomId/history', async (req, res) => {
       data: aggregatedData,
       aggregated: true,
       count: aggregatedData.length,
-      startDate: startDate,
-      endDate: endDate,
+      startDate,
+      endDate,
       message: 'Aggregated history data loaded'
     });
-
   } catch (error) {
     console.error('Error fetching history data:', error);
     res.status(500).json({
@@ -2685,6 +2701,9 @@ router.get('/:roomId/history', async (req, res) => {
   }
 });
 
+// ============================================================
+// GET monthly trend (WIB aware)
+// ============================================================
 router.get('/:roomId/monthly', async (req, res) => {
   try {
     const { roomId } = req.params;
@@ -2712,8 +2731,15 @@ router.get('/:roomId/monthly', async (req, res) => {
       });
     }
 
-    const startOfMonth = new Date(year, month - 1, 1, 0, 0, 0, 0);
-    const endOfMonth   = new Date(year, month, 0, 23, 59, 59, 999);
+    // ✅ FIX: gunakan zona WIB agar cut-off tanggal akurat
+    const startOfMonth = new Date(
+      `${year}-${String(month).padStart(2, '0')}-01T00:00:00.000+07:00`
+    );
+    // Hari terakhir bulan: tanggal 0 dari bulan berikutnya
+    const lastDay = new Date(year, month, 0).getDate();
+    const endOfMonth = new Date(
+      `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}T23:59:59.999+07:00`
+    );
 
     console.log(
       `📊 Monthly trend → room ${roomId} | ${year}-${String(month).padStart(2, '0')} | ` +
@@ -2747,28 +2773,36 @@ router.get('/:roomId/monthly', async (req, res) => {
         $match: {
           roomId: toObjectId(roomId),
           timestamp: { $gte: startOfMonth, $lte: endOfMonth },
-          isAnomaly: { $ne: true },   // exclude spike & error simulasi
-          aqi: { $gte: 0 },           // exclude error (-1), aman untuk legacy
+          isAnomaly: { $ne: true },
+          aqi: { $gte: 0 },
         },
       },
-      // 2. Hitung index hari dalam minggu (Senin=1 .. Minggu=7)
-      //    MongoDB $dayOfWeek: 1=Sun, 2=Mon, ..., 7=Sat
-      //    Formula: ((dow + 5) % 7) + 1
+      // 2. Hitung index hari dalam minggu (Senin=1 .. Minggu=7) — WIB
       {
         $addFields: {
           dayOfWeekMonSun: {
             $add: [
-              { $mod: [{ $add: [{ $dayOfWeek: '$timestamp' }, 5] }, 7] },
+              {
+                $mod: [
+                  {
+                    $add: [
+                      { $dayOfWeek: { date: '$timestamp', timezone: '+07:00' } },
+                      5,
+                    ],
+                  },
+                  7,
+                ],
+              },
               1,
             ],
           },
         },
       },
-      // 3. Group per tanggal (hari kalender)
+      // 3. Group per tanggal (hari kalender WIB)
       {
         $group: {
           _id: {
-            day: { $dayOfMonth: '$timestamp' },
+            day: { $dayOfMonth: { date: '$timestamp', timezone: '+07:00' } },
             dow: '$dayOfWeekMonSun',
           },
           ...dailyAcc,
@@ -2809,7 +2843,6 @@ router.get('/:roomId/monthly', async (req, res) => {
         };
       });
 
-      // Hari dianggap punya data bila minimal AQI punya nilai valid
       const hasData = values.aqi.max !== null;
 
       days.push({
@@ -27084,7 +27117,7 @@ const server = http.createServer((req, res) => {
     }
 
     try {
-      if (pathname === '/health' && method === 'GET') {
+      if (pathname === '/health' && (method === 'GET' || method === 'HEAD')) {
         const now = new Date();
         const currentSecond = Math.floor(Date.now() / 1000);
         const current30SecondBlock = Math.floor(currentSecond / 30);
