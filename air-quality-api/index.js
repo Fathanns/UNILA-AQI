@@ -4,19 +4,17 @@ const fs = require('fs');
 const path = require('path');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3000;   // ← WAJIB pakai process.env.PORT
 
-// Middleware
-app.use(cors());              // agar bisa diakses dari domain lain
+app.use(cors());
 app.use(express.json());
 
-// Endpoint utama: GET /api/air-quality
+// Endpoint utama
 app.get('/api/air-quality', (req, res) => {
   try {
     const filePath = path.join(__dirname, 'data.json');
     const raw = fs.readFileSync(filePath, 'utf-8');
-    const jsonData = JSON.parse(raw);
-    res.status(200).json(jsonData);
+    res.status(200).json(JSON.parse(raw));
   } catch (err) {
     res.status(500).json({
       success: false,
@@ -26,11 +24,15 @@ app.get('/api/air-quality', (req, res) => {
   }
 });
 
-// Health check
+// Health check (dipakai Render untuk cek server hidup)
 app.get('/', (req, res) => {
-  res.json({ status: 'OK', endpoint: '/api/air-quality' });
+  res.json({
+    status: 'OK',
+    endpoint: '/api/air-quality',
+    timestamp: new Date().toISOString()
+  });
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server berjalan di port ${PORT}`);
 });
