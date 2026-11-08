@@ -2,9 +2,6 @@ FRONTEND:
 
 C:\develop\UNILA-AQI\unila_aqi\lib\core\constants\app_constants.dart
 
-================================================================================================================================================================================================
-C:\develop\UNILA-AQI\unila_aqi\lib\core\constants\app_constants.dart
-
 class AppConstants {
   // API Configuration
   static const String apiBaseUrl = 'https://unila-aqi.onrender.com/api'; // For Android emulator
