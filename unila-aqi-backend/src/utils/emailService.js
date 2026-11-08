@@ -1,12 +1,12 @@
 const nodemailer = require('nodemailer');
 
 // ============================================================
-// KONFIGURASI EMAIL (SENDCOREX / EMAILSBIT SMTP)
+// KONFIGURASI EMAIL (SENDCOREX)
 // ============================================================
 const SMTP_HOST = process.env.SMTP_HOST || 'smtp.emailsbit.com';
 const SMTP_PORT = parseInt(process.env.SMTP_PORT || '588', 10);
 const SMTP_USER = process.env.SMTP_USERNAME;
-const SMTP_PASS = process.env.SMTP_PASSWORD; // Diambil dari Environment Render
+const SMTP_PASS = process.env.SMTP_PASSWORD; 
 const SMTP_FROM = process.env.SMTP_FROM || 'unilaaqi@inboxtaken.com';
 
 if (!SMTP_USER || !SMTP_PASS) {
@@ -14,6 +14,9 @@ if (!SMTP_USER || !SMTP_PASS) {
   process.exit(1);
 }
 
+// ============================================================
+// SETUP TRANSPORTER
+// ============================================================
 const transporter = nodemailer.createTransport({
   host: SMTP_HOST,
   port: SMTP_PORT,
@@ -24,21 +27,37 @@ const transporter = nodemailer.createTransport({
     pass: SMTP_PASS,
   },
   connectionTimeout: 15000, // Toleransi 15 detik agar tidak langsung timeout
+  greetingTimeout: 10000,
+  socketTimeout: 20000,
+  tls: {
+    rejectUnauthorized: false,
+    minVersion: 'TLSv1.2'
+  },
+  // AKTIFKAN LOG UNTUK DEBUGGING DI RENDER LOGS
+  logger: true, 
+  debug: true   
 });
 
 // Verifikasi koneksi saat server menyala
-transporter.verify((error) => {
+transporter.verify((error, success) => {
   if (error) {
-    console.error('⚠️  SMTP transporter verification failed:', error.message);
+    console.error('⚠️  SMTP transporter verification failed!');
+    console.error('Detail Error:', error.message);
+    if (error.code) console.error('Error Code:', error.code);
   } else {
     console.log('✅ SMTP transporter ready (EmailSbit/Sendcorex)');
   }
 });
 
+// ============================================================
+// HELPER FUNCTIONS
+// ============================================================
+
 const generateResetCode = () => {
   return Math.floor(100000 + Math.random() * 900000).toString();
 };
 
+// HTML Template untuk Reset Password
 const sendResetCodeEmail = async (toEmail, code, username) => {
   const mailOptions = {
     from: `"Unila AQI" <${SMTP_FROM}>`, 
@@ -57,6 +76,7 @@ const sendResetCodeEmail = async (toEmail, code, username) => {
             ${code}
           </div>
           <p style="color: #6C757D; font-size: 14px;">Kode ini berlaku selama <strong>15 menit</strong>.</p>
+          <p style="color: #6C757D; font-size: 14px;">Jika Anda tidak merasa melakukan permintaan reset password, abaikan email ini.</p>
         </div>
       </div>
     `,
@@ -65,6 +85,7 @@ const sendResetCodeEmail = async (toEmail, code, username) => {
   return await transporter.sendMail(mailOptions);
 };
 
+// HTML Template untuk Perubahan Email
 const sendEmailChangeCodeEmail = async (toEmail, code, username) => {
   const mailOptions = {
     from: `"Unila AQI" <${SMTP_FROM}>`,
@@ -83,6 +104,7 @@ const sendEmailChangeCodeEmail = async (toEmail, code, username) => {
             ${code}
           </div>
           <p style="color: #6C757D; font-size: 14px;">Kode ini berlaku selama <strong>15 menit</strong>.</p>
+          <p style="color: #6C757D; font-size: 14px;">Jika Anda tidak merasa melakukan perubahan email, segera hubungi administrator.</p>
         </div>
       </div>
     `,
