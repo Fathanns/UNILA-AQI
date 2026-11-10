@@ -199,12 +199,19 @@ class AppDrawer extends StatelessWidget {
           ),
           // Version Info
           Padding(
-            padding: const EdgeInsets.all(16),
-            child: Text(
-              'v 1.0.0',
-              style: TextStyle(
-                fontSize: 12,
-                color: Colors.grey[600],
+            padding: const EdgeInsets.only(
+              top: 8,
+              bottom: 32,
+              left: 16,
+              right: 16,
+            ),
+            child: Center(
+              child: Text(
+                'v 1.0.0',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey[600],
+                ),
               ),
             ),
           ),
@@ -227,6 +234,7 @@ class AppDrawer extends StatelessWidget {
         ),
       ),
       onTap: onTap,
+      enableFeedback: false,
     );
   }
 }

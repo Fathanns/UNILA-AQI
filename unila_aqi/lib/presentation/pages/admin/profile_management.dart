@@ -310,10 +310,10 @@ class _ProfileManagementScreenState extends State<ProfileManagementScreen> {
             _buildSummarySection(),
             const SizedBox(height: 16),
             _buildActionSection(),
-            const SizedBox(height: 24),
+            const SizedBox(height: 32),
             _buildFooter(),
-            const SizedBox(height: 24),
-          ],
+            const SizedBox(height: 48),   
+        ],
         ),
       ),
     );
