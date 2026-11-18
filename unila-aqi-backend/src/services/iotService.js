@@ -90,6 +90,11 @@ class IoTService {
 
         console.log(`🔄 Polling ${devices.length} IoT devices...`);
 
+        // ✅ Cetak SERIAL di sini (bukan di dalam pollDevice yang paralel)
+        devices.forEach((d) => {
+          console.log(`📡 Polling device: ${d.name} (${d.apiEndpoint})`);
+        });
+
         // Poll paralel, tapi TIDAK mencetak log di dalam pollDevice.
         // pollDevice hanya mengembalikan result + roomLogs.
         const results = await Promise.allSettled(
@@ -114,8 +119,15 @@ class IoTService {
           console.log(BORDER_TOP);
           if (val.success) {
             successfulPolls++;
-            // Cetak log ruangan untuk device ini (jika ada)
-            (val.roomLogs || []).forEach((line) => console.log(line));
+            const lines = val.roomLogs || [];
+            if (lines.length === 0) {
+              // ✅ Hindari border kosong untuk device tanpa room
+              console.log(
+                `ℹ️  Device ${val.deviceName}: no rooms updated (no rooms mapped or all demoMode)`
+              );
+            } else {
+              lines.forEach((line) => console.log(line));
+            }
           } else {
             console.error(`❌ Error polling device ${val.deviceName}: ${val.error}`);
           }
@@ -133,9 +145,7 @@ class IoTService {
 
   async pollDevice(device) {
     try {
-      console.log(`📡 Polling device: ${device.name} (${device.apiEndpoint})`);
-
-      // ✅ Gunakan retry + timeout lebih besar untuk device lambat
+      // ✅ TIDAK ada console.log di sini — dicetak serial oleh pollAllIoTDevices
       const response = await this._getWithRetry(device.apiEndpoint, 15000);
 
       if (response.data?.success === true) {
@@ -548,7 +558,11 @@ class IoTService {
         this.deviceLastData.set(device._id.toString(), iotData);
 
         const { logs } = await this.updateRoomFromIoTForce(room, iotData, device.name);
+
+        // ✅ Bungkus log dalam border yang seimbang
+        console.log(BORDER_TOP);
         logs.forEach((line) => console.log(line));
+        console.log(BORDER_BOTTOM);
 
         return { success: true, data: iotData, deviceName: device.name };
       } catch (error) {
@@ -590,10 +604,9 @@ class IoTService {
     } catch (error) {
       device.status = 'offline';
       await device.save().catch(() => {});
-      console.log(BORDER_TOP);
-      console.error(`❌ pollDeviceForce(${device.name}) error:`, error.message);
-      console.log(BORDER_BOTTOM);
-      return { success: false, error: error.message };
+      // ✅ Kembalikan error — TIDAK mencetak border di sini.
+      // Pemanggil (forcePollAll) yang mencetak dalam border.
+      return { success: false, deviceName: device.name, error: error.message };
     }
   }
 
@@ -635,7 +648,13 @@ class IoTService {
         }
 
         const results = await Promise.allSettled(
-          devices.map((d) => this.pollDeviceForce(d).catch((e) => null))
+          devices.map((d) =>
+            this.pollDeviceForce(d).catch((e) => ({
+              success: false,
+              deviceName: d.name,
+              error: e?.message || String(e),
+            }))
+          )
         );
 
         let successCount = 0;
@@ -648,9 +667,18 @@ class IoTService {
           console.log(BORDER_TOP);
           if (val?.success) {
             successCount++;
-            (val.roomLogs || []).forEach((line) => console.log(line));
-          } else if (val) {
-            console.error(`❌ Force poll failed for ${val.deviceName || 'unknown'}: ${val.error || 'unknown error'}`);
+            const lines = val.roomLogs || [];
+            if (lines.length === 0) {
+              console.log(
+                `ℹ️  Device ${val.deviceName || 'unknown'}: no rooms updated (no rooms mapped or all demoMode)`
+              );
+            } else {
+              lines.forEach((line) => console.log(line));
+            }
+          } else {
+            console.error(
+              `❌ Force poll failed for ${val.deviceName || 'unknown'}: ${val.error || 'unknown error'}`
+            );
           }
           console.log(BORDER_BOTTOM);
         }
