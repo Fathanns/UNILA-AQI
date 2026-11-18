@@ -96,7 +96,6 @@ class IoTService {
         });
 
         // Poll paralel, tapi TIDAK mencetak log di dalam pollDevice.
-        // pollDevice hanya mengembalikan result + roomLogs.
         const results = await Promise.allSettled(
           devices.map(async (device) => {
             try {
@@ -108,7 +107,8 @@ class IoTService {
           })
         );
 
-        // ✅ Log SERIAL setelah semua polling selesai — tidak ada border berselang-seling.
+        // ✅ Log SERIAL — semua pakai console.log agar satu stream (stdout),
+        // sehingga urutan border + isi dijamin konsisten.
         let successfulPolls = 0;
         for (const r of results) {
           const val =
@@ -117,11 +117,10 @@ class IoTService {
               : { success: false, deviceName: 'unknown', error: r.reason?.message };
 
           console.log(BORDER_TOP);
-          if (val.success) {
+          if (val && val.success === true) {
             successfulPolls++;
             const lines = val.roomLogs || [];
             if (lines.length === 0) {
-              // ✅ Hindari border kosong untuk device tanpa room
               console.log(
                 `ℹ️  Device ${val.deviceName}: no rooms updated (no rooms mapped or all demoMode)`
               );
@@ -129,7 +128,10 @@ class IoTService {
               lines.forEach((line) => console.log(line));
             }
           } else {
-            console.error(`❌ Error polling device ${val.deviceName}: ${val.error}`);
+            // ✅ console.log (bukan console.error) — hindari urutan acak stdout/stderr
+            const name = val?.deviceName || 'unknown';
+            const errMsg = val?.error || 'unknown error';
+            console.log(`❌ Error polling device ${name}: ${errMsg}`);
           }
           console.log(BORDER_BOTTOM);
         }
@@ -168,7 +170,6 @@ class IoTService {
           iotDeviceId: device._id.toString(),
         });
 
-        // ✅ Kumpulkan log, jangan cetak di sini
         const roomLogs = [];
         for (const room of rooms) {
           const { logs } = await this.updateRoomFromIoT(room, iotData, device.name);
@@ -197,7 +198,6 @@ class IoTService {
   async checkDeviceStatus(devices) {
     if (!devices || devices.length === 0) return [];
 
-    // ✅ Bungkus dengan runExclusive agar tidak menyela siklus utama
     return runExclusive(async () => {
       const results = await Promise.allSettled(
         devices.map(async (device) => {
@@ -265,9 +265,6 @@ class IoTService {
     );
   }
 
-  /**
-   * Bangun label dominan dari aqiResult.
-   */
   _dominantLabel(aqiResult) {
     if (!aqiResult || !aqiResult.dominant) return null;
     return (
@@ -282,10 +279,6 @@ class IoTService {
     );
   }
 
-  /**
-   * Update room dari data IoT — MENGEMBALIKAN { logs } (tidak mencetak).
-   * @returns {Promise<{logs: string[]}>}
-   */
   async updateRoomFromIoT(room, iotData, deviceName) {
     const logs = [];
     try {
@@ -306,7 +299,6 @@ class IoTService {
       const temperature = optNum(iotData.temperature);
       const humidity    = optNum(iotData.humidity);
 
-      // Deteksi error hanya untuk field yang ADA dan negatif.
       const hasError = [pm25, pm10, co, so2, o3, no2, temperature, humidity]
         .some((v) => v !== null && v < 0);
 
@@ -341,7 +333,6 @@ class IoTService {
         normalizedData
       );
 
-      // Simpan + riwayat + broadcast HANYA jika berubah
       if (!hasRoomDataChanged) {
         logs.push(`ℹ️  Room ${room.name} data unchanged (exact match), skipping room update`);
       } else {
@@ -358,7 +349,6 @@ class IoTService {
         logs.push(`📢 Broadcast IoT update for room ${room.name}: AQI ${room.currentAQI}`);
       }
 
-      // Riwayat selalu disimpan (baik berubah maupun tidak)
       await new SensorData({
         roomId: room._id,
         roomName: room.name,
@@ -372,7 +362,6 @@ class IoTService {
         anomalyType: iotData.anomalyType || null,
       }).save();
 
-      // --- Ringkasan AQI ---
       if (normalizedData.aqi == null) {
         logs.push(
           `ℹ️  IoT room ${room.name} (device ${deviceName}): tidak ada data valid — status no_data`
@@ -403,10 +392,6 @@ class IoTService {
     }
   }
 
-  /**
-   * Versi "force" — selalu menyimpan & broadcast, dan MENGEMBALIKAN { logs }.
-   * Tidak mencetak apa pun di dalam method ini.
-   */
   async updateRoomFromIoTForce(room, iotData, deviceName) {
     const logs = [];
     try {
@@ -457,7 +442,6 @@ class IoTService {
       this.broadcastRoomUpdate(room, normalizedData, 'iot', deviceName);
       logs.push(`📢 FORCE Broadcast IoT update for room ${room.name}: AQI ${room.currentAQI}`);
 
-      // Riwayat selalu disimpan
       await new SensorData({
         roomId: room._id,
         roomName: room.name,
@@ -471,7 +455,6 @@ class IoTService {
         anomalyType: iotData.anomalyType || null,
       }).save();
 
-      // --- Ringkasan AQI ---
       if (normalizedData.aqi == null) {
         logs.push(
           `ℹ️  IoT room ${room.name} (device ${deviceName}): tidak ada data valid — status no_data`
@@ -504,7 +487,6 @@ class IoTService {
 
   async handleDeviceError(room, deviceName, logs = []) {
     try {
-      // Catat sebagai error (-1) untuk history
       await new SensorData({
         roomId: room._id,
         roomName: room.name,
@@ -527,7 +509,6 @@ class IoTService {
   }
 
   async forceUpdateRoom(roomId) {
-    // ✅ Bungkus dengan runExclusive agar tidak menyela siklus utama
     return runExclusive(async () => {
       try {
         const room = await Room.findById(roomId);
@@ -559,7 +540,7 @@ class IoTService {
 
         const { logs } = await this.updateRoomFromIoTForce(room, iotData, device.name);
 
-        // ✅ Bungkus log dalam border yang seimbang
+        // ✅ Semua console.log (satu stream) — urutan dijamin
         console.log(BORDER_TOP);
         logs.forEach((line) => console.log(line));
         console.log(BORDER_BOTTOM);
@@ -567,7 +548,7 @@ class IoTService {
         return { success: true, data: iotData, deviceName: device.name };
       } catch (error) {
         console.log(BORDER_TOP);
-        console.error(`❌ forceUpdateRoom(${roomId}) error:`, error.message);
+        console.log(`❌ forceUpdateRoom(${roomId}) error: ${error.message}`);
         console.log(BORDER_BOTTOM);
         return { success: false, error: error.message };
       }
@@ -579,12 +560,12 @@ class IoTService {
       const response = await this._getWithRetry(device.apiEndpoint, 15000);
 
       if (response.data?.success !== true) {
-        return { success: false, message: 'Device did not return success' };
+        return { success: false, deviceName: device.name, error: 'Device did not return success' };
       }
 
       const iotData = response.data.data;
       if (!this.isValidIoTData(iotData)) {
-        return { success: false, message: 'Invalid IoT data' };
+        return { success: false, deviceName: device.name, error: 'Invalid IoT data' };
       }
 
       this.deviceLastData.set(device._id.toString(), iotData);
@@ -604,14 +585,11 @@ class IoTService {
     } catch (error) {
       device.status = 'offline';
       await device.save().catch(() => {});
-      // ✅ Kembalikan error — TIDAK mencetak border di sini.
-      // Pemanggil (forcePollAll) yang mencetak dalam border.
       return { success: false, deviceName: device.name, error: error.message };
     }
   }
 
   broadcastRoomUpdate(room, data, source, deviceName = null) {
-    // Hanya emit Socket.IO — tidak mencetak log apa pun.
     if (this.io) {
       const updateData = {
         roomId: room._id,
@@ -638,7 +616,6 @@ class IoTService {
   }
 
   async forcePollAll() {
-    // ✅ Bungkus dengan runExclusive agar tidak menyela siklus utama
     return runExclusive(async () => {
       console.log('🔄 FORCE polling all IoT devices...');
       try {
@@ -665,7 +642,7 @@ class IoTService {
               : { success: false, deviceName: 'unknown', error: r.reason?.message };
 
           console.log(BORDER_TOP);
-          if (val?.success) {
+          if (val && val.success === true) {
             successCount++;
             const lines = val.roomLogs || [];
             if (lines.length === 0) {
@@ -676,9 +653,10 @@ class IoTService {
               lines.forEach((line) => console.log(line));
             }
           } else {
-            console.error(
-              `❌ Force poll failed for ${val.deviceName || 'unknown'}: ${val.error || 'unknown error'}`
-            );
+            // ✅ console.log (bukan console.error) — satu stream
+            const name = val?.deviceName || 'unknown';
+            const errMsg = val?.error || 'unknown error';
+            console.log(`❌ Force poll failed for ${name}: ${errMsg}`);
           }
           console.log(BORDER_BOTTOM);
         }
