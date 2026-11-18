@@ -414,7 +414,6 @@ class IoTService {
     );
 
     console.log(BORDER_TOP);
-
     if (!hasRoomDataChanged) {
       console.log(`ℹ️  Room ${room.name} data unchanged (exact match), skipping room update`);
     } else {
@@ -430,6 +429,7 @@ class IoTService {
       this.broadcastRoomUpdate(room, normalizedData, 'iot', deviceName);
       console.log(`📢 Broadcast IoT update for room ${room.name}: AQI ${room.currentAQI}`);
     }
+    console.log(BORDER_BOTTOM);
 
     // ============================================================
     // ✅ HISTORY SELALU DISIMPAN — baik berubah maupun tidak.
