@@ -212,14 +212,7 @@ class RoomCard extends StatelessWidget {
               Row(
                 mainAxisAlignment: MainAxisAlignment.start,
                 children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFE3F2FD),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
+                  
                   if (!hasAnyData && aqi == null)
                     Padding(
                       padding: const EdgeInsets.only(left: 8),

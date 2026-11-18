@@ -738,44 +738,29 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
   /// Menampilkan NAMA device IoT yang dikaitkan dengan ruangan ini.
   /// Jika ruangan belum dikaitkan ke device, tampil teks peringatan.
   Widget _buildDeviceBadge(Room room) {
-    final hasDevice = room.hasDeviceLink;
-    final accent = hasDevice ? Colors.blue : Colors.orange;
-    final textColor = hasDevice ? Colors.blue[700]! : Colors.orange[800]!;
+  final hasDevice = room.hasDeviceLink;
+  final accent = hasDevice ? Colors.blue : Colors.orange;
+  final textColor = hasDevice ? Colors.blue[700]! : Colors.orange[800]!;
 
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-          decoration: BoxDecoration(
-            color: accent.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(8),
+  return Align(
+    alignment: Alignment.centerLeft,
+    child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: accent.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: accent.withOpacity(0.35)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            hasDevice ? Icons.sensors : Icons.sensors_off,
+            size: 14,
+            color: accent,
           ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                hasDevice ? Icons.sensors : Icons.sensors_off,
-                size: 11,
-                color: accent,
-              ),
-              const SizedBox(width: 4),
-              Text(
-                'Device IoT',
-                style: TextStyle(
-                  fontSize: 10,
-                  fontWeight: FontWeight.w600,
-                  color: textColor,
-                  fontFamily: 'Inter',
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Padding(
-            padding: const EdgeInsets.only(top: 2),
+          const SizedBox(width: 6),
+          Flexible(
             child: Text(
               room.deviceLabel,
               maxLines: 2,
@@ -789,10 +774,11 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
               ),
             ),
           ),
-        ),
-      ],
-    );
-  }
+        ],
+      ),
+    ),
+  );
+}
 
   Widget _buildCardAction({
     required IconData icon,
@@ -973,9 +959,15 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
                 child: Center(child: CircularProgressIndicator()),
               )
             else if (_hasError && _rooms.isEmpty)
-              _buildErrorState()
+              SizedBox(
+                height: MediaQuery.of(context).size.height * 0.6,
+                child: _buildErrorState(),
+              )
             else if (_filteredRooms.isEmpty)
-              _buildEmptyState()
+              SizedBox(
+                height: MediaQuery.of(context).size.height * 0.6,
+                child: _buildEmptyState(),
+              )
             else
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),

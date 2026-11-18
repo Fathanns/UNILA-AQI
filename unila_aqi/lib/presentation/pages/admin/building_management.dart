@@ -656,9 +656,15 @@ class _BuildingManagementScreenState extends State<BuildingManagementScreen> {
                 child: Center(child: CircularProgressIndicator()),
               )
             else if (_hasError && _filteredBuildings.isEmpty)
-              _buildErrorState()
+              SizedBox(
+                height: MediaQuery.of(context).size.height * 0.6,
+                child: _buildErrorState(),
+              )
             else if (_filteredBuildings.isEmpty)
-              _buildEmptyState()
+              SizedBox(
+                height: MediaQuery.of(context).size.height * 0.6,
+                child: _buildEmptyState(),
+              )
             else
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),

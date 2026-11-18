@@ -33,7 +33,7 @@ router.get('/', authMiddleware, async (req, res) => {
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: 'Error fetching IoT devices',
+      message: 'Terjadi kesalahan ketika mengambil data device iot',
       error: error.message
     });
   }
@@ -47,7 +47,7 @@ router.get('/:id', authMiddleware, async (req, res) => {
     if (!device) {
       return res.status(404).json({
         success: false,
-        message: 'IoT device not found'
+        message: 'Device IoT tidak ditemukan'
       });
     }
 
@@ -58,7 +58,7 @@ router.get('/:id', authMiddleware, async (req, res) => {
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: 'Error fetching IoT device',
+      message: 'Terjadi kesalahan ketika mengambil data device iot',
       error: error.message
     });
   }
@@ -72,14 +72,14 @@ router.post('/', authMiddleware, adminMiddleware, async (req, res) => {
     if (!name) {
       return res.status(400).json({
         success: false,
-        message: 'Device name is required'
+        message: 'Nama device diperlukan'
       });
     }
 
     if (!apiEndpoint) {
       return res.status(400).json({
         success: false,
-        message: 'API endpoint is required'
+        message: 'API endpoint dibutuhkan untuk device IoT'
       });
     }
 
@@ -88,7 +88,7 @@ router.post('/', authMiddleware, adminMiddleware, async (req, res) => {
     } catch (error) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid API endpoint URL format'
+        message: 'Format URL API endpoint tidak valid'
       });
     }
 
@@ -113,13 +113,13 @@ router.post('/', authMiddleware, adminMiddleware, async (req, res) => {
 
     res.status(201).json({
       success: true,
-      message: 'IoT device created successfully',
+      message: 'Device iot berhasil dibuat',
       data: device
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: 'Error creating IoT device',
+      message: 'Terjadi kesalahan ketika membuat device iot',
       error: error.message
     });
   }
@@ -135,7 +135,7 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
     if (!device) {
       return res.status(404).json({
         success: false,
-        message: 'IoT device not found'
+        message: 'Device IoT tidak ditemukan'
       });
     }
 
@@ -145,7 +145,7 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
       } catch (error) {
         return res.status(400).json({
           success: false,
-          message: 'Invalid API endpoint URL format'
+          message: 'Format URL API endpoint tidak valid'
         });
       }
     }
@@ -173,13 +173,13 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
 
     res.json({
       success: true,
-      message: 'IoT device updated successfully',
+      message: 'Device iot berhasil diupdate',
       data: device
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: 'Error updating IoT device',
+      message: 'Terjadi kesalahan ketika mengupdate device iot',
       error: error.message
     });
   }
@@ -193,7 +193,7 @@ router.delete('/:id', authMiddleware, adminMiddleware, async (req, res) => {
     if (!device) {
       return res.status(404).json({
         success: false,
-        message: 'IoT device not found'
+        message: 'Device IoT tidak ditemukan'
       });
     }
 
@@ -203,7 +203,7 @@ router.delete('/:id', authMiddleware, adminMiddleware, async (req, res) => {
     if (roomCount > 0) {
       return res.status(400).json({
         success: false,
-        message: 'Cannot delete device that is being used by rooms',
+        message: 'Tidak bisa menghapus device yang masih digunakan di room. Silahkan hapus room yang menggunakan device ini terlebih dahulu.',
         roomCount: roomCount
       });
     }
@@ -212,12 +212,12 @@ router.delete('/:id', authMiddleware, adminMiddleware, async (req, res) => {
 
     res.json({
       success: true,
-      message: 'IoT device deleted successfully'
+      message: 'Device iot berhasil dihapus',
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: 'Error deleting IoT device',
+      message: 'Terjadi kesalahan ketika menghapus device iot',
       error: error.message
     });
   }
@@ -233,7 +233,7 @@ router.patch('/:id/status', authMiddleware, adminMiddleware, async (req, res) =>
     if (!device) {
       return res.status(404).json({
         success: false,
-        message: 'IoT device not found'
+        message: 'Device IoT tidak ditemukan'
       });
     }
 
@@ -253,13 +253,13 @@ router.patch('/:id/status', authMiddleware, adminMiddleware, async (req, res) =>
 
     res.json({
       success: true,
-      message: 'Device status updated successfully',
+      message: 'Status device berhasil diupdate',
       data: device
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: 'Error updating device status',
+      message: 'Terjadi kesalahan ketika mengupdate status device',
       error: error.message
     });
   }
@@ -279,7 +279,7 @@ router.post('/force-poll', authMiddleware, adminMiddleware, async (req, res) => 
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: 'Error forcing poll',
+      message: 'Terjadi kesalahan ketika memaksa polling',
       error: error.message
     });
   }
@@ -304,7 +304,7 @@ router.get('/service/status', authMiddleware, async (req, res) => {
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: 'Error getting service status',
+      message: 'Terjadi kesalahan ketika mengambil status service',
       error: error.message
     });
   }

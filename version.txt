@@ -4824,9 +4824,15 @@ class _BuildingManagementScreenState extends State<BuildingManagementScreen> {
                 child: Center(child: CircularProgressIndicator()),
               )
             else if (_hasError && _filteredBuildings.isEmpty)
-              _buildErrorState()
+              SizedBox(
+                height: MediaQuery.of(context).size.height * 0.6,
+                child: _buildErrorState(),
+              )
             else if (_filteredBuildings.isEmpty)
-              _buildEmptyState()
+              SizedBox(
+                height: MediaQuery.of(context).size.height * 0.6,
+                child: _buildEmptyState(),
+              )
             else
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
@@ -5782,9 +5788,15 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
                 child: Center(child: CircularProgressIndicator()),
               )
             else if (_hasError && _filteredDevices.isEmpty)
-              _buildErrorState()
+              SizedBox(
+                height: MediaQuery.of(context).size.height * 0.6,
+                child: _buildErrorState(),
+              )
             else if (_filteredDevices.isEmpty)
-              _buildEmptyState()
+              SizedBox(
+                height: MediaQuery.of(context).size.height * 0.6,
+                child: _buildEmptyState(),
+              )
             else
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
@@ -7953,44 +7965,29 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
   /// Menampilkan NAMA device IoT yang dikaitkan dengan ruangan ini.
   /// Jika ruangan belum dikaitkan ke device, tampil teks peringatan.
   Widget _buildDeviceBadge(Room room) {
-    final hasDevice = room.hasDeviceLink;
-    final accent = hasDevice ? Colors.blue : Colors.orange;
-    final textColor = hasDevice ? Colors.blue[700]! : Colors.orange[800]!;
+  final hasDevice = room.hasDeviceLink;
+  final accent = hasDevice ? Colors.blue : Colors.orange;
+  final textColor = hasDevice ? Colors.blue[700]! : Colors.orange[800]!;
 
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-          decoration: BoxDecoration(
-            color: accent.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(8),
+  return Align(
+    alignment: Alignment.centerLeft,
+    child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: accent.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: accent.withOpacity(0.35)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            hasDevice ? Icons.sensors : Icons.sensors_off,
+            size: 14,
+            color: accent,
           ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                hasDevice ? Icons.sensors : Icons.sensors_off,
-                size: 11,
-                color: accent,
-              ),
-              const SizedBox(width: 4),
-              Text(
-                'Device IoT',
-                style: TextStyle(
-                  fontSize: 10,
-                  fontWeight: FontWeight.w600,
-                  color: textColor,
-                  fontFamily: 'Inter',
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Padding(
-            padding: const EdgeInsets.only(top: 2),
+          const SizedBox(width: 6),
+          Flexible(
             child: Text(
               room.deviceLabel,
               maxLines: 2,
@@ -8004,10 +8001,11 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
               ),
             ),
           ),
-        ),
-      ],
-    );
-  }
+        ],
+      ),
+    ),
+  );
+}
 
   Widget _buildCardAction({
     required IconData icon,
@@ -8188,9 +8186,15 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
                 child: Center(child: CircularProgressIndicator()),
               )
             else if (_hasError && _rooms.isEmpty)
-              _buildErrorState()
+              SizedBox(
+                height: MediaQuery.of(context).size.height * 0.6,
+                child: _buildErrorState(),
+              )
             else if (_filteredRooms.isEmpty)
-              _buildEmptyState()
+              SizedBox(
+                height: MediaQuery.of(context).size.height * 0.6,
+                child: _buildEmptyState(),
+              )
             else
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
@@ -15784,14 +15788,7 @@ class RoomCard extends StatelessWidget {
               Row(
                 mainAxisAlignment: MainAxisAlignment.start,
                 children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFE3F2FD),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
+                  
                   if (!hasAnyData && aqi == null)
                     Padding(
                       padding: const EdgeInsets.only(left: 8),
@@ -17745,7 +17742,7 @@ router.delete('/:id', authMiddleware, adminMiddleware, async (req, res) => {
     if (roomCount > 0) {
       return res.status(400).json({
         success: false,
-        message: 'Cannot delete device that is being used by rooms',
+        message: ' device that is being used Cannot deleteby rooms',
         roomCount: roomCount
       });
     }
@@ -23983,7 +23980,7 @@ router.get('/', authMiddleware, async (req, res) => {
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: 'Error fetching IoT devices',
+      message: 'Terjadi kesalahan ketika mengambil data device iot',
       error: error.message
     });
   }
@@ -23997,7 +23994,7 @@ router.get('/:id', authMiddleware, async (req, res) => {
     if (!device) {
       return res.status(404).json({
         success: false,
-        message: 'IoT device not found'
+        message: 'Device IoT tidak ditemukan'
       });
     }
 
@@ -24008,7 +24005,7 @@ router.get('/:id', authMiddleware, async (req, res) => {
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: 'Error fetching IoT device',
+      message: 'Terjadi kesalahan ketika mengambil data device iot',
       error: error.message
     });
   }
@@ -24022,14 +24019,14 @@ router.post('/', authMiddleware, adminMiddleware, async (req, res) => {
     if (!name) {
       return res.status(400).json({
         success: false,
-        message: 'Device name is required'
+        message: 'Nama device diperlukan'
       });
     }
 
     if (!apiEndpoint) {
       return res.status(400).json({
         success: false,
-        message: 'API endpoint is required'
+        message: 'API endpoint dibutuhkan untuk device IoT'
       });
     }
 
@@ -24038,7 +24035,7 @@ router.post('/', authMiddleware, adminMiddleware, async (req, res) => {
     } catch (error) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid API endpoint URL format'
+        message: 'Format URL API endpoint tidak valid'
       });
     }
 
@@ -24063,13 +24060,13 @@ router.post('/', authMiddleware, adminMiddleware, async (req, res) => {
 
     res.status(201).json({
       success: true,
-      message: 'IoT device created successfully',
+      message: 'Device iot berhasil dibuat',
       data: device
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: 'Error creating IoT device',
+      message: 'Terjadi kesalahan ketika membuat device iot',
       error: error.message
     });
   }
@@ -24085,7 +24082,7 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
     if (!device) {
       return res.status(404).json({
         success: false,
-        message: 'IoT device not found'
+        message: 'Device IoT tidak ditemukan'
       });
     }
 
@@ -24095,7 +24092,7 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
       } catch (error) {
         return res.status(400).json({
           success: false,
-          message: 'Invalid API endpoint URL format'
+          message: 'Format URL API endpoint tidak valid'
         });
       }
     }
@@ -24123,13 +24120,13 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
 
     res.json({
       success: true,
-      message: 'IoT device updated successfully',
+      message: 'Device iot berhasil diupdate',
       data: device
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: 'Error updating IoT device',
+      message: 'Terjadi kesalahan ketika mengupdate device iot',
       error: error.message
     });
   }
@@ -24143,7 +24140,7 @@ router.delete('/:id', authMiddleware, adminMiddleware, async (req, res) => {
     if (!device) {
       return res.status(404).json({
         success: false,
-        message: 'IoT device not found'
+        message: 'Device IoT tidak ditemukan'
       });
     }
 
@@ -24153,7 +24150,7 @@ router.delete('/:id', authMiddleware, adminMiddleware, async (req, res) => {
     if (roomCount > 0) {
       return res.status(400).json({
         success: false,
-        message: 'Cannot delete device that is being used by rooms',
+        message: 'Tidak bisa menghapus device yang masih digunakan di room. Silahkan hapus room yang menggunakan device ini terlebih dahulu.',
         roomCount: roomCount
       });
     }
@@ -24162,12 +24159,12 @@ router.delete('/:id', authMiddleware, adminMiddleware, async (req, res) => {
 
     res.json({
       success: true,
-      message: 'IoT device deleted successfully'
+      message: 'Device iot berhasil dihapus',
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: 'Error deleting IoT device',
+      message: 'Terjadi kesalahan ketika menghapus device iot',
       error: error.message
     });
   }
@@ -24183,7 +24180,7 @@ router.patch('/:id/status', authMiddleware, adminMiddleware, async (req, res) =>
     if (!device) {
       return res.status(404).json({
         success: false,
-        message: 'IoT device not found'
+        message: 'Device IoT tidak ditemukan'
       });
     }
 
@@ -24203,13 +24200,13 @@ router.patch('/:id/status', authMiddleware, adminMiddleware, async (req, res) =>
 
     res.json({
       success: true,
-      message: 'Device status updated successfully',
+      message: 'Status device berhasil diupdate',
       data: device
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: 'Error updating device status',
+      message: 'Terjadi kesalahan ketika mengupdate status device',
       error: error.message
     });
   }
@@ -24229,7 +24226,7 @@ router.post('/force-poll', authMiddleware, adminMiddleware, async (req, res) => 
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: 'Error forcing poll',
+      message: 'Terjadi kesalahan ketika memaksa polling',
       error: error.message
     });
   }
@@ -24254,7 +24251,7 @@ router.get('/service/status', authMiddleware, async (req, res) => {
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: 'Error getting service status',
+      message: 'Terjadi kesalahan ketika mengambil status service',
       error: error.message
     });
   }

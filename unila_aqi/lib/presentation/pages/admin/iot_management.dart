@@ -742,9 +742,15 @@ class _IoTManagementScreenState extends State<IoTManagementScreen> {
                 child: Center(child: CircularProgressIndicator()),
               )
             else if (_hasError && _filteredDevices.isEmpty)
-              _buildErrorState()
+              SizedBox(
+                height: MediaQuery.of(context).size.height * 0.6,
+                child: _buildErrorState(),
+              )
             else if (_filteredDevices.isEmpty)
-              _buildEmptyState()
+              SizedBox(
+                height: MediaQuery.of(context).size.height * 0.6,
+                child: _buildEmptyState(),
+              )
             else
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
