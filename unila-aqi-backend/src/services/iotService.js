@@ -4,6 +4,7 @@ const Room = require('../models/Room');
 const IoTDevice = require('../models/IoTDevice');
 const SensorData = require('../models/SensorData');
 const { getAQICategory, calculateAQI } = require('../utils/aqiCalculator');
+const { runExclusive } = require('../utils/serviceLock');
 
 // Helper border — dipakai konsisten di semua log blok
 const BORDER_TOP = '┌────────────────────────────────────────────────────────────────────────────────────';
@@ -16,6 +17,9 @@ class IoTService {
     this.io = null;
     this.deviceLastData = new Map();
     this.pollingInterval = 30000;
+    this._polling = false;        // ✅ guard anti-tumpang-tindih siklus cron
+    this._maxRetries = 2;         // ✅ retry untuk device lambat / 503
+    this._retryDelayMs = 3000;
   }
 
   start(io) {
@@ -25,11 +29,22 @@ class IoTService {
     }
 
     this.io = io;
-    console.log(`🚀 Starting IoT Service (polling every ${this.pollingInterval/1000}s)...`);
+    console.log(`🚀 Starting IoT Service (polling every ${this.pollingInterval / 1000}s)...`);
 
     // IoT berjalan di detik ke-15 dan ke-45 setiap menit.
     this.task = cron.schedule('15,45 * * * * *', async () => {
-      await this.pollAllIoTDevices();
+      // ✅ Guard: jangan mulai siklus baru jika siklus sebelumnya belum selesai
+      if (this._polling) {
+        console.log('⏭️  Skipping poll — previous cycle still running');
+        return;
+      }
+
+      this._polling = true;
+      try {
+        await this.pollAllIoTDevices();
+      } finally {
+        this._polling = false;
+      }
     });
 
     this.isRunning = true;
@@ -45,62 +60,85 @@ class IoTService {
     }
   }
 
-  async pollAllIoTDevices() {
-  const { runExclusive } = require('../utils/serviceLock');
-
-  return runExclusive(async () => {
-    try {
-      const devices = await IoTDevice.find({});
-
-      if (devices.length === 0) {
-        console.log('ℹ️ No IoT devices to poll');
-        return;
+  /**
+   * Helper: GET dengan retry sederhana untuk device yang lambat / 503.
+   */
+  async _getWithRetry(url, timeoutMs = 15000) {
+    let lastError;
+    for (let attempt = 1; attempt <= this._maxRetries; attempt++) {
+      try {
+        return await axios.get(url, { timeout: timeoutMs });
+      } catch (err) {
+        lastError = err;
+        if (attempt < this._maxRetries) {
+          await new Promise((r) => setTimeout(r, this._retryDelayMs));
+        }
       }
+    }
+    throw lastError;
+  }
 
-      console.log(`🔄 Polling ${devices.length} IoT devices...`);
+  async pollAllIoTDevices() {
+    return runExclusive(async () => {
+      try {
+        const devices = await IoTDevice.find({});
 
-      // ✅ Poll paralel, TAPI tanpa logging border di dalam pollDevice.
-      // pollDevice hanya mengembalikan result + error message.
-      const results = await Promise.allSettled(
-        devices.map(async (device) => {
-          try {
-            const res = await this.pollDevice(device);
-            return { ...res, deviceName: device.name };
-          } catch (error) {
-            return { success: false, deviceName: device.name, error: error.message };
-          }
-        })
-      );
-
-      // ✅ Log error SERIAL setelah semua polling selesai —
-      // tidak ada lagi border berselang-seling.
-      let successfulPolls = 0;
-        for (const r of results) {
-          const val = r.status === 'fulfilled' ? r.value : { success: false, deviceName: 'unknown', error: r.reason?.message };
-          if (val.success) {
-            successfulPolls++;
-          } else {
-            console.error(BORDER_TOP);
-            console.error(`❌ Error polling device ${val.deviceName}: ${val.error}`);
-            console.error(BORDER_BOTTOM);
-          }
+        if (devices.length === 0) {
+          console.log('ℹ️ No IoT devices to poll');
+          return;
         }
 
-      console.log(`\n✅ IoT polling completed: ${successfulPolls}/${devices.length} successful`);
-      console.log(`🕒 Updated at ${new Date().toLocaleTimeString()}`);
-      console.log('\n=====================================================================================\n');
-    } catch (error) {
-      console.error('❌ Error in pollAllIoTDevices:', error.message);
-    }
-  });
-}
+        console.log(`🔄 Polling ${devices.length} IoT devices...`);
+
+        // Poll paralel, tapi TIDAK mencetak log di dalam pollDevice.
+        // pollDevice hanya mengembalikan result + roomLogs.
+        const results = await Promise.allSettled(
+          devices.map(async (device) => {
+            try {
+              const res = await this.pollDevice(device);
+              return { ...res, deviceName: device.name };
+            } catch (error) {
+              return { success: false, deviceName: device.name, error: error.message };
+            }
+          })
+        );
+
+        // ✅ Log SERIAL setelah semua polling selesai — tidak ada border berselang-seling.
+        let successfulPolls = 0;
+        for (const r of results) {
+          const val =
+            r.status === 'fulfilled'
+              ? r.value
+              : { success: false, deviceName: 'unknown', error: r.reason?.message };
+
+          console.log(BORDER_TOP);
+          if (val.success) {
+            successfulPolls++;
+            // Cetak log ruangan untuk device ini (jika ada)
+            (val.roomLogs || []).forEach((line) => console.log(line));
+          } else {
+            console.error(`❌ Error polling device ${val.deviceName}: ${val.error}`);
+          }
+          console.log(BORDER_BOTTOM);
+        }
+
+        console.log(`\n✅ IoT polling completed: ${successfulPolls}/${devices.length} successful`);
+        console.log(`🕒 Updated at ${new Date().toLocaleTimeString()}`);
+        console.log('\n=====================================================================================\n');
+      } catch (error) {
+        console.error('❌ Error in pollAllIoTDevices:', error.message);
+      }
+    });
+  }
 
   async pollDevice(device) {
-  try {
-    console.log(`📡 Polling device: ${device.name} (${device.apiEndpoint})`);
-    const response = await axios.get(device.apiEndpoint, { timeout: 5000 });
+    try {
+      console.log(`📡 Polling device: ${device.name} (${device.apiEndpoint})`);
 
-    if (response.data?.success === true) {
+      // ✅ Gunakan retry + timeout lebih besar untuk device lambat
+      const response = await this._getWithRetry(device.apiEndpoint, 15000);
+
+      if (response.data?.success === true) {
         const iotData = response.data.data;
 
         if (!this.isValidIoTData(iotData)) {
@@ -116,18 +154,18 @@ class IoTService {
         device.lastUpdate = new Date();
         await device.save();
 
-        // ✅ SELALU panggil updateRoomFromIoT — biarkan method itu
-        // yang memutuskan perlu save/broadcast atau tidak,
-        // TAPI tetap mencetak ringkasan AQI setiap polling.
         const rooms = await Room.find({
-          iotDeviceId: device._id.toString()
+          iotDeviceId: device._id.toString(),
         });
 
+        // ✅ Kumpulkan log, jangan cetak di sini
+        const roomLogs = [];
         for (const room of rooms) {
-          await this.updateRoomFromIoT(room, iotData, device.name);
+          const { logs } = await this.updateRoomFromIoT(room, iotData, device.name);
+          if (logs && logs.length) roomLogs.push(...logs);
         }
 
-        return { success: true, changed: hasChanged };
+        return { success: true, changed: hasChanged, roomLogs };
       }
 
       return {
@@ -135,51 +173,54 @@ class IoTService {
         deviceName: device.name,
         error: 'Device did not return success',
       };
-      } catch (error) {
-        device.status = 'offline';
-        await device.save().catch(() => {});
-        return {
-          success: false,
-          deviceName: device.name,
-          error: error.message,
-        };
-      }
+    } catch (error) {
+      device.status = 'offline';
+      await device.save().catch(() => {});
+      return {
+        success: false,
+        deviceName: device.name,
+        error: error.message,
+      };
     }
+  }
 
   async checkDeviceStatus(devices) {
     if (!devices || devices.length === 0) return [];
 
-    const results = await Promise.allSettled(
-      devices.map(async (device) => {
+    // ✅ Bungkus dengan runExclusive agar tidak menyela siklus utama
+    return runExclusive(async () => {
+      const results = await Promise.allSettled(
+        devices.map(async (device) => {
+          try {
+            await this._getWithRetry(device.apiEndpoint, 3000);
+            return { id: device._id.toString(), status: 'online' };
+          } catch (_) {
+            return { id: device._id.toString(), status: 'offline' };
+          }
+        })
+      );
+
+      const updates = results
+        .filter((r) => r.status === 'fulfilled' && r.value)
+        .map((r) => r.value);
+
+      if (updates.length > 0) {
+        const bulkOps = updates.map((u) => ({
+          updateOne: {
+            filter: { _id: u.id },
+            update: { $set: { status: u.status } },
+          },
+        }));
+
         try {
-          await axios.get(device.apiEndpoint, { timeout: 3000 });
-          return { id: device._id.toString(), status: 'online' };
-        } catch (_) {
-          return { id: device._id.toString(), status: 'offline' };
+          await IoTDevice.bulkWrite(bulkOps);
+        } catch (bulkErr) {
+          console.error('❌ bulkWrite status check failed:', bulkErr.message);
         }
-      })
-    );
-
-    const updates = results
-      .filter((r) => r.status === 'fulfilled' && r.value)
-      .map((r) => r.value);
-
-    if (updates.length > 0) {
-      const bulkOps = updates.map((u) => ({
-        updateOne: {
-          filter: { _id: u.id },
-          update: { $set: { status: u.status } },
-        },
-      }));
-
-      try {
-        await IoTDevice.bulkWrite(bulkOps);
-      } catch (bulkErr) {
-        console.error('❌ bulkWrite status check failed:', bulkErr.message);
       }
-    }
 
-    return updates;
+      return updates;
+    });
   }
 
   isValidIoTData(data) {
@@ -187,7 +228,7 @@ class IoTService {
 
     const knownFields = [
       'aqi', 'pm25', 'pm10', 'co', 'so2', 'o3', 'no2',
-      'temperature', 'humidity'
+      'temperature', 'humidity',
     ];
     return knownFields.some((k) => k in data);
   }
@@ -216,33 +257,35 @@ class IoTService {
 
   /**
    * Bangun label dominan dari aqiResult.
-   * Helper kecil agar konsisten dipakai di updateRoomFromIoT & Force.
    */
   _dominantLabel(aqiResult) {
     if (!aqiResult || !aqiResult.dominant) return null;
-    return {
-      pm25: `PM2.5 (ISPU=${aqiResult.ispuPM25})`,
-      pm10: `PM10 (ISPU=${aqiResult.ispuPM10})`,
-      co:   `CO (ISPU=${aqiResult.ispuCO})`,
-      so2:  `SO2 (ISPU=${aqiResult.ispuSO2})`,
-      o3:   `O3 (ISPU=${aqiResult.ispuO3})`,
-      no2:  `NO2 (ISPU=${aqiResult.ispuNO2})`,
-    }[aqiResult.dominant] || aqiResult.dominant;
+    return (
+      {
+        pm25: `PM2.5 (ISPU=${aqiResult.ispuPM25})`,
+        pm10: `PM10 (ISPU=${aqiResult.ispuPM10})`,
+        co:   `CO (ISPU=${aqiResult.ispuCO})`,
+        so2:  `SO2 (ISPU=${aqiResult.ispuSO2})`,
+        o3:   `O3 (ISPU=${aqiResult.ispuO3})`,
+        no2:  `NO2 (ISPU=${aqiResult.ispuNO2})`,
+      }[aqiResult.dominant] || aqiResult.dominant
+    );
   }
 
+  /**
+   * Update room dari data IoT — MENGEMBALIKAN { logs } (tidak mencetak).
+   * @returns {Promise<{logs: string[]}>}
+   */
   async updateRoomFromIoT(room, iotData, deviceName) {
+    const logs = [];
     try {
       if (room.demoMode) {
-        console.log(BORDER_TOP);
-        console.log(`ℹ️ Skipping room ${room.name} (demoMode active)`);
-        console.log(BORDER_BOTTOM);
-        return;
+        logs.push(`ℹ️  Skipping room ${room.name} (demoMode active)`);
+        return { logs };
       }
 
       const optNum = (v) =>
-        typeof v === 'number' && Number.isFinite(v) && !Number.isNaN(v)
-          ? v
-          : null;
+        typeof v === 'number' && Number.isFinite(v) && !Number.isNaN(v) ? v : null;
 
       const pm25 = optNum(iotData.pm25);
       const pm10 = optNum(iotData.pm10);
@@ -258,8 +301,8 @@ class IoTService {
         .some((v) => v !== null && v < 0);
 
       if (hasError) {
-        await this.handleDeviceError(room, deviceName);
-        return;
+        await this.handleDeviceError(room, deviceName, logs);
+        return { logs };
       }
 
       const aqiResult = calculateAQI(pm25, pm10, co, so2, o3, no2);
@@ -288,15 +331,10 @@ class IoTService {
         normalizedData
       );
 
-      // ============================================================
-      // ✅ LOG RINGKASAN SELALU DICETAK — baik data berubah maupun tidak
-      // ============================================================
-      console.log(BORDER_TOP);
-
+      // Simpan + riwayat + broadcast HANYA jika berubah
       if (!hasRoomDataChanged) {
-        console.log(`ℹ️  Room ${room.name} data unchanged (exact match), skipping update`);
+        logs.push(`ℹ️  Room ${room.name} data unchanged (exact match), skipping room update`);
       } else {
-        // Simpan + riwayat + broadcast HANYA jika berubah
         room.currentAQI = normalizedData.aqi;
         room.currentData = {
           pm25, pm10, co, so2, o3, no2,
@@ -306,117 +344,97 @@ class IoTService {
         room.updatedAt = new Date();
         await room.save();
 
-        await new SensorData({
-          roomId: room._id,
-          roomName: room.name,
-          buildingName: room.buildingName,
-          aqi: normalizedData.aqi,
-          pm25, pm10, co, so2, o3, no2,
-          temperature, humidity,
-          category: aqiResult.category,
-          timestamp: new Date(),
-          isAnomaly: iotData.isAnomaly === true,
-          anomalyType: iotData.anomalyType || null,
-        }).save();
-
         this.broadcastRoomUpdate(room, normalizedData, 'iot', deviceName);
-        console.log(`📢 Broadcast IoT update for room ${room.name}: AQI ${room.currentAQI}`);
+        logs.push(`📢 Broadcast IoT update for room ${room.name}: AQI ${room.currentAQI}`);
       }
 
-      // --- Ringkasan AQI (SELALU tampil) ---
+      // Riwayat selalu disimpan (baik berubah maupun tidak)
+      await new SensorData({
+        roomId: room._id,
+        roomName: room.name,
+        buildingName: room.buildingName,
+        aqi: normalizedData.aqi,
+        pm25, pm10, co, so2, o3, no2,
+        temperature, humidity,
+        category: aqiResult.category,
+        timestamp: new Date(),
+        isAnomaly: iotData.isAnomaly === true,
+        anomalyType: iotData.anomalyType || null,
+      }).save();
+
+      // --- Ringkasan AQI ---
       if (normalizedData.aqi == null) {
-        console.log(
-          `ℹ️ IoT room ${room.name} (device ${deviceName}): tidak ada data valid — status no_data`
+        logs.push(
+          `ℹ️  IoT room ${room.name} (device ${deviceName}): tidak ada data valid — status no_data`
         );
       } else if (normalizedData.aqi > 100) {
-        console.log(
+        logs.push(
           `🚨 HIGH AQI in ${room.name} (IoT ${deviceName}): ${normalizedData.aqi} (${aqiResult.category})`
         );
       } else {
-        console.log(
+        logs.push(
           `✅ IoT room ${room.name}: AQI ${normalizedData.aqi}, ` +
-          `PM2.5=${pm25}, PM10=${pm10}, ` +
-          `CO=${co}, Suhu=${temperature}, RH=${humidity}`
+            `PM2.5=${pm25}, PM10=${pm10}, ` +
+            `CO=${co}, Suhu=${temperature}, RH=${humidity}`
         );
       }
 
       if (aqiResult.dominant) {
         const dominantLabel = this._dominantLabel(aqiResult);
-        console.log(
+        logs.push(
           `⚠️  DOMINAN ${aqiResult.dominant.toUpperCase()} in ${room.name}: AQI ${aqiResult.aqi} (${dominantLabel})`
         );
       }
 
-      console.log(BORDER_BOTTOM);
-
+      return { logs };
     } catch (error) {
-      console.log(BORDER_TOP);
-      console.error(`❌ Error updating IoT room ${room.name}:`, error.message);
-      console.log(BORDER_BOTTOM);
+      logs.push(`❌ Error updating IoT room ${room.name}: ${error.message}`);
+      return { logs };
     }
   }
 
-  async updateRoomFromIoT(room, iotData, deviceName) {
-  try {
-    if (room.demoMode) {
-      console.log(BORDER_TOP);
-      console.log(`ℹ️  Skipping room ${room.name} (demoMode active)`);
-      console.log(BORDER_BOTTOM);
-      return;
-    }
+  /**
+   * Versi "force" — selalu menyimpan & broadcast, dan MENGEMBALIKAN { logs }.
+   * Tidak mencetak apa pun di dalam method ini.
+   */
+  async updateRoomFromIoTForce(room, iotData, deviceName) {
+    const logs = [];
+    try {
+      if (room.demoMode) {
+        logs.push(`ℹ️  Skipping room ${room.name} (demoMode active)`);
+        return { logs };
+      }
 
-    const optNum = (v) =>
-      typeof v === 'number' && Number.isFinite(v) && !Number.isNaN(v)
-        ? v
-        : null;
+      const optNum = (v) =>
+        typeof v === 'number' && Number.isFinite(v) && !Number.isNaN(v) ? v : null;
 
-    const pm25 = optNum(iotData.pm25);
-    const pm10 = optNum(iotData.pm10);
-    const co   = optNum(iotData.co);
-    const so2  = optNum(iotData.so2);
-    const o3   = optNum(iotData.o3);
-    const no2  = optNum(iotData.no2);
-    const temperature = optNum(iotData.temperature);
-    const humidity    = optNum(iotData.humidity);
+      const pm25 = optNum(iotData.pm25);
+      const pm10 = optNum(iotData.pm10);
+      const co   = optNum(iotData.co);
+      const so2  = optNum(iotData.so2);
+      const o3   = optNum(iotData.o3);
+      const no2  = optNum(iotData.no2);
+      const temperature = optNum(iotData.temperature);
+      const humidity    = optNum(iotData.humidity);
 
-    const hasError = [pm25, pm10, co, so2, o3, no2, temperature, humidity]
-      .some((v) => v !== null && v < 0);
+      const hasError = [pm25, pm10, co, so2, o3, no2, temperature, humidity]
+        .some((v) => v !== null && v < 0);
 
-    if (hasError) {
-      await this.handleDeviceError(room, deviceName);
-      return;
-    }
+      if (hasError) {
+        await this.handleDeviceError(room, deviceName, logs);
+        return { logs };
+      }
 
-    const aqiResult = calculateAQI(pm25, pm10, co, so2, o3, no2);
+      const aqiResult = calculateAQI(pm25, pm10, co, so2, o3, no2);
 
-    const normalizedData = {
-      aqi: aqiResult.aqi,
-      pm25, pm10, co, so2, o3, no2,
-      temperature, humidity,
-      category: aqiResult.category,
-      dominant: aqiResult.dominant,
-    };
+      const normalizedData = {
+        aqi: aqiResult.aqi,
+        pm25, pm10, co, so2, o3, no2,
+        temperature, humidity,
+        category: aqiResult.category,
+        dominant: aqiResult.dominant,
+      };
 
-    const currentData = room.currentData;
-    const hasRoomDataChanged = this._hasDataChanged(
-      {
-        aqi: room.currentAQI,
-        pm25: currentData.pm25,
-        pm10: currentData.pm10,
-        co: currentData.co,
-        so2: currentData.so2,
-        o3: currentData.o3,
-        no2: currentData.no2,
-        temperature: currentData.temperature,
-        humidity: currentData.humidity,
-      },
-      normalizedData
-    );
-
-    console.log(BORDER_TOP);
-    if (!hasRoomDataChanged) {
-      console.log(`ℹ️  Room ${room.name} data unchanged (exact match), skipping room update`);
-    } else {
       room.currentAQI = normalizedData.aqi;
       room.currentData = {
         pm25, pm10, co, so2, o3, no2,
@@ -427,60 +445,54 @@ class IoTService {
       await room.save();
 
       this.broadcastRoomUpdate(room, normalizedData, 'iot', deviceName);
-      console.log(`📢 Broadcast IoT update for room ${room.name}: AQI ${room.currentAQI}`);
+      logs.push(`📢 FORCE Broadcast IoT update for room ${room.name}: AQI ${room.currentAQI}`);
+
+      // Riwayat selalu disimpan
+      await new SensorData({
+        roomId: room._id,
+        roomName: room.name,
+        buildingName: room.buildingName,
+        aqi: normalizedData.aqi,
+        pm25, pm10, co, so2, o3, no2,
+        temperature, humidity,
+        category: aqiResult.category,
+        timestamp: new Date(),
+        isAnomaly: iotData.isAnomaly === true,
+        anomalyType: iotData.anomalyType || null,
+      }).save();
+
+      // --- Ringkasan AQI ---
+      if (normalizedData.aqi == null) {
+        logs.push(
+          `ℹ️  IoT room ${room.name} (device ${deviceName}): tidak ada data valid — status no_data`
+        );
+      } else if (normalizedData.aqi > 100) {
+        logs.push(
+          `🚨 HIGH AQI in ${room.name} (IoT ${deviceName}): ${normalizedData.aqi} (${aqiResult.category})`
+        );
+      } else {
+        logs.push(
+          `✅ IoT room ${room.name}: AQI ${normalizedData.aqi}, ` +
+            `PM2.5=${pm25}, PM10=${pm10}, ` +
+            `CO=${co}, Suhu=${temperature}, RH=${humidity}`
+        );
+      }
+
+      if (aqiResult.dominant) {
+        const dominantLabel = this._dominantLabel(aqiResult);
+        logs.push(
+          `⚠️  DOMINAN ${aqiResult.dominant.toUpperCase()} in ${room.name}: AQI ${aqiResult.aqi} (${dominantLabel})`
+        );
+      }
+
+      return { logs };
+    } catch (error) {
+      logs.push(`❌ Error force-updating IoT room ${room.name}: ${error.message}`);
+      return { logs };
     }
-    console.log(BORDER_BOTTOM);
-
-    // ============================================================
-    // ✅ HISTORY SELALU DISIMPAN — baik berubah maupun tidak.
-    // ============================================================
-    await new SensorData({
-      roomId: room._id,
-      roomName: room.name,
-      buildingName: room.buildingName,
-      aqi: normalizedData.aqi,
-      pm25, pm10, co, so2, o3, no2,
-      temperature, humidity,
-      category: aqiResult.category,
-      timestamp: new Date(),
-      isAnomaly: iotData.isAnomaly === true,
-      anomalyType: iotData.anomalyType || null,
-    }).save();
-
-    // --- Ringkasan AQI (SELALU tampil) ---
-    if (normalizedData.aqi == null) {
-      console.log(
-        `ℹ️  IoT room ${room.name} (device ${deviceName}): tidak ada data valid — status no_data`
-      );
-    } else if (normalizedData.aqi > 100) {
-      console.log(
-        `🚨 HIGH AQI in ${room.name} (IoT ${deviceName}): ${normalizedData.aqi} (${aqiResult.category})`
-      );
-    } else {
-      console.log(
-        `✅ IoT room ${room.name}: AQI ${normalizedData.aqi}, ` +
-        `PM2.5=${pm25}, PM10=${pm10}, ` +
-        `CO=${co}, Suhu=${temperature}, RH=${humidity}`
-      );
-    }
-
-    if (aqiResult.dominant) {
-      const dominantLabel = this._dominantLabel(aqiResult);
-      console.log(
-        `⚠️  DOMINAN ${aqiResult.dominant.toUpperCase()} in ${room.name}: AQI ${aqiResult.aqi} (${dominantLabel})`
-      );
-    }
-
-    console.log(BORDER_BOTTOM);
-
-  } catch (error) {
-    console.log(BORDER_TOP);
-    console.error(`❌ Error updating IoT room ${room.name}:`, error.message);
-    console.log(BORDER_BOTTOM);
   }
-}
 
-  async handleDeviceError(room, deviceName) {
+  async handleDeviceError(room, deviceName, logs = []) {
     try {
       // Catat sebagai error (-1) untuk history
       await new SensorData({
@@ -496,65 +508,61 @@ class IoTService {
         anomalyType: 'error',
       }).save();
 
-      // ✅ NOTIFIKASI SOCKET.IO DIHAPUS (Sesuai permintaan Anda)
-
-      // ✅ FIX: log dibungkus border
-      console.log(BORDER_TOP);
-      console.log(
+      logs.push(
         `⚠️ IoT SENSOR ERROR in ${room.name} (device: ${deviceName}) — room retained last good value`
       );
-      console.log(BORDER_BOTTOM);
     } catch (err) {
-      console.log(BORDER_TOP);
-      console.error(`❌ Error handling device error for ${room.name}:`, err.message);
-      console.log(BORDER_BOTTOM);
+      logs.push(`❌ Error handling device error for ${room.name}: ${err.message}`);
     }
   }
 
   async forceUpdateRoom(roomId) {
-    try {
-      const room = await Room.findById(roomId);
-      if (!room) return { success: false, message: 'Room not found' };
+    // ✅ Bungkus dengan runExclusive agar tidak menyela siklus utama
+    return runExclusive(async () => {
+      try {
+        const room = await Room.findById(roomId);
+        if (!room) return { success: false, message: 'Room not found' };
 
-      if (!room.iotDeviceId) {
-        return { success: false, message: 'Room is not configured for IoT' };
+        if (!room.iotDeviceId) {
+          return { success: false, message: 'Room is not configured for IoT' };
+        }
+
+        const device = await IoTDevice.findById(room.iotDeviceId);
+        if (!device) return { success: false, message: 'IoT device not found' };
+
+        const response = await this._getWithRetry(device.apiEndpoint, 15000);
+
+        if (response.data?.success !== true) {
+          return { success: false, message: 'Device did not return success' };
+        }
+
+        const iotData = response.data.data;
+        if (!this.isValidIoTData(iotData)) {
+          return { success: false, message: 'Invalid IoT data structure' };
+        }
+
+        device.status = 'online';
+        device.lastUpdate = new Date();
+        await device.save();
+
+        this.deviceLastData.set(device._id.toString(), iotData);
+
+        const { logs } = await this.updateRoomFromIoTForce(room, iotData, device.name);
+        logs.forEach((line) => console.log(line));
+
+        return { success: true, data: iotData, deviceName: device.name };
+      } catch (error) {
+        console.log(BORDER_TOP);
+        console.error(`❌ forceUpdateRoom(${roomId}) error:`, error.message);
+        console.log(BORDER_BOTTOM);
+        return { success: false, error: error.message };
       }
-
-      const device = await IoTDevice.findById(room.iotDeviceId);
-      if (!device) return { success: false, message: 'IoT device not found' };
-
-      const response = await axios.get(device.apiEndpoint, { timeout: 5000 });
-
-      if (response.data?.success !== true) {
-        return { success: false, message: 'Device did not return success' };
-      }
-
-      const iotData = response.data.data;
-      if (!this.isValidIoTData(iotData)) {
-        return { success: false, message: 'Invalid IoT data structure' };
-      }
-
-      device.status = 'online';
-      device.lastUpdate = new Date();
-      await device.save();
-
-      this.deviceLastData.set(device._id.toString(), iotData);
-
-      await this.updateRoomFromIoTForce(room, iotData, device.name);
-
-      return { success: true, data: iotData, deviceName: device.name };
-    } catch (error) {
-      // ✅ FIX: log error forceUpdateRoom dibungkus border
-      console.log(BORDER_TOP);
-      console.error(`❌ forceUpdateRoom(${roomId}) error:`, error.message);
-      console.log(BORDER_BOTTOM);
-      return { success: false, error: error.message };
-    }
+    });
   }
 
   async pollDeviceForce(device) {
     try {
-      const response = await axios.get(device.apiEndpoint, { timeout: 5000 });
+      const response = await this._getWithRetry(device.apiEndpoint, 15000);
 
       if (response.data?.success !== true) {
         return { success: false, message: 'Device did not return success' };
@@ -572,15 +580,16 @@ class IoTService {
       await device.save();
 
       const rooms = await Room.find({ iotDeviceId: device._id.toString() });
+      const roomLogs = [];
       for (const room of rooms) {
-        await this.updateRoomFromIoTForce(room, iotData, device.name);
+        const { logs } = await this.updateRoomFromIoTForce(room, iotData, device.name);
+        if (logs && logs.length) roomLogs.push(...logs);
       }
 
-      return { success: true, changed: true };
+      return { success: true, changed: true, roomLogs };
     } catch (error) {
       device.status = 'offline';
       await device.save().catch(() => {});
-      // ✅ FIX: log error pollDeviceForce dibungkus border
       console.log(BORDER_TOP);
       console.error(`❌ pollDeviceForce(${device.name}) error:`, error.message);
       console.log(BORDER_BOTTOM);
@@ -589,20 +598,18 @@ class IoTService {
   }
 
   broadcastRoomUpdate(room, data, source, deviceName = null) {
-    // ✅ FIX: log broadcast DIPINDAH ke dalam border (dipanggil oleh
-    // updateRoomFromIoT / updateRoomFromIoTForce), jadi method ini
-    // sekarang HANYA emit event Socket.IO — tidak mencetak log apapun.
+    // Hanya emit Socket.IO — tidak mencetak log apa pun.
     if (this.io) {
       const updateData = {
         roomId: room._id,
         data: {
           currentAQI: room.currentAQI,
           currentData: room.currentData,
-          updatedAt: room.updatedAt
+          updatedAt: room.updatedAt,
         },
         timestamp: new Date(),
         source: source,
-        deviceName: deviceName
+        deviceName: deviceName,
       };
 
       this.io.to(room._id.toString()).emit('room-update', updateData);
@@ -612,38 +619,54 @@ class IoTService {
         roomId: room._id,
         aqi: room.currentAQI,
         building: room.buildingName,
-        timestamp: new Date()
+        timestamp: new Date(),
       });
     }
   }
 
   async forcePollAll() {
-    console.log('🔄 FORCE polling all IoT devices...');
-    try {
-      const devices = await IoTDevice.find({});
-      if (devices.length === 0) {
-        return { success: true, message: 'No IoT devices to poll', count: 0 };
+    // ✅ Bungkus dengan runExclusive agar tidak menyela siklus utama
+    return runExclusive(async () => {
+      console.log('🔄 FORCE polling all IoT devices...');
+      try {
+        const devices = await IoTDevice.find({});
+        if (devices.length === 0) {
+          return { success: true, message: 'No IoT devices to poll', count: 0 };
+        }
+
+        const results = await Promise.allSettled(
+          devices.map((d) => this.pollDeviceForce(d).catch((e) => null))
+        );
+
+        let successCount = 0;
+        for (const r of results) {
+          const val =
+            r.status === 'fulfilled'
+              ? r.value
+              : { success: false, deviceName: 'unknown', error: r.reason?.message };
+
+          console.log(BORDER_TOP);
+          if (val?.success) {
+            successCount++;
+            (val.roomLogs || []).forEach((line) => console.log(line));
+          } else if (val) {
+            console.error(`❌ Force poll failed for ${val.deviceName || 'unknown'}: ${val.error || 'unknown error'}`);
+          }
+          console.log(BORDER_BOTTOM);
+        }
+
+        console.log(`✅ FORCE poll completed: ${successCount}/${devices.length}`);
+        return {
+          success: true,
+          message: 'Force poll completed',
+          polled: devices.length,
+          successful: successCount,
+        };
+      } catch (error) {
+        console.error('❌ forcePollAll error:', error.message);
+        return { success: false, error: error.message };
       }
-
-      const results = await Promise.allSettled(
-        devices.map(d => this.pollDeviceForce(d).catch(e => null))
-      );
-
-      const successCount = results.filter(
-        r => r.status === 'fulfilled' && r.value?.success
-      ).length;
-
-      console.log(`✅ FORCE poll completed: ${successCount}/${devices.length}`);
-      return {
-        success: true,
-        message: 'Force poll completed',
-        polled: devices.length,
-        successful: successCount
-      };
-    } catch (error) {
-      console.error('❌ forcePollAll error:', error.message);
-      return { success: false, error: error.message };
-    }
+    });
   }
 
   getStatus() {
@@ -652,7 +675,8 @@ class IoTService {
       lastUpdate: new Date(),
       nextUpdate: new Date(Date.now() + this.pollingInterval),
       socketConnected: this.io !== null,
-      pollingInterval: this.pollingInterval
+      pollingInterval: this.pollingInterval,
+      isPolling: this._polling,
     };
   }
 }
