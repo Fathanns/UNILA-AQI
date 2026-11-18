@@ -48,50 +48,61 @@ class IoTService {
   }
 
   async pollAllIoTDevices() {
-    // ✅ Serialize: hanya satu service yang mencetak log pada satu waktu.
-    const { runExclusive } = require('../utils/serviceLock');
+  const { runExclusive } = require('../utils/serviceLock');
 
-    return runExclusive(async () => {
-      try {
-        const devices = await IoTDevice.find({});
+  return runExclusive(async () => {
+    try {
+      const devices = await IoTDevice.find({});
 
-        if (devices.length === 0) {
-          console.log('ℹ️ No IoT devices to poll');
-          return;
+      if (devices.length === 0) {
+        console.log('ℹ️ No IoT devices to poll');
+        return;
+      }
+
+      console.log(`🔄 Polling ${devices.length} IoT devices...`);
+
+      // ✅ Poll paralel, TAPI tanpa logging border di dalam pollDevice.
+      // pollDevice hanya mengembalikan result + error message.
+      const results = await Promise.allSettled(
+        devices.map(async (device) => {
+          try {
+            const res = await this.pollDevice(device);
+            return { ...res, deviceName: device.name };
+          } catch (error) {
+            return { success: false, deviceName: device.name, error: error.message };
+          }
+        })
+      );
+
+      // ✅ Log error SERIAL setelah semua polling selesai —
+      // tidak ada lagi border berselang-seling.
+      let successfulPolls = 0;
+        for (const r of results) {
+          const val = r.status === 'fulfilled' ? r.value : { success: false, deviceName: 'unknown', error: r.reason?.message };
+          if (val.success) {
+            successfulPolls++;
+          } else {
+            console.error(BORDER_TOP);
+            console.error(`❌ Error polling device ${val.deviceName}: ${val.error}`);
+            console.error(BORDER_BOTTOM);
+          }
         }
 
-        // 🔄 Header di dalam lock → selalu tercetak utuh sebelum
-        // log room/device dari service lain masuk.
-        console.log(`🔄 Polling ${devices.length} IoT devices...`);
-
-        const pollPromises = devices.map(device =>
-          this.pollDevice(device).catch(error => {
-            console.error(`❌ Error polling device ${device.name}:`, error.message);
-            return null;
-          })
-        );
-
-        const results = await Promise.allSettled(pollPromises);
-
-        const successfulPolls = results.filter(
-          r => r.status === 'fulfilled' && r.value && r.value.success
-        ).length;
-
-        console.log(`\n✅ IoT polling completed: ${successfulPolls}/${devices.length} successful`);
-        console.log(`🕒 Updated at ${new Date().toLocaleTimeString()}`);
-        console.log('\n=====================================================================================\n');
-      } catch (error) {
-        console.error('❌ Error in pollAllIoTDevices:', error.message);
-      }
-    });
-  }
+      console.log(`\n✅ IoT polling completed: ${successfulPolls}/${devices.length} successful`);
+      console.log(`🕒 Updated at ${new Date().toLocaleTimeString()}`);
+      console.log('\n=====================================================================================\n');
+    } catch (error) {
+      console.error('❌ Error in pollAllIoTDevices:', error.message);
+    }
+  });
+}
 
   async pollDevice(device) {
-    try {
-      console.log(`📡 Polling device: ${device.name} (${device.apiEndpoint})`);
-      const response = await axios.get(device.apiEndpoint, { timeout: 5000 });
+  try {
+    console.log(`📡 Polling device: ${device.name} (${device.apiEndpoint})`);
+    const response = await axios.get(device.apiEndpoint, { timeout: 5000 });
 
-      if (response.data?.success === true) {
+    if (response.data?.success === true) {
         const iotData = response.data.data;
 
         if (!this.isValidIoTData(iotData)) {
@@ -121,21 +132,21 @@ class IoTService {
         return { success: true, changed: hasChanged };
       }
 
-      // Device tidak mengembalikan success
-      console.log(BORDER_TOP);
-      console.error(`❌ Device ${device.name} did not return success`);
-      console.log(BORDER_BOTTOM);
-      return { success: false, error: 'Device did not return success' };
-    } catch (error) {
-      device.status = 'offline';
-      await device.save();
-      // ✅ FIX: log error polling dibungkus border
-      console.log(BORDER_TOP);
-      console.error(`❌ Error polling device ${device.name}:`, error.message);
-      console.log(BORDER_BOTTOM);
-      return { success: false, error: error.message };
+      return {
+        success: false,
+        deviceName: device.name,
+        error: 'Device did not return success',
+      };
+      } catch (error) {
+        device.status = 'offline';
+        await device.save().catch(() => {});
+        return {
+          success: false,
+          deviceName: device.name,
+          error: error.message,
+        };
+      }
     }
-  }
 
   async checkDeviceStatus(devices) {
     if (!devices || devices.length === 0) return [];
