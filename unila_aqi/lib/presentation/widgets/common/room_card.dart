@@ -219,21 +219,6 @@ class RoomCard extends StatelessWidget {
                       color: const Color(0xFFE3F2FD),
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.sensors, size: 12, color: Colors.blue[700]),
-                        const SizedBox(width: 4),
-                        Text(
-                          'Device IoT',
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.blue[700],
-                          ),
-                        ),
-                      ],
-                    ),
                   ),
                   if (!hasAnyData && aqi == null)
                     Padding(

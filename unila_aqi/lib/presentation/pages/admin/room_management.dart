@@ -649,46 +649,12 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
               ],
             ),
 
-            // Source badge — satu-satunya sumber data adalah device IoT
+            // Sumber data ruangan — tampilkan NAMA device yang dikaitkan.
+            // Bila ruangan belum punya device, tampilkan peringatan.
             const SizedBox(height: 12),
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: Colors.blue.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(
-                        Icons.sensors,
-                        size: 11,
-                        color: Colors.blue,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        'Device IoT',
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.blue[700],
-                          fontFamily: 'Inter',
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 8),
-              ],
-            ),
+            _buildDeviceBadge(room),
 
             const SizedBox(height: 10),
-            Row(
-              children: [
-                const SizedBox(height: 10),
             Row(
               children: [
                 const Icon(Icons.calendar_today,
@@ -702,8 +668,6 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
                     fontFamily: 'Inter',
                   ),
                 ),
-              ],
-            ),
               ],
             ),
 
@@ -766,6 +730,67 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  /// Badge sumber data ruangan.
+  ///
+  /// Menampilkan NAMA device IoT yang dikaitkan dengan ruangan ini.
+  /// Jika ruangan belum dikaitkan ke device, tampil teks peringatan.
+  Widget _buildDeviceBadge(Room room) {
+    final hasDevice = room.hasDeviceLink;
+    final accent = hasDevice ? Colors.blue : Colors.orange;
+    final textColor = hasDevice ? Colors.blue[700]! : Colors.orange[800]!;
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+          decoration: BoxDecoration(
+            color: accent.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                hasDevice ? Icons.sensors : Icons.sensors_off,
+                size: 11,
+                color: accent,
+              ),
+              const SizedBox(width: 4),
+              Text(
+                'Device IoT',
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                  color: textColor,
+                  fontFamily: 'Inter',
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Text(
+              room.deviceLabel,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 11.5,
+                fontWeight: FontWeight.w600,
+                color: textColor,
+                fontFamily: 'Inter',
+                height: 1.3,
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -1182,38 +1207,6 @@ class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
                       );
                     }).toList(),
                   ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              const Text('Sumber Data',
-                  style: TextStyle(
-                      fontSize: 16, fontWeight: FontWeight.w500)),
-              const SizedBox(height: 8),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 12, vertical: 14),
-                decoration: BoxDecoration(
-                  color: AppColors.surface,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: AppColors.border),
-                ),
-                child: const Row(
-                  children: [
-                    Icon(Icons.sensors,
-                        size: 18, color: AppColors.primary),
-                    SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'Device IoT (sensor fisik)',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.textPrimary,
-                        ),
-                      ),
-                    ),
-                  ],
                 ),
               ),
               const SizedBox(height: 16),

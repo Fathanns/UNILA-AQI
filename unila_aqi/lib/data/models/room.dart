@@ -4,6 +4,9 @@ class Room {
   final String buildingId;
   final String buildingName;
   final String? iotDeviceId;
+  /// Nama device IoT yang dikaitkan (diresolve backend dari `iotDeviceId`).
+  /// `null` = belum ada device / cache lama tanpa field ini.
+  final String? iotDeviceName;
   final int? currentAQI;   // ✅ nullable — null = no_data
   final RoomData currentData;
   final DateTime createdAt;
@@ -15,6 +18,7 @@ class Room {
     required this.buildingId,
     required this.buildingName,
     this.iotDeviceId,
+    this.iotDeviceName,
     this.currentAQI,
     required this.currentData,
     required this.createdAt,
@@ -31,6 +35,7 @@ class Room {
       buildingName: json['buildingName'] ??
           (json['building'] is Map ? json['building']['name'] : 'Unknown'),
       iotDeviceId: json['iotDeviceId'],
+      iotDeviceName: json['iotDeviceName']?.toString(),
       currentAQI: json['currentAQI'] == null
           ? null
           : (json['currentAQI'] as num).toInt(),
@@ -47,6 +52,7 @@ class Room {
       'building': buildingId,
       'buildingName': buildingName,
       'iotDeviceId': iotDeviceId,
+      'iotDeviceName': iotDeviceName,
       'currentAQI': currentAQI,
       'currentData': currentData.toJson(),
       'createdAt': createdAt.toIso8601String(),
@@ -55,6 +61,24 @@ class Room {
   }
 
   String get displayName => '$name - $buildingName';
+
+  /// `true` bila ruangan ini sudah dikaitkan ke sebuah device IoT.
+  bool get hasDeviceLink => (iotDeviceId ?? '').trim().isNotEmpty;
+
+  /// Teks siap-pakai untuk badge device pada kartu ruangan:
+  /// - nama device yang dikaitkan, atau
+  /// - peringatan bila ruangan belum punya device sama sekali.
+  String get deviceLabel {
+    final name = iotDeviceName?.trim();
+    if (name != null && name.isNotEmpty) return name;
+    if (!hasDeviceLink) {
+      return 'Ruangan ini belum dihubungkan dengan device apapun';
+    }
+    // Ada iotDeviceId tapi namanya belum termuat (mis. cache lama
+    // sebelum backend mengirim iotDeviceName, atau device sedang dialihkan).
+    return 'Memuat nama device…';
+  }
+
   bool get hasAnyData =>
       currentData.hasPM25 ||
       currentData.hasPM10 ||

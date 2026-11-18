@@ -10,6 +10,38 @@ const { runExclusive } = require('../utils/serviceLock');
 const BORDER_TOP = '┌────────────────────────────────────────────────────────────────────────────────────';
 const BORDER_BOTTOM = '└────────────────────────────────────────────────────────────────────────────────────';
 
+const LOG_TIME_ZONE = 'Asia/Jakarta';
+const LOG_TIME_FORMATTER = new Intl.DateTimeFormat('en-GB', {
+  timeZone: LOG_TIME_ZONE,
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hour12: false,
+});
+
+/** "19:47:45" dalam WIB */
+function formatLogTime(date = new Date()) {
+  const parts = LOG_TIME_FORMATTER.formatToParts(date);
+  const pick = (type) => parts.find((p) => p.type === type)?.value ?? '00';
+  return `${pick('hour')}:${pick('minute')}:${pick('second')}`;
+}
+
+/** "Senin, 18 November 2026" dalam WIB */
+function formatLogDate(date = new Date()) {
+  return new Intl.DateTimeFormat('id-ID', {
+    timeZone: LOG_TIME_ZONE,
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  }).format(date);
+}
+
+/** "19:47:45 WIB (Senin, 18 November 2026)" */
+function formatLogDateTime(date = new Date()) {
+  return `${formatLogTime(date)} WIB (${formatLogDate(date)})`;
+}
+
 class IoTService {
   constructor() {
     this.isRunning = false;
@@ -137,7 +169,7 @@ class IoTService {
         }
 
         console.log(`\n✅ IoT polling completed: ${successfulPolls}/${devices.length} successful`);
-        console.log(`🕒 Updated at ${new Date().toLocaleTimeString()}`);
+        console.log(`🕒 Updated at ${formatLogDateTime()} WIB`);
         console.log('\n=====================================================================================\n');
       } catch (error) {
         console.error('❌ Error in pollAllIoTDevices:', error.message);

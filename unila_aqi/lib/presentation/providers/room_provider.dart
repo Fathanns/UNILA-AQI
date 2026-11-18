@@ -143,6 +143,7 @@ class RoomProvider with ChangeNotifier {
         buildingId: roomMap['buildingId']?.toString() ?? '',
         buildingName: roomMap['buildingName']?.toString() ?? 'Unknown',
         iotDeviceId: roomMap['iotDeviceId']?.toString(),
+        iotDeviceName: roomMap['iotDeviceName']?.toString(),
         currentAQI: (roomMap['currentAQI'] as num?)?.toInt() ?? 0,
         currentData: RoomData.fromJson(
           roomMap['currentData'] is Map
@@ -445,6 +446,7 @@ class RoomProvider with ChangeNotifier {
             buildingId: _rooms[i].buildingId,
             buildingName: newBuildingName ?? _rooms[i].buildingName,
             iotDeviceId: _rooms[i].iotDeviceId,
+            iotDeviceName: _rooms[i].iotDeviceName,
             currentAQI: _rooms[i].currentAQI,
             currentData: _rooms[i].currentData,
             createdAt: _rooms[i].createdAt,
@@ -489,6 +491,7 @@ class RoomProvider with ChangeNotifier {
           buildingId: _rooms[roomIndex].buildingId,
           buildingName: buildingName ?? _rooms[roomIndex].buildingName,
           iotDeviceId: _rooms[roomIndex].iotDeviceId,
+          iotDeviceName: _rooms[roomIndex].iotDeviceName,
           currentAQI: _rooms[roomIndex].currentAQI,
           currentData: _rooms[roomIndex].currentData,
           createdAt: _rooms[roomIndex].createdAt,

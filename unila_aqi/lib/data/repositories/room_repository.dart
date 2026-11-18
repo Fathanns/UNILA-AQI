@@ -26,6 +26,11 @@ class RoomRepository {
     return headers;
   }
 
+  /// Ambil daftar ruangan.
+  ///
+  /// `GET /rooms` sekarang ikut mengirim `iotDeviceName` (nama device yang
+  /// dikaitkan), sehingga pemanggil tidak perlu memanggil `GET /iot-devices`
+  /// yang butuh login admin.
   Future<List<Room>> getRooms() async {
     try {
       print('📡 Fetching rooms from: ${AppConstants.apiBaseUrl}/rooms');

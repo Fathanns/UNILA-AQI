@@ -3,6 +3,7 @@ const router = express.Router();
 const Room = require('../models/Room');
 const Building = require('../models/Building');
 const SensorData = require('../models/SensorData');
+const IoTDevice = require('../models/IoTDevice');
 const { authMiddleware, adminMiddleware } = require('../middleware/authMiddleware');
 const {
   getAQICategory,
@@ -12,8 +13,35 @@ const {
   aqiToNO2,
 } = require('../utils/aqiCalculator');
 
-const broadcastRoomUpdate = (io, room, action, oldData = null) => {
+// ============================================================
+// Helper: resolve NAMA device IoT dari room.iotDeviceId
+// ============================================================
+// Catatan: `iotDeviceId` pada Room disimpan sebagai String (bukan ObjectId),
+// jadi `populate()` tidak bisa dipakai — kita resolve manual lewat map.
+// Hasil (null) berarti ruangan belum dikaitkan dengan device apapun.
+async function resolveDeviceName(deviceId) {
+  if (!deviceId) return null;
+  try {
+    const device = await IoTDevice.findById(deviceId).select('name').lean();
+    return device?.name ?? null;
+  } catch (_) {
+    return null;
+  }
+}
+
+/** Tambahkan field `iotDeviceName` ke object room (non-destructive). */
+function withDeviceName(roomObj, deviceNameById) {
+  const deviceId = roomObj.iotDeviceId ? roomObj.iotDeviceId.toString() : null;
+  roomObj.iotDeviceName = deviceId ? deviceNameById.get(deviceId) ?? null : null;
+  return roomObj;
+}
+
+const broadcastRoomUpdate = async (io, room, action, oldData = null) => {
   if (io) {
+    // ✅ Sertakan nama device agar UI bisa langsung menampilkan nama,
+    // bukan menunggu reload.
+    const iotDeviceName = await resolveDeviceName(room.iotDeviceId);
+
     const updateData = {
       action: action,
       room: {
@@ -22,6 +50,7 @@ const broadcastRoomUpdate = (io, room, action, oldData = null) => {
         buildingId: room.building,
         buildingName: room.buildingName,
         iotDeviceId: room.iotDeviceId,
+        iotDeviceName: iotDeviceName,
         currentAQI: room.currentAQI,
         currentData: room.currentData,
         createdAt: room.createdAt,
@@ -72,16 +101,30 @@ const broadcastRoomUpdate = (io, room, action, oldData = null) => {
 };
 
 // GET all rooms
+// ✅ FIXED: sertakan `iotDeviceName` agar halaman Kelola Ruangan bisa
+// menampilkan NAMA device yang dikaitkan (bukan label generik "Device IoT").
+// Hanya 2 query paralel, jadi tidak menambah latency berarti.
 router.get('/', async (req, res) => {
   try {
-    const rooms = await Room.find()
-      .populate('building', 'name code')
-      .sort({ name: 1 });
+    const [rooms, devices] = await Promise.all([
+      Room.find()
+        .populate('building', 'name code')
+        .sort({ name: 1 }),
+      IoTDevice.find({}, 'name'),
+    ]);
+
+    const deviceNameById = new Map(
+      devices.map((device) => [device._id.toString(), device.name])
+    );
+
+    const data = rooms.map((room) =>
+      withDeviceName(room.toObject(), deviceNameById)
+    );
 
     res.json({
       success: true,
-      count: rooms.length,
-      data: rooms
+      count: data.length,
+      data
     });
   } catch (error) {
     res.status(500).json({
@@ -302,9 +345,13 @@ router.get('/:id', async (req, res) => {
       });
     }
 
+    // ✅ Konsisten dengan GET / — sertakan nama device.
+    const roomObj = room.toObject();
+    roomObj.iotDeviceName = await resolveDeviceName(room.iotDeviceId);
+
     res.json({
       success: true,
-      data: room
+      data: roomObj
     });
   } catch (error) {
     res.status(500).json({

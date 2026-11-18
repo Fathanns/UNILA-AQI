@@ -2823,6 +2823,9 @@ class Room {
   final String buildingId;
   final String buildingName;
   final String? iotDeviceId;
+  /// Nama device IoT yang dikaitkan (diresolve backend dari `iotDeviceId`).
+  /// `null` = belum ada device / cache lama tanpa field ini.
+  final String? iotDeviceName;
   final int? currentAQI;   // ✅ nullable — null = no_data
   final RoomData currentData;
   final DateTime createdAt;
@@ -2834,6 +2837,7 @@ class Room {
     required this.buildingId,
     required this.buildingName,
     this.iotDeviceId,
+    this.iotDeviceName,
     this.currentAQI,
     required this.currentData,
     required this.createdAt,
@@ -2850,6 +2854,7 @@ class Room {
       buildingName: json['buildingName'] ??
           (json['building'] is Map ? json['building']['name'] : 'Unknown'),
       iotDeviceId: json['iotDeviceId'],
+      iotDeviceName: json['iotDeviceName']?.toString(),
       currentAQI: json['currentAQI'] == null
           ? null
           : (json['currentAQI'] as num).toInt(),
@@ -2866,6 +2871,7 @@ class Room {
       'building': buildingId,
       'buildingName': buildingName,
       'iotDeviceId': iotDeviceId,
+      'iotDeviceName': iotDeviceName,
       'currentAQI': currentAQI,
       'currentData': currentData.toJson(),
       'createdAt': createdAt.toIso8601String(),
@@ -2874,6 +2880,24 @@ class Room {
   }
 
   String get displayName => '$name - $buildingName';
+
+  /// `true` bila ruangan ini sudah dikaitkan ke sebuah device IoT.
+  bool get hasDeviceLink => (iotDeviceId ?? '').trim().isNotEmpty;
+
+  /// Teks siap-pakai untuk badge device pada kartu ruangan:
+  /// - nama device yang dikaitkan, atau
+  /// - peringatan bila ruangan belum punya device sama sekali.
+  String get deviceLabel {
+    final name = iotDeviceName?.trim();
+    if (name != null && name.isNotEmpty) return name;
+    if (!hasDeviceLink) {
+      return 'Ruangan ini belum dihubungkan dengan device apapun';
+    }
+    // Ada iotDeviceId tapi namanya belum termuat (mis. cache lama
+    // sebelum backend mengirim iotDeviceName, atau device sedang dialihkan).
+    return 'Memuat nama device…';
+  }
+
   bool get hasAnyData =>
       currentData.hasPM25 ||
       currentData.hasPM10 ||
@@ -3969,6 +3993,11 @@ class RoomRepository {
     return headers;
   }
 
+  /// Ambil daftar ruangan.
+  ///
+  /// `GET /rooms` sekarang ikut mengirim `iotDeviceName` (nama device yang
+  /// dikaitkan), sehingga pemanggil tidak perlu memanggil `GET /iot-devices`
+  /// yang butuh login admin.
   Future<List<Room>> getRooms() async {
     try {
       print('📡 Fetching rooms from: ${AppConstants.apiBaseUrl}/rooms');
@@ -4112,7 +4141,7 @@ class RoomRepository {
         throw Exception(error['message'] ?? 'Failed to update room');
       }
     } catch (e) {
-      rethrow;
+      rethrow;room_management.dart
     }
   }
 
@@ -7835,46 +7864,12 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
               ],
             ),
 
-            // Source badge — satu-satunya sumber data adalah device IoT
+            // Sumber data ruangan — tampilkan NAMA device yang dikaitkan.
+            // Bila ruangan belum punya device, tampilkan peringatan.
             const SizedBox(height: 12),
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: Colors.blue.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(
-                        Icons.sensors,
-                        size: 11,
-                        color: Colors.blue,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        'Device IoT',
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.blue[700],
-                          fontFamily: 'Inter',
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 8),
-              ],
-            ),
+            _buildDeviceBadge(room),
 
             const SizedBox(height: 10),
-            Row(
-              children: [
-                const SizedBox(height: 10),
             Row(
               children: [
                 const Icon(Icons.calendar_today,
@@ -7888,8 +7883,6 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
                     fontFamily: 'Inter',
                   ),
                 ),
-              ],
-            ),
               ],
             ),
 
@@ -7952,6 +7945,67 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  /// Badge sumber data ruangan.
+  ///
+  /// Menampilkan NAMA device IoT yang dikaitkan dengan ruangan ini.
+  /// Jika ruangan belum dikaitkan ke device, tampil teks peringatan.
+  Widget _buildDeviceBadge(Room room) {
+    final hasDevice = room.hasDeviceLink;
+    final accent = hasDevice ? Colors.blue : Colors.orange;
+    final textColor = hasDevice ? Colors.blue[700]! : Colors.orange[800]!;
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+          decoration: BoxDecoration(
+            color: accent.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                hasDevice ? Icons.sensors : Icons.sensors_off,
+                size: 11,
+                color: accent,
+              ),
+              const SizedBox(width: 4),
+              Text(
+                'Device IoT',
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                  color: textColor,
+                  fontFamily: 'Inter',
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Text(
+              room.deviceLabel,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 11.5,
+                fontWeight: FontWeight.w600,
+                color: textColor,
+                fontFamily: 'Inter',
+                height: 1.3,
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -8368,38 +8422,6 @@ class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
                       );
                     }).toList(),
                   ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              const Text('Sumber Data',
-                  style: TextStyle(
-                      fontSize: 16, fontWeight: FontWeight.w500)),
-              const SizedBox(height: 8),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 12, vertical: 14),
-                decoration: BoxDecoration(
-                  color: AppColors.surface,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: AppColors.border),
-                ),
-                child: const Row(
-                  children: [
-                    Icon(Icons.sensors,
-                        size: 18, color: AppColors.primary),
-                    SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'Device IoT (sensor fisik)',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.textPrimary,
-                        ),
-                      ),
-                    ),
-                  ],
                 ),
               ),
               const SizedBox(height: 16),
@@ -12182,6 +12204,7 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
           buildingId: _currentRoomData.buildingId,
           buildingName: _currentRoomData.buildingName,
           iotDeviceId: _currentRoomData.iotDeviceId,
+          iotDeviceName: _currentRoomData.iotDeviceName,
           currentAQI: _currentRoomData.currentAQI,
           currentData: _currentRoomData.currentData,
           createdAt: _currentRoomData.createdAt,
@@ -12219,6 +12242,7 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
               buildingId: _currentRoomData.buildingId,
               buildingName: _currentRoomData.buildingName,
               iotDeviceId: _currentRoomData.iotDeviceId,
+              iotDeviceName: _currentRoomData.iotDeviceName,
               currentAQI: _currentRoomData.currentAQI,
               currentData: _currentRoomData.currentData,
               createdAt: _currentRoomData.createdAt,
@@ -12251,6 +12275,7 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
           buildingId: _currentRoomData.buildingId,
           buildingName: newBuildingName,
           iotDeviceId: _currentRoomData.iotDeviceId,
+          iotDeviceName: _currentRoomData.iotDeviceName,
           currentAQI: _currentRoomData.currentAQI,
           currentData: _currentRoomData.currentData,
           createdAt: _currentRoomData.createdAt,
@@ -13467,6 +13492,7 @@ class RoomProvider with ChangeNotifier {
         buildingId: roomMap['buildingId']?.toString() ?? '',
         buildingName: roomMap['buildingName']?.toString() ?? 'Unknown',
         iotDeviceId: roomMap['iotDeviceId']?.toString(),
+        iotDeviceName: roomMap['iotDeviceName']?.toString(),
         currentAQI: (roomMap['currentAQI'] as num?)?.toInt() ?? 0,
         currentData: RoomData.fromJson(
           roomMap['currentData'] is Map
@@ -13769,6 +13795,7 @@ class RoomProvider with ChangeNotifier {
             buildingId: _rooms[i].buildingId,
             buildingName: newBuildingName ?? _rooms[i].buildingName,
             iotDeviceId: _rooms[i].iotDeviceId,
+            iotDeviceName: _rooms[i].iotDeviceName,
             currentAQI: _rooms[i].currentAQI,
             currentData: _rooms[i].currentData,
             createdAt: _rooms[i].createdAt,
@@ -13813,6 +13840,7 @@ class RoomProvider with ChangeNotifier {
           buildingId: _rooms[roomIndex].buildingId,
           buildingName: buildingName ?? _rooms[roomIndex].buildingName,
           iotDeviceId: _rooms[roomIndex].iotDeviceId,
+          iotDeviceName: _rooms[roomIndex].iotDeviceName,
           currentAQI: _rooms[roomIndex].currentAQI,
           currentData: _rooms[roomIndex].currentData,
           createdAt: _rooms[roomIndex].createdAt,
@@ -15762,21 +15790,6 @@ class RoomCard extends StatelessWidget {
                     decoration: BoxDecoration(
                       color: const Color(0xFFE3F2FD),
                       borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.sensors, size: 12, color: Colors.blue[700]),
-                        const SizedBox(width: 4),
-                        Text(
-                          'Device IoT',
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.blue[700],
-                          ),
-                        ),
-                      ],
                     ),
                   ),
                   if (!hasAnyData && aqi == null)
@@ -17853,6 +17866,7 @@ const router = express.Router();
 const Room = require('../models/Room');
 const Building = require('../models/Building');
 const SensorData = require('../models/SensorData');
+const IoTDevice = require('../models/IoTDevice');
 const { authMiddleware, adminMiddleware } = require('../middleware/authMiddleware');
 const {
   getAQICategory,
@@ -17862,8 +17876,35 @@ const {
   aqiToNO2,
 } = require('../utils/aqiCalculator');
 
-const broadcastRoomUpdate = (io, room, action, oldData = null) => {
+// ============================================================
+// Helper: resolve NAMA device IoT dari room.iotDeviceId
+// ============================================================
+// Catatan: `iotDeviceId` pada Room disimpan sebagai String (bukan ObjectId),
+// jadi `populate()` tidak bisa dipakai — kita resolve manual lewat map.
+// Hasil (null) berarti ruangan belum dikaitkan dengan device apapun.
+async function resolveDeviceName(deviceId) {
+  if (!deviceId) return null;
+  try {
+    const device = await IoTDevice.findById(deviceId).select('name').lean();
+    return device?.name ?? null;
+  } catch (_) {
+    return null;
+  }
+}
+
+/** Tambahkan field `iotDeviceName` ke object room (non-destructive). */
+function withDeviceName(roomObj, deviceNameById) {
+  const deviceId = roomObj.iotDeviceId ? roomObj.iotDeviceId.toString() : null;
+  roomObj.iotDeviceName = deviceId ? deviceNameById.get(deviceId) ?? null : null;
+  return roomObj;
+}
+
+const broadcastRoomUpdate = async (io, room, action, oldData = null) => {
   if (io) {
+    // ✅ Sertakan nama device agar UI bisa langsung menampilkan nama,
+    // bukan menunggu reload.
+    const iotDeviceName = await resolveDeviceName(room.iotDeviceId);
+
     const updateData = {
       action: action,
       room: {
@@ -17871,8 +17912,8 @@ const broadcastRoomUpdate = (io, room, action, oldData = null) => {
         name: room.name,
         buildingId: room.building,
         buildingName: room.buildingName,
-        dataSource: room.dataSource,
         iotDeviceId: room.iotDeviceId,
+        iotDeviceName: iotDeviceName,
         currentAQI: room.currentAQI,
         currentData: room.currentData,
         createdAt: room.createdAt,
@@ -17923,16 +17964,30 @@ const broadcastRoomUpdate = (io, room, action, oldData = null) => {
 };
 
 // GET all rooms
+// ✅ FIXED: sertakan `iotDeviceName` agar halaman Kelola Ruangan bisa
+// menampilkan NAMA device yang dikaitkan (bukan label generik "Device IoT").
+// Hanya 2 query paralel, jadi tidak menambah latency berarti.
 router.get('/', async (req, res) => {
   try {
-    const rooms = await Room.find()
-      .populate('building', 'name code')
-      .sort({ name: 1 });
+    const [rooms, devices] = await Promise.all([
+      Room.find()
+        .populate('building', 'name code')
+        .sort({ name: 1 }),
+      IoTDevice.find({}, 'name'),
+    ]);
+
+    const deviceNameById = new Map(
+      devices.map((device) => [device._id.toString(), device.name])
+    );
+
+    const data = rooms.map((room) =>
+      withDeviceName(room.toObject(), deviceNameById)
+    );
 
     res.json({
       success: true,
-      count: rooms.length,
-      data: rooms
+      count: data.length,
+      data
     });
   } catch (error) {
     res.status(500).json({
@@ -18115,7 +18170,7 @@ router.post('/:id/demo-aqi', authMiddleware, adminMiddleware, async (req, res) =
 });
 
 // POST /:id/reset-demo — matikan demoMode, room akan di-update normal
-// oleh simulationService / iotService pada tick berikutnya
+// oleh iotService pada tick berikutnya
 router.post('/:id/reset-demo', authMiddleware, adminMiddleware, async (req, res) => {
   try {
     const room = await Room.findById(req.params.id);
@@ -18153,9 +18208,13 @@ router.get('/:id', async (req, res) => {
       });
     }
 
+    // ✅ Konsisten dengan GET / — sertakan nama device.
+    const roomObj = room.toObject();
+    roomObj.iotDeviceName = await resolveDeviceName(room.iotDeviceId);
+
     res.json({
       success: true,
-      data: room
+      data: roomObj
     });
   } catch (error) {
     res.status(500).json({
@@ -18169,7 +18228,7 @@ router.get('/:id', async (req, res) => {
 // POST create room (admin only)
 router.post('/', authMiddleware, adminMiddleware, async (req, res) => {
   try {
-    const { name, buildingId, dataSource, iotDeviceId } = req.body;
+    const { name, buildingId, iotDeviceId } = req.body;
     const io = req.app.get('socketio');
 
     if (!name) {
@@ -18185,18 +18244,10 @@ router.post('/', authMiddleware, adminMiddleware, async (req, res) => {
       return res.status(404).json({ success: false, message: 'Building not found' });
     }
 
-    const validDataSources = ['simulation', 'iot'];
-    if (dataSource && !validDataSources.includes(dataSource)) {
+    if (!iotDeviceId) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid data source. Must be "simulation" or "iot"'
-      });
-    }
-
-    if (dataSource === 'iot' && !iotDeviceId) {
-      return res.status(400).json({
-        success: false,
-        message: 'IoT Device ID is required for IoT data source'
+        message: 'IoT Device ID is required'
       });
     }
 
@@ -18212,8 +18263,7 @@ router.post('/', authMiddleware, adminMiddleware, async (req, res) => {
       name: name.trim(),
       building: buildingId,
       buildingName: building.name,
-      dataSource: dataSource || 'simulation',
-      iotDeviceId: dataSource === 'iot' ? iotDeviceId : null,
+      iotDeviceId: iotDeviceId,
       currentAQI: null,        // ✅ no_data sampai poll pertama
       currentData: {
         pm25: null, pm10: null, co: null,
@@ -18249,7 +18299,7 @@ router.post('/', authMiddleware, adminMiddleware, async (req, res) => {
 // PUT update room (admin only)
 router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
   try {
-    const { name, buildingId, dataSource, iotDeviceId } = req.body;
+    const { name, buildingId, iotDeviceId } = req.body;
     const io = req.app.get('socketio');
 
     const room = await Room.findById(req.params.id).populate('building', 'name');
@@ -18261,24 +18311,15 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
       name: room.name,
       buildingId: room.building._id ? room.building._id.toString() : room.building.toString(),
       buildingName: room.buildingName,
-      dataSource: room.dataSource,
       iotDeviceId: room.iotDeviceId || null
     };
 
     console.log(`🔄 Room update request for: ${room.name}`);
 
-    const validDataSources = ['simulation', 'iot'];
-    if (dataSource && !validDataSources.includes(dataSource)) {
+    if (iotDeviceId !== undefined && !iotDeviceId) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid data source. Must be "simulation" or "iot"'
-      });
-    }
-
-    if (dataSource === 'iot' && !iotDeviceId) {
-      return res.status(400).json({
-        success: false,
-        message: 'IoT Device ID is required for IoT data source'
+        message: 'IoT Device ID is required'
       });
     }
 
@@ -18328,21 +18369,14 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
       room.name = name.trim();
     }
 
-    const prevDataSource = oldData.dataSource;
     const prevIotDeviceId = oldData.iotDeviceId || null;
 
-    if (dataSource !== undefined) {
-      room.dataSource = dataSource;
-      room.iotDeviceId = dataSource === 'iot' ? iotDeviceId : null;
-    }
-    if (iotDeviceId !== undefined && dataSource === 'iot') {
+    if (iotDeviceId !== undefined) {
       room.iotDeviceId = iotDeviceId;
     }
     room.updatedAt = new Date();
 
-    const deviceChanged =
-      (prevDataSource !== room.dataSource) ||
-      (prevIotDeviceId !== (room.iotDeviceId || null));
+    const deviceChanged = prevIotDeviceId !== (room.iotDeviceId || null);
 
     if (deviceChanged) {
       room.currentAQI = null;
@@ -18368,7 +18402,7 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
 
     let deviceFetchStatus = null;
 
-    if (deviceChanged && room.dataSource === 'iot' && room.iotDeviceId) {
+    if (deviceChanged && room.iotDeviceId) {
       try {
         const iotService = require('../services/iotService');
         const fetchResult = await iotService.forceUpdateRoom(room._id.toString());
@@ -18454,13 +18488,12 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
     const changes = {
       nameChanged: name && name !== oldData.name,
       buildingChanged: buildingChanged,
-      dataSourceChanged: dataSource && dataSource !== oldData.dataSource,
       deviceChanged: deviceChanged,
       deviceFetchStatus: deviceFetchStatus
     };
 
     let responseMessage = 'Room updated successfully';
-    if (deviceChanged && room.dataSource === 'iot') {
+    if (deviceChanged) {
       if (deviceFetchStatus === 'success') {
         responseMessage = 'Room updated & data partikel device baru berhasil dimuat.';
       } else if (deviceFetchStatus === 'failed' || deviceFetchStatus === 'error') {
@@ -19235,6 +19268,38 @@ const { runExclusive } = require('../utils/serviceLock');
 const BORDER_TOP = '┌────────────────────────────────────────────────────────────────────────────────────';
 const BORDER_BOTTOM = '└────────────────────────────────────────────────────────────────────────────────────';
 
+const LOG_TIME_ZONE = 'Asia/Jakarta';
+const LOG_TIME_FORMATTER = new Intl.DateTimeFormat('en-GB', {
+  timeZone: LOG_TIME_ZONE,
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hour12: false,
+});
+
+/** "19:47:45" dalam WIB */
+function formatLogTime(date = new Date()) {
+  const parts = LOG_TIME_FORMATTER.formatToParts(date);
+  const pick = (type) => parts.find((p) => p.type === type)?.value ?? '00';
+  return `${pick('hour')}:${pick('minute')}:${pick('second')}`;
+}
+
+/** "Senin, 18 November 2026" dalam WIB */
+function formatLogDate(date = new Date()) {
+  return new Intl.DateTimeFormat('id-ID', {
+    timeZone: LOG_TIME_ZONE,
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  }).format(date);
+}
+
+/** "19:47:45 WIB (Senin, 18 November 2026)" */
+function formatLogDateTime(date = new Date()) {
+  return `${formatLogTime(date)} WIB (${formatLogDate(date)})`;
+}
+
 class IoTService {
   constructor() {
     this.isRunning = false;
@@ -19321,7 +19386,6 @@ class IoTService {
         });
 
         // Poll paralel, tapi TIDAK mencetak log di dalam pollDevice.
-        // pollDevice hanya mengembalikan result + roomLogs.
         const results = await Promise.allSettled(
           devices.map(async (device) => {
             try {
@@ -19333,7 +19397,8 @@ class IoTService {
           })
         );
 
-        // ✅ Log SERIAL setelah semua polling selesai — tidak ada border berselang-seling.
+        // ✅ Log SERIAL — semua pakai console.log agar satu stream (stdout),
+        // sehingga urutan border + isi dijamin konsisten.
         let successfulPolls = 0;
         for (const r of results) {
           const val =
@@ -19342,11 +19407,10 @@ class IoTService {
               : { success: false, deviceName: 'unknown', error: r.reason?.message };
 
           console.log(BORDER_TOP);
-          if (val.success) {
+          if (val && val.success === true) {
             successfulPolls++;
             const lines = val.roomLogs || [];
             if (lines.length === 0) {
-              // ✅ Hindari border kosong untuk device tanpa room
               console.log(
                 `ℹ️  Device ${val.deviceName}: no rooms updated (no rooms mapped or all demoMode)`
               );
@@ -19354,13 +19418,16 @@ class IoTService {
               lines.forEach((line) => console.log(line));
             }
           } else {
-            console.error(`❌ Error polling device ${val.deviceName}: ${val.error}`);
+            // ✅ console.log (bukan console.error) — hindari urutan acak stdout/stderr
+            const name = val?.deviceName || 'unknown';
+            const errMsg = val?.error || 'unknown error';
+            console.log(`❌ Error polling device ${name}: ${errMsg}`);
           }
           console.log(BORDER_BOTTOM);
         }
 
         console.log(`\n✅ IoT polling completed: ${successfulPolls}/${devices.length} successful`);
-        console.log(`🕒 Updated at ${new Date().toLocaleTimeString()}`);
+        console.log(`🕒 Updated at ${formatLogDateTime()} WIB`);
         console.log('\n=====================================================================================\n');
       } catch (error) {
         console.error('❌ Error in pollAllIoTDevices:', error.message);
@@ -19393,7 +19460,6 @@ class IoTService {
           iotDeviceId: device._id.toString(),
         });
 
-        // ✅ Kumpulkan log, jangan cetak di sini
         const roomLogs = [];
         for (const room of rooms) {
           const { logs } = await this.updateRoomFromIoT(room, iotData, device.name);
@@ -19422,7 +19488,6 @@ class IoTService {
   async checkDeviceStatus(devices) {
     if (!devices || devices.length === 0) return [];
 
-    // ✅ Bungkus dengan runExclusive agar tidak menyela siklus utama
     return runExclusive(async () => {
       const results = await Promise.allSettled(
         devices.map(async (device) => {
@@ -19490,9 +19555,6 @@ class IoTService {
     );
   }
 
-  /**
-   * Bangun label dominan dari aqiResult.
-   */
   _dominantLabel(aqiResult) {
     if (!aqiResult || !aqiResult.dominant) return null;
     return (
@@ -19507,10 +19569,6 @@ class IoTService {
     );
   }
 
-  /**
-   * Update room dari data IoT — MENGEMBALIKAN { logs } (tidak mencetak).
-   * @returns {Promise<{logs: string[]}>}
-   */
   async updateRoomFromIoT(room, iotData, deviceName) {
     const logs = [];
     try {
@@ -19531,7 +19589,6 @@ class IoTService {
       const temperature = optNum(iotData.temperature);
       const humidity    = optNum(iotData.humidity);
 
-      // Deteksi error hanya untuk field yang ADA dan negatif.
       const hasError = [pm25, pm10, co, so2, o3, no2, temperature, humidity]
         .some((v) => v !== null && v < 0);
 
@@ -19566,7 +19623,6 @@ class IoTService {
         normalizedData
       );
 
-      // Simpan + riwayat + broadcast HANYA jika berubah
       if (!hasRoomDataChanged) {
         logs.push(`ℹ️  Room ${room.name} data unchanged (exact match), skipping room update`);
       } else {
@@ -19583,7 +19639,6 @@ class IoTService {
         logs.push(`📢 Broadcast IoT update for room ${room.name}: AQI ${room.currentAQI}`);
       }
 
-      // Riwayat selalu disimpan (baik berubah maupun tidak)
       await new SensorData({
         roomId: room._id,
         roomName: room.name,
@@ -19597,7 +19652,6 @@ class IoTService {
         anomalyType: iotData.anomalyType || null,
       }).save();
 
-      // --- Ringkasan AQI ---
       if (normalizedData.aqi == null) {
         logs.push(
           `ℹ️  IoT room ${room.name} (device ${deviceName}): tidak ada data valid — status no_data`
@@ -19628,10 +19682,6 @@ class IoTService {
     }
   }
 
-  /**
-   * Versi "force" — selalu menyimpan & broadcast, dan MENGEMBALIKAN { logs }.
-   * Tidak mencetak apa pun di dalam method ini.
-   */
   async updateRoomFromIoTForce(room, iotData, deviceName) {
     const logs = [];
     try {
@@ -19682,7 +19732,6 @@ class IoTService {
       this.broadcastRoomUpdate(room, normalizedData, 'iot', deviceName);
       logs.push(`📢 FORCE Broadcast IoT update for room ${room.name}: AQI ${room.currentAQI}`);
 
-      // Riwayat selalu disimpan
       await new SensorData({
         roomId: room._id,
         roomName: room.name,
@@ -19696,7 +19745,6 @@ class IoTService {
         anomalyType: iotData.anomalyType || null,
       }).save();
 
-      // --- Ringkasan AQI ---
       if (normalizedData.aqi == null) {
         logs.push(
           `ℹ️  IoT room ${room.name} (device ${deviceName}): tidak ada data valid — status no_data`
@@ -19729,7 +19777,6 @@ class IoTService {
 
   async handleDeviceError(room, deviceName, logs = []) {
     try {
-      // Catat sebagai error (-1) untuk history
       await new SensorData({
         roomId: room._id,
         roomName: room.name,
@@ -19752,7 +19799,6 @@ class IoTService {
   }
 
   async forceUpdateRoom(roomId) {
-    // ✅ Bungkus dengan runExclusive agar tidak menyela siklus utama
     return runExclusive(async () => {
       try {
         const room = await Room.findById(roomId);
@@ -19784,7 +19830,7 @@ class IoTService {
 
         const { logs } = await this.updateRoomFromIoTForce(room, iotData, device.name);
 
-        // ✅ Bungkus log dalam border yang seimbang
+        // ✅ Semua console.log (satu stream) — urutan dijamin
         console.log(BORDER_TOP);
         logs.forEach((line) => console.log(line));
         console.log(BORDER_BOTTOM);
@@ -19792,7 +19838,7 @@ class IoTService {
         return { success: true, data: iotData, deviceName: device.name };
       } catch (error) {
         console.log(BORDER_TOP);
-        console.error(`❌ forceUpdateRoom(${roomId}) error:`, error.message);
+        console.log(`❌ forceUpdateRoom(${roomId}) error: ${error.message}`);
         console.log(BORDER_BOTTOM);
         return { success: false, error: error.message };
       }
@@ -19804,12 +19850,12 @@ class IoTService {
       const response = await this._getWithRetry(device.apiEndpoint, 15000);
 
       if (response.data?.success !== true) {
-        return { success: false, message: 'Device did not return success' };
+        return { success: false, deviceName: device.name, error: 'Device did not return success' };
       }
 
       const iotData = response.data.data;
       if (!this.isValidIoTData(iotData)) {
-        return { success: false, message: 'Invalid IoT data' };
+        return { success: false, deviceName: device.name, error: 'Invalid IoT data' };
       }
 
       this.deviceLastData.set(device._id.toString(), iotData);
@@ -19829,14 +19875,11 @@ class IoTService {
     } catch (error) {
       device.status = 'offline';
       await device.save().catch(() => {});
-      // ✅ Kembalikan error — TIDAK mencetak border di sini.
-      // Pemanggil (forcePollAll) yang mencetak dalam border.
       return { success: false, deviceName: device.name, error: error.message };
     }
   }
 
   broadcastRoomUpdate(room, data, source, deviceName = null) {
-    // Hanya emit Socket.IO — tidak mencetak log apa pun.
     if (this.io) {
       const updateData = {
         roomId: room._id,
@@ -19863,7 +19906,6 @@ class IoTService {
   }
 
   async forcePollAll() {
-    // ✅ Bungkus dengan runExclusive agar tidak menyela siklus utama
     return runExclusive(async () => {
       console.log('🔄 FORCE polling all IoT devices...');
       try {
@@ -19890,7 +19932,7 @@ class IoTService {
               : { success: false, deviceName: 'unknown', error: r.reason?.message };
 
           console.log(BORDER_TOP);
-          if (val?.success) {
+          if (val && val.success === true) {
             successCount++;
             const lines = val.roomLogs || [];
             if (lines.length === 0) {
@@ -19901,9 +19943,10 @@ class IoTService {
               lines.forEach((line) => console.log(line));
             }
           } else {
-            console.error(
-              `❌ Force poll failed for ${val.deviceName || 'unknown'}: ${val.error || 'unknown error'}`
-            );
+            // ✅ console.log (bukan console.error) — satu stream
+            const name = val?.deviceName || 'unknown';
+            const errMsg = val?.error || 'unknown error';
+            console.log(`❌ Force poll failed for ${name}: ${errMsg}`);
           }
           console.log(BORDER_BOTTOM);
         }
