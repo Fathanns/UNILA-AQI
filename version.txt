@@ -1,12 +1,12 @@
 FRONTEND:
 
-C:\develop\UNILA-AQI\unila_aqi\lib\core\constants\app_constants.dart
+C:\Users\fatha\Develop\UNILA-AQI\unila_aqi\lib\core\constants\app_constants.dart
 
 class AppConstants {
   // API Configuration
-  static const String apiBaseUrl = 'https://unila-aqi.onrender.com/api'; // For Android emulator
+  static const String apiBaseUrl = 'https://unila-aqi-1.onrender.com/api'; // For Android emulator
   
-  static const String socketUrl = 'https://unila-aqi.onrender.com'; // WebSocket URL
+  static const String socketUrl = 'https://unila-aqi-1.onrender.com'; // WebSocket URL
   
   // App Information
   static const String appName = 'UNILA Air Quality Index';
@@ -53,7 +53,7 @@ class AppConstants {
 }
 
 ================================================================================================================================================================================================
-C:\develop\UNILA-AQI\unila_aqi\lib\core\constants\assets.dart
+C:\Users\fatha\Develop\UNILA-AQI\unila_aqi\lib\core\constants\assets.dart
 
 class AppAssets {
   // Images
@@ -78,7 +78,7 @@ class AppAssets {
 }
 
 ================================================================================================================================================================================================
-C:\develop\UNILA-AQI\unila_aqi\lib\core\constants\colors.dart
+C:\Users\fatha\Develop\UNILA-AQI\unila_aqi\lib\core\constants\colors.dart
 
 import 'package:flutter/material.dart';
 
@@ -128,7 +128,7 @@ class AppColors {
 }
 
 ================================================================================================================================================================================================
-C:\develop\UNILA-AQI\unila_aqi\lib\core\constants\parameter_colors.dart
+C:\Users\fatha\Develop\UNILA-AQI\unila_aqi\lib\core\constants\parameter_colors.dart
 
 import 'package:flutter/material.dart';
 import 'colors.dart';
@@ -153,7 +153,7 @@ class ParameterColors {
 }
 
 ================================================================================================================================================================================================
-C:\develop\UNILA-AQI\unila_aqi\lib\core\services\api_service.dart
+C:\Users\fatha\Develop\UNILA-AQI\unila_aqi\lib\core\services\api_service.dart
 
 import 'dart:convert';
 import 'package:http/http.dart' as http;
@@ -560,7 +560,7 @@ class ApiService {
 
 
 ================================================================================================================================================================================================
-C:\develop\UNILA-AQI\unila_aqi\lib\core\services\auth_service.dart
+C:\Users\fatha\Develop\UNILA-AQI\unila_aqi\lib\core\services\auth_service.dart
 
 import 'package:shared_preferences/shared_preferences.dart';
 import 'api_service.dart';
@@ -666,7 +666,7 @@ class AuthService {
 }
 
 ================================================================================================================================================================================================
-C:\develop\UNILA-AQI\unila_aqi\lib\core\services\server_status_service.dart
+C:\Users\fatha\Develop\UNILA-AQI\unila_aqi\lib\core\services\server_status_service.dart
 
 import 'package:flutter/foundation.dart';
 import 'api_service.dart';
@@ -714,7 +714,7 @@ class ServerStatusService {
 }
 
 ================================================================================================================================================================================================
-C:\develop\UNILA-AQI\unila_aqi\lib\core\services\socket_service.dart
+C:\Users\fatha\Develop\UNILA-AQI\unila_aqi\lib\core\services\socket_service.dart
 
 import 'dart:async';
 
@@ -784,7 +784,7 @@ class SocketService {
 
       // Create new socket connection with optimized settings
       _socket = IO.io(
-        'https://unila-aqi.onrender.com', // Use localhost for emulator
+        'https://unila-aqi-1.onrender.com', // Use localhost for emulator
         IO.OptionBuilder()
           .setTransports(['websocket', 'polling']) // Prefer WebSocket
           .enableAutoConnect()
@@ -1295,7 +1295,7 @@ class SocketService {
 }
 
 ================================================================================================================================================================================================
-C:\develop\UNILA-AQI\unila_aqi\lib\core\services\storage_service.dart
+C:\Users\fatha\Develop\UNILA-AQI\unila_aqi\lib\core\services\storage_service.dart
 
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -1432,7 +1432,7 @@ class StorageService {
 }
 
 ================================================================================================================================================================================================
-C:\develop\UNILA-AQI\unila_aqi\lib\core\themes\app_theme.dart
+C:\Users\fatha\Develop\UNILA-AQI\unila_aqi\lib\core\themes\app_theme.dart
 
 import 'package:flutter/material.dart';
 import '../constants/colors.dart';
@@ -1655,7 +1655,7 @@ class AppTheme {
 }
 
 ================================================================================================================================================================================================
-C:\develop\UNILA-AQI\unila_aqi\lib\core\utils\date_formatter.dart
+C:\Users\fatha\Develop\UNILA-AQI\unila_aqi\lib\core\utils\date_formatter.dart
 
 import 'package:intl/intl.dart';
 
@@ -1693,7 +1693,7 @@ class DateFormatter {
 }
 
 ================================================================================================================================================================================================
-C:\develop\UNILA-AQI\unila_aqi\lib\core\utils\helpers.dart
+C:\Users\fatha\Develop\UNILA-AQI\unila_aqi\lib\core\utils\helpers.dart
 
 import 'dart:convert';
 import 'package:flutter/material.dart';
@@ -2432,7 +2432,7 @@ class Helpers {
 }
 
 ================================================================================================================================================================================================
-C:\develop\UNILA-AQI\unila_aqi\lib\core\utils\validators.dart
+C:\Users\fatha\Develop\UNILA-AQI\unila_aqi\lib\core\utils\validators.dart
 
 class Validators {
   static String? validateEmail(String? value) {
@@ -2525,7 +2525,7 @@ class Validators {
 }
 
 ================================================================================================================================================================================================
-C:\develop\UNILA-AQI\unila_aqi\lib\data\models\aqi_info.dart
+C:\Users\fatha\Develop\UNILA-AQI\unila_aqi\lib\data\models\aqi_info.dart
 
 import 'dart:ui';
 
@@ -2604,7 +2604,7 @@ class UnitInfo {
 }
 
 ================================================================================================================================================================================================
-C:\develop\UNILA-AQI\unila_aqi\lib\data\models\building.dart
+C:\Users\fatha\Develop\UNILA-AQI\unila_aqi\lib\data\models\building.dart
 
 class Building {
   final String id;
@@ -2655,7 +2655,7 @@ class Building {
 }
 
 ================================================================================================================================================================================================
-C:\develop\UNILA-AQI\unila_aqi\lib\data\models\iot_device.dart
+C:\Users\fatha\Develop\UNILA-AQI\unila_aqi\lib\data\models\iot_device.dart
 
 import 'package:flutter/material.dart';
 
@@ -2720,7 +2720,7 @@ class IoTDevice {
 }
 
 ================================================================================================================================================================================================
-C:\develop\UNILA-AQI\unila_aqi\lib\data\models\monthly_trend.dart
+C:\Users\fatha\Develop\UNILA-AQI\unila_aqi\lib\data\models\monthly_trend.dart
 
 class MonthlyTrendResponse {
   final int year;
@@ -2815,7 +2815,7 @@ class ParamStats {
 }
 
 ================================================================================================================================================================================================
-C:\develop\UNILA-AQI\unila_aqi\lib\data\models\room.dart
+C:\Users\fatha\Develop\UNILA-AQI\unila_aqi\lib\data\models\room.dart
 
 class Room {
   final String id;
@@ -2962,7 +2962,7 @@ class RoomData {
 }
 
 ================================================================================================================================================================================================
-C:\develop\UNILA-AQI\unila_aqi\lib\data\models\sensor_data.dart
+C:\Users\fatha\Develop\UNILA-AQI\unila_aqi\lib\data\models\sensor_data.dart
 
 class SensorData {
   final String id;
@@ -3065,7 +3065,7 @@ class SensorData {
 }
 
 ================================================================================================================================================================================================
-C:\develop\UNILA-AQI\unila_aqi\lib\data\models\user.dart
+C:\Users\fatha\Develop\UNILA-AQI\unila_aqi\lib\data\models\user.dart
 
 class User {
   final String id;
@@ -3114,7 +3114,7 @@ class User {
 }
 
 ================================================================================================================================================================================================
-C:\develop\UNILA-AQI\unila_aqi\lib\data\repositories\aqi_info_repository.dart
+C:\Users\fatha\Develop\UNILA-AQI\unila_aqi\lib\data\repositories\aqi_info_repository.dart
 
 import 'package:unila_aqi/core/constants/colors.dart';
 import 'package:unila_aqi/data/models/aqi_info.dart';
@@ -3283,7 +3283,7 @@ class AQIInfoRepository {
 }
 
 ================================================================================================================================================================================================
-C:\develop\UNILA-AQI\unila_aqi\lib\data\repositories\building_repository.dart
+C:\Users\fatha\Develop\UNILA-AQI\unila_aqi\lib\data\repositories\building_repository.dart
 
 // File: lib/data/repositories/building_repository.dart
 
@@ -3505,7 +3505,7 @@ class BuildingRepository {
 }
 
 ================================================================================================================================================================================================
-C:\develop\UNILA-AQI\unila_aqi\lib\data\repositories\history_repository.dart
+C:\Users\fatha\Develop\UNILA-AQI\unila_aqi\lib\data\repositories\history_repository.dart
 
 import 'dart:convert';
 import 'package:http/http.dart' as http;
@@ -3676,7 +3676,7 @@ class HistoryDataResponse {
 }
 
 ================================================================================================================================================================================================
-C:\develop\UNILA-AQI\unila_aqi\lib\data\repositories\iot_device_repository.dart
+C:\Users\fatha\Develop\UNILA-AQI\unila_aqi\lib\data\repositories\iot_device_repository.dart
 
 import 'dart:convert';
 import 'package:http/http.dart' as http;
@@ -3846,7 +3846,7 @@ class IoTDeviceRepository {
 }
 
 ================================================================================================================================================================================================
-C:\develop\UNILA-AQI\unila_aqi\lib\data\repositories\profile_repository.dart
+C:\Users\fatha\Develop\UNILA-AQI\unila_aqi\lib\data\repositories\profile_repository.dart
 
 import 'dart:convert';
 import 'package:http/http.dart' as http;
@@ -3945,7 +3945,7 @@ class ProfileRepository {
 }
 
 ================================================================================================================================================================================================
-C:\develop\UNILA-AQI\unila_aqi\lib\data\repositories\room_repository.dart
+C:\Users\fatha\Develop\UNILA-AQI\unila_aqi\lib\data\repositories\room_repository.dart
 
 import 'dart:convert';
 import 'package:http/http.dart' as http;
@@ -4145,7 +4145,7 @@ class RoomRepository {
 }
 
 ================================================================================================================================================================================================
-C:\develop\UNILA-AQI\unila_aqi\lib\presentation\pages\admin\building_management.dart
+C:\Users\fatha\Develop\UNILA-AQI\unila_aqi\lib\presentation\pages\admin\building_management.dart
 
 import 'package:flutter/material.dart';
 import '../../../data/repositories/building_repository.dart';
@@ -5017,7 +5017,7 @@ class _AddEditBuildingScreenState extends State<AddEditBuildingScreen> {
 }
 
 ================================================================================================================================================================================================
-C:\develop\UNILA-AQI\unila_aqi\lib\presentation\pages\admin\iot_management.dart
+C:\Users\fatha\Develop\UNILA-AQI\unila_aqi\lib\presentation\pages\admin\iot_management.dart
 
 import 'package:flutter/material.dart';
 import '../../../data/repositories/iot_device_repository.dart';
@@ -5984,7 +5984,7 @@ class _AddEditIoTDeviceScreenState extends State<AddEditIoTDeviceScreen> {
 }
 
 ================================================================================================================================================================================================
-C:\develop\UNILA-AQI\unila_aqi\lib\presentation\pages\admin\profile_management.dart
+C:\Users\fatha\Develop\UNILA-AQI\unila_aqi\lib\presentation\pages\admin\profile_management.dart
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -6298,10 +6298,10 @@ class _ProfileManagementScreenState extends State<ProfileManagementScreen> {
             _buildSummarySection(),
             const SizedBox(height: 16),
             _buildActionSection(),
-            const SizedBox(height: 24),
+            const SizedBox(height: 32),
             _buildFooter(),
-            const SizedBox(height: 24),
-          ],
+            const SizedBox(height: 48),   
+        ],
         ),
       ),
     );
@@ -7192,7 +7192,7 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
 }
 
 ================================================================================================================================================================================================
-C:\develop\UNILA-AQI\unila_aqi\lib\presentation\pages\admin\room_management.dart
+C:\Users\fatha\Develop\UNILA-AQI\unila_aqi\lib\presentation\pages\admin\room_management.dart
 
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -8504,7 +8504,7 @@ class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
 }
 
 ================================================================================================================================================================================================
-C:\develop\UNILA-AQI\unila_aqi\lib\presentation\pages\auth\admin_login_screen.dart
+C:\Users\fatha\Develop\UNILA-AQI\unila_aqi\lib\presentation\pages\auth\admin_login_screen.dart
 
 import 'package:flutter/material.dart';
 import '../../../core/constants/colors.dart';
@@ -8697,7 +8697,7 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
 }
 
 ================================================================================================================================================================================================
-C:\develop\UNILA-AQI\unila_aqi\lib\presentation\pages\auth\forgot_password_screen.dart
+C:\Users\fatha\Develop\UNILA-AQI\unila_aqi\lib\presentation\pages\auth\forgot_password_screen.dart
 
 import 'package:flutter/material.dart';
 import '../../../core/constants/colors.dart';
@@ -8853,7 +8853,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
 }
 
 ================================================================================================================================================================================================
-C:\develop\UNILA-AQI\unila_aqi\lib\presentation\pages\auth\mode_selection_screen.dart
+C:\Users\fatha\Develop\UNILA-AQI\unila_aqi\lib\presentation\pages\auth\mode_selection_screen.dart
 
 import 'package:flutter/material.dart';
 import 'package:unila_aqi/presentation/pages/auth/admin_login_screen.dart';
@@ -8998,7 +8998,7 @@ class ModeSelectionScreen extends StatelessWidget {
 }
 
 ================================================================================================================================================================================================
-C:\develop\UNILA-AQI\unila_aqi\lib\presentation\pages\auth\reset_password_screen.dart
+C:\Users\fatha\Develop\UNILA-AQI\unila_aqi\lib\presentation\pages\auth\reset_password_screen.dart
 
 import 'package:flutter/material.dart';
 import '../../../core/constants/colors.dart';
@@ -9494,7 +9494,7 @@ void dispose() {
 }
 
 ================================================================================================================================================================================================
-C:\develop\UNILA-AQI\unila_aqi\lib\presentation\pages\dashboard\dashboard_screen.dart
+C:\Users\fatha\Develop\UNILA-AQI\unila_aqi\lib\presentation\pages\dashboard\dashboard_screen.dart
 
 import 'dart:async';
 
@@ -10167,7 +10167,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 }
 
 ================================================================================================================================================================================================
-C:\develop\UNILA-AQI\unila_aqi\lib\presentation\pages\info\aqi_info_screen.dart
+C:\Users\fatha\Develop\UNILA-AQI\unila_aqi\lib\presentation\pages\info\aqi_info_screen.dart
 
 import 'package:flutter/material.dart';
 import '../../../data/repositories/aqi_info_repository.dart';
@@ -12090,7 +12090,7 @@ class _ExpandableSectionState extends State<_ExpandableSection>
 }
 
 ================================================================================================================================================================================================
-C:\develop\UNILA-AQI\unila_aqi\lib\presentation\pages\room\room_detail_screen.dart
+C:\Users\fatha\Develop\UNILA-AQI\unila_aqi\lib\presentation\pages\room\room_detail_screen.dart
 
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -13098,8 +13098,9 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
                 ],
               ),
             ),
-            const SizedBox(height: 16),
+             const SizedBox(height: 16),
             MonthlyTrendChart(roomId: _currentRoomData.id),
+            const SizedBox(height: 16),  
           ],
         ),
       ),
@@ -13123,7 +13124,7 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
 }
 
 ================================================================================================================================================================================================
-C:\develop\UNILA-AQI\unila_aqi\lib\presentation\providers\auth_provider.dart
+C:\Users\fatha\Develop\UNILA-AQI\unila_aqi\lib\presentation\providers\auth_provider.dart
 
 import 'package:flutter/material.dart';
 import '../../core/services/auth_service.dart';
@@ -13218,7 +13219,7 @@ class AuthProvider with ChangeNotifier {
 }
 
 ================================================================================================================================================================================================
-C:\develop\UNILA-AQI\unila_aqi\lib\presentation\providers\building_provider.dart
+C:\Users\fatha\Develop\UNILA-AQI\unila_aqi\lib\presentation\providers\building_provider.dart
 
 import 'package:flutter/material.dart';
 import '../../data/models/building.dart';
@@ -13358,7 +13359,7 @@ class BuildingProvider with ChangeNotifier {
 }
 
 ================================================================================================================================================================================================
-C:\develop\UNILA-AQI\unila_aqi\lib\presentation\providers\room_provider.dart
+C:\Users\fatha\Develop\UNILA-AQI\unila_aqi\lib\presentation\providers\room_provider.dart
 
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -13889,7 +13890,7 @@ class RoomProvider with ChangeNotifier {
 }
 
 ================================================================================================================================================================================================
-C:\develop\UNILA-AQI\unila_aqi\lib\presentation\widgets\chart\history_chart.dart
+C:\Users\fatha\Develop\UNILA-AQI\unila_aqi\lib\presentation\widgets\chart\history_chart.dart
 
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
@@ -14622,7 +14623,7 @@ class HistoryChartState extends State<HistoryChart> {
 }
 
 ================================================================================================================================================================================================
-C:\develop\UNILA-AQI\unila_aqi\lib\presentation\widgets\chart\monthly_trend_chart.dart
+C:\Users\fatha\Develop\UNILA-AQI\unila_aqi\lib\presentation\widgets\chart\monthly_trend_chart.dart
 
 import 'package:flutter/material.dart';
 import 'package:unila_aqi/core/constants/colors.dart';
@@ -15231,7 +15232,7 @@ class _MonthlyBarChart extends StatelessWidget {
 }
 
 ================================================================================================================================================================================================
-C:\develop\UNILA-AQI\unila_aqi\lib\presentation\widgets\common\building_section.dart
+C:\Users\fatha\Develop\UNILA-AQI\unila_aqi\lib\presentation\widgets\common\building_section.dart
 
 import 'package:flutter/material.dart';
 import '../../../data/models/room.dart';
@@ -15337,7 +15338,7 @@ Container(
 }
 
 ================================================================================================================================================================================================
-C:\develop\UNILA-AQI\unila_aqi\lib\presentation\widgets\common\drawer.dart
+C:\Users\fatha\Develop\UNILA-AQI\unila_aqi\lib\presentation\widgets\common\drawer.dart
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -15540,12 +15541,19 @@ class AppDrawer extends StatelessWidget {
           ),
           // Version Info
           Padding(
-            padding: const EdgeInsets.all(16),
-            child: Text(
-              'v 1.0.0',
-              style: TextStyle(
-                fontSize: 12,
-                color: Colors.grey[600],
+            padding: const EdgeInsets.only(
+              top: 8,
+              bottom: 32,
+              left: 16,
+              right: 16,
+            ),
+            child: Center(
+              child: Text(
+                'v 1.0.0',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey[600],
+                ),
               ),
             ),
           ),
@@ -15568,12 +15576,13 @@ class AppDrawer extends StatelessWidget {
         ),
       ),
       onTap: onTap,
+      enableFeedback: false,
     );
   }
 }
 
 ================================================================================================================================================================================================
-C:\develop\UNILA-AQI\unila_aqi\lib\presentation\widgets\common\room_card.dart
+C:\Users\fatha\Develop\UNILA-AQI\unila_aqi\lib\presentation\widgets\common\room_card.dart
 
 import 'package:flutter/material.dart';
 import '../../../data/models/room.dart';
@@ -15990,7 +15999,8 @@ class RoomCard extends StatelessWidget {
 }
 
 ================================================================================================================================================================================================
-C:\develop\UNILA-AQI\unila_aqi\lib\presentation\widgets\common\server_status_indicator.dart
+C:\Users\fatha\Develop\UNILA-AQI\unila_aqi\lib\presentation\widgets\common\server_status_indicator.dart
+
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../../core/services/server_status_service.dart';
@@ -16071,9 +16081,8 @@ class _ServerStatusIndicatorState extends State<ServerStatusIndicator> {
   }
 }
 
-
 ================================================================================================================================================================================================
-C:\develop\UNILA-AQI\unila_aqi\lib\main.dart
+C:\Users\fatha\Develop\UNILA-AQI\unila_aqi\lib\main.dart
 
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -16166,7 +16175,9 @@ class MyApp extends StatelessWidget {
 }
 
 ================================================================================================================================================================================================
-C:\develop\UNILA-AQI\unila_aqi\pubspec.yaml
+C:\Users\fatha\Develop\UNILA-AQI\unila_aqi\pubspec.yaml
+
+# File: pubspec.yaml
 
 name: unila_aqi
 description: UNILA Air Quality Index Monitoring System
@@ -16178,7 +16189,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  flutter_localizations:  
+  flutter_localizations:
     sdk: flutter
   http: ^1.2.0
   provider: ^6.1.1
@@ -16198,6 +16209,8 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^3.0.0
+  flutter_native_splash: ^2.4.1
+  flutter_launcher_icons: ^0.14.1
 
 flutter:
   uses-material-design: true
@@ -16216,11 +16229,71 @@ flutter:
         - asset: assets/fonts/Inter-Bold.ttf
           weight: 700
 
-================================================================================================================================================================================================
+# ============================================================
+# LAUNCHER ICON CONFIG
+# ------------------------------------------------------------
+# Generate icon aplikasi (Android + iOS) dari icon_unila.png.
+#
+# Setelah menambahkan blok ini, jalankan:
+#   flutter pub get
+#   dart run flutter_launcher_icons
+#   flutter clean
+#   flutter run
+#
+# CATATAN:
+#   - icon_unila.png WAJIB 1024x1024 px, background putih solid
+#   - remove_alpha_ios: true supaya App Store tidak menolak icon
+#   - adaptive_icon_* untuk Android 8.0+ (bentuk circle/squircle)
+# ============================================================
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/images/icon_unila.png"
+  remove_alpha_ios: true
+  adaptive_icon_background: "#FFFFFF"
+  adaptive_icon_foreground: "assets/images/icon_unila.png"
+  min_sdk_android: 21
+  web:
+    generate: false
+  windows:
+    generate: false
+  macos:
+    generate: false
 
+# ============================================================
+# NATIVE SPLASH SCREEN CONFIG
+# ------------------------------------------------------------
+# Menghilangkan layar hitam sebelum splash Flutter muncul.
+#
+# Setelah menambahkan blok ini, jalankan:
+#   flutter pub get
+#   dart run flutter_native_splash:create
+#   flutter clean
+#   flutter run
+# ============================================================
+flutter_native_splash:
+  color: "#FFFFFF"
+  image: assets/images/splash_logo.png
+
+  # Konfigurasi Android 12+ (berlaku untuk light & dark mode OS)
+  android_12:
+    color: "#FFFFFF"
+    image: assets/images/splash_logo.png
+    icon_background_color: "#FFFFFF"
+
+  # Dark mode (untuk Android < 12 & iOS)
+  color_dark: "#FFFFFF"
+  image_dark: assets/images/splash_logo.png
+
+  fullscreen: false
+  android: true
+  ios: true
+  web: false
+
+================================================================================================================================================================================================
 BACKEND:
 
-C:\develop\UNILA-AQI\unila-aqi-backend\src\controllers\authController.js
+C:\Users\fatha\Develop\UNILA-AQI\unila-aqi-backend\src\controllers\authController.js
 
 const User = require('../models/User');
 const { generateToken, hashPassword, comparePassword } = require('../utils/auth');
@@ -16928,7 +17001,7 @@ module.exports = {
 };
 
 ================================================================================================================================================================================================
-C:\develop\UNILA-AQI\unila-aqi-backend\src\middleware\authMiddleware.js
+C:\Users\fatha\Develop\UNILA-AQI\unila-aqi-backend\src\middleware\authMiddleware.js
 
 const { verifyToken } = require('../utils/auth');
 
@@ -16978,7 +17051,7 @@ const adminMiddleware = (req, res, next) => {
 module.exports = { authMiddleware, adminMiddleware };
 
 ================================================================================================================================================================================================
-C:\develop\UNILA-AQI\unila-aqi-backend\src\models\Building.js
+C:\Users\fatha\Develop\UNILA-AQI\unila-aqi-backend\src\models\Building.js
 
 const mongoose = require('mongoose');
 
@@ -17028,7 +17101,7 @@ const buildingSchema = new mongoose.Schema({
 module.exports = mongoose.model('Building', buildingSchema);
 
 ================================================================================================================================================================================================
-C:\develop\UNILA-AQI\unila-aqi-backend\src\models\IoTDevice.js
+C:\Users\fatha\Develop\UNILA-AQI\unila-aqi-backend\src\models\IoTDevice.js
 
 const mongoose = require('mongoose');
 
@@ -17068,7 +17141,7 @@ const iotDeviceSchema = new mongoose.Schema({
 module.exports = mongoose.model('IoTDevice', iotDeviceSchema);
 
 ================================================================================================================================================================================================
-C:\develop\UNILA-AQI\unila-aqi-backend\src\models\Room.js
+C:\Users\fatha\Develop\UNILA-AQI\unila-aqi-backend\src\models\Room.js
 
 const mongoose = require('mongoose');
 
@@ -17132,7 +17205,7 @@ const roomSchema = new mongoose.Schema({
 module.exports = mongoose.model('Room', roomSchema);
 
 ================================================================================================================================================================================================
-C:\develop\UNILA-AQI\unila-aqi-backend\src\models\SensorData.js
+C:\Users\fatha\Develop\UNILA-AQI\unila-aqi-backend\src\models\SensorData.js
 
 const mongoose = require('mongoose');
 
@@ -17183,7 +17256,7 @@ sensorDataSchema.index({ roomId: 1, timestamp: 1, isAnomaly: 1 });
 module.exports = mongoose.model('SensorData', sensorDataSchema);
 
 ================================================================================================================================================================================================
-C:\develop\UNILA-AQI\unila-aqi-backend\src\models\User.js
+C:\Users\fatha\Develop\UNILA-AQI\unila-aqi-backend\src\models\User.js
 
 const mongoose = require('mongoose');
 
@@ -17239,7 +17312,7 @@ emailChangeCodeExpiry: {
 module.exports = mongoose.model('User', userSchema);
 
 ================================================================================================================================================================================================
-C:\develop\UNILA-AQI\unila-aqi-backend\src\routes\authRoutes.js
+C:\Users\fatha\Develop\UNILA-AQI\unila-aqi-backend\src\routes\authRoutes.js
 
 const express = require('express');
 const router = express.Router();
@@ -17279,7 +17352,7 @@ router.post('/request-email-change', authMiddleware, requestEmailChangeCode);
 module.exports = router;
 
 ================================================================================================================================================================================================
-C:\develop\UNILA-AQI\unila-aqi-backend\src\routes\buildingRoutes.js
+C:\Users\fatha\Develop\UNILA-AQI\unila-aqi-backend\src\routes\buildingRoutes.js
 
 const express = require('express');
 const router = express.Router();
@@ -17519,7 +17592,7 @@ router.delete('/:id', authMiddleware, adminMiddleware, async (req, res) => {
 module.exports = router;
 
 ================================================================================================================================================================================================
-C:\develop\UNILA-AQI\unila-aqi-backend\src\routes\iotDeviceRoutes.js
+C:\Users\fatha\Develop\UNILA-AQI\unila-aqi-backend\src\routes\iotDeviceRoutes.js
 
 const express = require('express');
 const router = express.Router();
@@ -17840,7 +17913,7 @@ router.get('/service/status', authMiddleware, async (req, res) => {
 module.exports = router;
 
 ================================================================================================================================================================================================
-C:\develop\UNILA-AQI\unila-aqi-backend\src\routes\roomRoutes.js
+C:\Users\fatha\Develop\UNILA-AQI\unila-aqi-backend\src\routes\roomRoutes.js
 
 const express = require('express');
 const router = express.Router();
@@ -18628,7 +18701,7 @@ router.post('/:id/sync-building', authMiddleware, adminMiddleware, async (req, r
 module.exports = router;
 
 ================================================================================================================================================================================================
-C:\develop\UNILA-AQI\unila-aqi-backend\src\routes\seedRoutes.js
+C:\Users\fatha\Develop\UNILA-AQI\unila-aqi-backend\src\routes\seedRoutes.js
 
 const express = require('express');
 const router = express.Router();
@@ -18669,7 +18742,7 @@ router.post('/clear', authMiddleware, adminMiddleware, async (req, res) => {
 module.exports = router;
 
 ================================================================================================================================================================================================
-C:\develop\UNILA-AQI\unila-aqi-backend\src\routes\sensorDataRoutes.js
+C:\Users\fatha\Develop\UNILA-AQI\unila-aqi-backend\src\routes\sensorDataRoutes.js
 
 const express = require('express');
 const router = express.Router();
@@ -19138,7 +19211,7 @@ router.get('/:roomId/monthly', async (req, res) => {
 module.exports = router;
 
 ================================================================================================================================================================================================
-C:\develop\UNILA-AQI\unila-aqi-backend\src\routes\testRoutes.js
+C:\Users\fatha\Develop\UNILA-AQI\unila-aqi-backend\src\routes\testRoutes.js
 
 const express = require('express');
 const router = express.Router();
@@ -19215,7 +19288,7 @@ router.get('/rooms', async (req, res) => {
 module.exports = router;
 
 ================================================================================================================================================================================================
-C:\develop\UNILA-AQI\unila-aqi-backend\src\services\iotService.js
+C:\Users\fatha\Develop\UNILA-AQI\unila-aqi-backend\src\services\iotService.js
 
 const axios = require('axios');
 const cron = require('node-cron');
@@ -19267,50 +19340,61 @@ class IoTService {
   }
 
   async pollAllIoTDevices() {
-    // ✅ Serialize: hanya satu service yang mencetak log pada satu waktu.
-    const { runExclusive } = require('../utils/serviceLock');
+  const { runExclusive } = require('../utils/serviceLock');
 
-    return runExclusive(async () => {
-      try {
-        const devices = await IoTDevice.find({});
+  return runExclusive(async () => {
+    try {
+      const devices = await IoTDevice.find({});
 
-        if (devices.length === 0) {
-          console.log('ℹ️ No IoT devices to poll');
-          return;
+      if (devices.length === 0) {
+        console.log('ℹ️ No IoT devices to poll');
+        return;
+      }
+
+      console.log(`🔄 Polling ${devices.length} IoT devices...`);
+
+      // ✅ Poll paralel, TAPI tanpa logging border di dalam pollDevice.
+      // pollDevice hanya mengembalikan result + error message.
+      const results = await Promise.allSettled(
+        devices.map(async (device) => {
+          try {
+            const res = await this.pollDevice(device);
+            return { ...res, deviceName: device.name };
+          } catch (error) {
+            return { success: false, deviceName: device.name, error: error.message };
+          }
+        })
+      );
+
+      // ✅ Log error SERIAL setelah semua polling selesai —
+      // tidak ada lagi border berselang-seling.
+      let successfulPolls = 0;
+        for (const r of results) {
+          const val = r.status === 'fulfilled' ? r.value : { success: false, deviceName: 'unknown', error: r.reason?.message };
+          if (val.success) {
+            successfulPolls++;
+          } else {
+            console.error(BORDER_TOP);
+            console.error(`❌ Error polling device ${val.deviceName}: ${val.error}`);
+            console.error(BORDER_BOTTOM);
+          }
         }
 
-        // 🔄 Header di dalam lock → selalu tercetak utuh sebelum
-        // log room/device dari service lain masuk.
-        console.log(`🔄 Polling ${devices.length} IoT devices...`);
-
-        const pollPromises = devices.map(device =>
-          this.pollDevice(device).catch(error => {
-            console.error(`❌ Error polling device ${device.name}:`, error.message);
-            return null;
-          })
-        );
-
-        const results = await Promise.allSettled(pollPromises);
-
-        const successfulPolls = results.filter(
-          r => r.status === 'fulfilled' && r.value && r.value.success
-        ).length;
-
-        console.log(`\n✅ IoT polling completed: ${successfulPolls}/${devices.length} successful`);
-        console.log(`🕒 Updated at ${new Date().toLocaleTimeString()}`);
-        console.log('\n=====================================================================================\n');
-      } catch (error) {
-        console.error('❌ Error in pollAllIoTDevices:', error.message);
-      }
-    });
-  }
+      console.log(`\n✅ IoT polling completed: ${successfulPolls}/${devices.length} successful`);
+      console.log(`🕒 Updated at ${new Date().toLocaleTimeString()}`);
+      console.log('\n=====================================================================================\n');
+    } catch (error) {
+      console.error('❌ Error in pollAllIoTDevices:', error.message);
+    }
+  });
+}
 
   async pollDevice(device) {
-    try {
-      console.log(`📡 Polling device: ${device.name} (${device.apiEndpoint})`);
-      const response = await axios.get(device.apiEndpoint, { timeout: 5000 });
+  try {
+    console.log(`📡 Polling device: ${device.name} (${device.apiEndpoint})`);
+    const response = await axios.get(device.apiEndpoint, { timeout: 5000 });
 
-      if (response.data?.success === true) {
+    if (response.data?.success === true) {
         const iotData = response.data.data;
 
         if (!this.isValidIoTData(iotData)) {
@@ -19340,21 +19424,21 @@ class IoTService {
         return { success: true, changed: hasChanged };
       }
 
-      // Device tidak mengembalikan success
-      console.log(BORDER_TOP);
-      console.error(`❌ Device ${device.name} did not return success`);
-      console.log(BORDER_BOTTOM);
-      return { success: false, error: 'Device did not return success' };
-    } catch (error) {
-      device.status = 'offline';
-      await device.save();
-      // ✅ FIX: log error polling dibungkus border
-      console.log(BORDER_TOP);
-      console.error(`❌ Error polling device ${device.name}:`, error.message);
-      console.log(BORDER_BOTTOM);
-      return { success: false, error: error.message };
+      return {
+        success: false,
+        deviceName: device.name,
+        error: 'Device did not return success',
+      };
+      } catch (error) {
+        device.status = 'offline';
+        await device.save().catch(() => {});
+        return {
+          success: false,
+          deviceName: device.name,
+          error: error.message,
+        };
+      }
     }
-  }
 
   async checkDeviceStatus(devices) {
     if (!devices || devices.length === 0) return [];
@@ -19871,7 +19955,7 @@ const iotService = new IoTService();
 module.exports = iotService;
 
 ================================================================================================================================================================================================
-C:\develop\UNILA-AQI\unila-aqi-backend\src\services\simulationService.js
+C:\Users\fatha\Develop\UNILA-AQI\unila-aqi-backend\src\services\simulationService.js
 
 const cron = require('node-cron');
 const Room = require('../models/Room');
@@ -20187,7 +20271,7 @@ const simulationService = new SimulationService();
 module.exports = simulationService;
 
 ================================================================================================================================================================================================
-C:\develop\UNILA-AQI\unila-aqi-backend\src\utils\__tests__\aqiCalculator.test.js
+C:\Users\fatha\Develop\UNILA-AQI\unila-aqi-backend\src\utils\__tests__\aqiCalculator.test.js
 
 /**
  * ============================================================================
@@ -20530,7 +20614,7 @@ describe('getAQICategory — batas kategori sesuai PP 22/2021', () => {
 });
 
 ================================================================================================================================================================================================
-C:\develop\UNILA-AQI\unila-aqi-backend\src\utils\aqiCalculator.js
+C:\Users\fatha\Develop\UNILA-AQI\unila-aqi-backend\src\utils\aqiCalculator.js
 
 /**
  * ISPU Calculator — PP No. 22 Tahun 2021
@@ -20747,7 +20831,7 @@ module.exports = {
 };
 
 ================================================================================================================================================================================================
-C:\develop\UNILA-AQI\unila-aqi-backend\src\utils\auth.js
+C:\Users\fatha\Develop\UNILA-AQI\unila-aqi-backend\src\utils\auth.js
 
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
@@ -20789,7 +20873,7 @@ module.exports = {
 };
 
 ================================================================================================================================================================================================
-C:\develop\UNILA-AQI\unila-aqi-backend\src\utils\dataGenerator.js
+C:\Users\fatha\Develop\UNILA-AQI\unila-aqi-backend\src\utils\dataGenerator.js
 
 const { calculateAQI } = require('./aqiCalculator');
 
@@ -20994,17 +21078,17 @@ module.exports = {
 };
 
 ================================================================================================================================================================================================
-C:\develop\UNILA-AQI\unila-aqi-backend\src\utils\emailService.js
+C:\Users\fatha\Develop\UNILA-AQI\unila-aqi-backend\src\utils\emailService.js
 
 const nodemailer = require('nodemailer');
 
 // ============================================================
-// KONFIGURASI EMAIL (SENDCOREX / EMAILSBIT SMTP)
+// KONFIGURASI EMAIL (SENDCOREX)
 // ============================================================
 const SMTP_HOST = process.env.SMTP_HOST || 'smtp.emailsbit.com';
 const SMTP_PORT = parseInt(process.env.SMTP_PORT || '588', 10);
 const SMTP_USER = process.env.SMTP_USERNAME;
-const SMTP_PASS = process.env.SMTP_PASSWORD; // Diambil dari Environment Render
+const SMTP_PASS = process.env.SMTP_PASSWORD; 
 const SMTP_FROM = process.env.SMTP_FROM || 'unilaaqi@inboxtaken.com';
 
 if (!SMTP_USER || !SMTP_PASS) {
@@ -21012,6 +21096,9 @@ if (!SMTP_USER || !SMTP_PASS) {
   process.exit(1);
 }
 
+// ============================================================
+// SETUP TRANSPORTER
+// ============================================================
 const transporter = nodemailer.createTransport({
   host: SMTP_HOST,
   port: SMTP_PORT,
@@ -21022,21 +21109,37 @@ const transporter = nodemailer.createTransport({
     pass: SMTP_PASS,
   },
   connectionTimeout: 15000, // Toleransi 15 detik agar tidak langsung timeout
+  greetingTimeout: 10000,
+  socketTimeout: 20000,
+  tls: {
+    rejectUnauthorized: false,
+    minVersion: 'TLSv1.2'
+  },
+  // AKTIFKAN LOG UNTUK DEBUGGING DI RENDER LOGS
+  logger: true, 
+  debug: true   
 });
 
 // Verifikasi koneksi saat server menyala
-transporter.verify((error) => {
+transporter.verify((error, success) => {
   if (error) {
-    console.error('⚠️  SMTP transporter verification failed:', error.message);
+    console.error('⚠️  SMTP transporter verification failed!');
+    console.error('Detail Error:', error.message);
+    if (error.code) console.error('Error Code:', error.code);
   } else {
     console.log('✅ SMTP transporter ready (EmailSbit/Sendcorex)');
   }
 });
 
+// ============================================================
+// HELPER FUNCTIONS
+// ============================================================
+
 const generateResetCode = () => {
   return Math.floor(100000 + Math.random() * 900000).toString();
 };
 
+// HTML Template untuk Reset Password
 const sendResetCodeEmail = async (toEmail, code, username) => {
   const mailOptions = {
     from: `"Unila AQI" <${SMTP_FROM}>`, 
@@ -21055,6 +21158,7 @@ const sendResetCodeEmail = async (toEmail, code, username) => {
             ${code}
           </div>
           <p style="color: #6C757D; font-size: 14px;">Kode ini berlaku selama <strong>15 menit</strong>.</p>
+          <p style="color: #6C757D; font-size: 14px;">Jika Anda tidak merasa melakukan permintaan reset password, abaikan email ini.</p>
         </div>
       </div>
     `,
@@ -21063,6 +21167,7 @@ const sendResetCodeEmail = async (toEmail, code, username) => {
   return await transporter.sendMail(mailOptions);
 };
 
+// HTML Template untuk Perubahan Email
 const sendEmailChangeCodeEmail = async (toEmail, code, username) => {
   const mailOptions = {
     from: `"Unila AQI" <${SMTP_FROM}>`,
@@ -21081,6 +21186,7 @@ const sendEmailChangeCodeEmail = async (toEmail, code, username) => {
             ${code}
           </div>
           <p style="color: #6C757D; font-size: 14px;">Kode ini berlaku selama <strong>15 menit</strong>.</p>
+          <p style="color: #6C757D; font-size: 14px;">Jika Anda tidak merasa melakukan perubahan email, segera hubungi administrator.</p>
         </div>
       </div>
     `,
@@ -21096,7 +21202,7 @@ module.exports = {
 };
 
 ================================================================================================================================================================================================
-C:\develop\UNILA-AQI\unila-aqi-backend\src\utils\seedData.js
+C:\Users\fatha\Develop\UNILA-AQI\unila-aqi-backend\src\utils\seedData.js
 
 const Building = require('../models/Building');
 const Room = require('../models/Room');
@@ -21283,7 +21389,7 @@ module.exports = {
 };
 
 ================================================================================================================================================================================================
-C:\develop\UNILA-AQI\unila-aqi-backend\src\utils\serviceLock.js
+C:\Users\fatha\Develop\UNILA-AQI\unila-aqi-backend\src\utils\serviceLock.js
 
 /**
  * Service lock — memastikan hanya SATU siklus service
@@ -21313,7 +21419,7 @@ function runExclusive(fn) {
 module.exports = { runExclusive };
 
 ================================================================================================================================================================================================
-C:\develop\UNILA-AQI\unila-aqi-backend\src\app.js
+C:\Users\fatha\Develop\UNILA-AQI\unila-aqi-backend\src\app.js
 
 const mongoose = require('mongoose');
 const express = require('express');
@@ -21786,266 +21892,7 @@ process.on('uncaughtException', (err) => {
 });
 
 ================================================================================================================================================================================================
-C:\develop\UNILA-AQI\unila-aqi-backend\src\checkDatabase.js
-
-const mongoose = require('mongoose');
-require('dotenv').config();
-
-async function checkDatabase() {
-  try {
-    console.log('🔍 Checking MongoDB Atlas Connection...');
-    
-    // Check if MONGODB_URI is set
-    if (!process.env.MONGODB_URI) {
-      throw new Error('MONGODB_URI is not set in environment variables');
-    }
-    
-    // Mask password for logging (before connection attempt)
-    const uri = process.env.MONGODB_URI;
-    const maskedUri = uri.replace(/:[^:@]*@/, ':****@');
-    console.log(`Using connection string: ${maskedUri}`);
-    
-    // Connect with timeout
-    await mongoose.connect(process.env.MONGODB_URI, {
-      serverSelectionTimeoutMS: 10000, // 10 seconds timeout
-      socketTimeoutMS: 45000, // 45 seconds socket timeout
-    });
-    
-    console.log('✅ Connected to MongoDB Atlas');
-    console.log(`📍 Host: ${mongoose.connection.host}`);
-    console.log(`📊 Database: ${mongoose.connection.db.databaseName}`);
-    console.log(`📡 State: ${mongoose.connection.readyState === 1 ? 'Connected' : 'Disconnected'}`);
-    
-    // List all collections
-    console.log('\n📚 Collections:');
-    const collections = await mongoose.connection.db.listCollections().toArray();
-    
-    if (collections.length === 0) {
-      console.log('   No collections found in database');
-    } else {
-      collections.forEach(col => {
-        console.log(`   - ${col.name}`);
-      });
-    }
-    
-    // Count documents in each collection (including dynamically found ones)
-    console.log('\n📊 Document Counts:');
-    
-    // Use the actual collection names we found, or fall back to expected ones
-    const collectionNames = collections.length > 0 
-      ? collections.map(col => col.name)
-      : ['buildings', 'rooms', 'users', 'iotdevices', 'sensordatas'];
-    
-    for (const colName of collectionNames) {
-      try {
-        const count = await mongoose.connection.db.collection(colName).countDocuments();
-        console.log(`   ${colName}: ${count} documents`);
-      } catch (err) {
-        if (err.codeName === 'NamespaceNotFound') {
-          console.log(`   ${colName}: Collection doesn't exist`);
-        } else {
-          console.log(`   ${colName}: Error - ${err.message}`);
-        }
-      }
-    }
-    
-    // Additional info with safer version checking
-    console.log('\n🔧 Additional Info:');
-    console.log(`   Mongoose version: ${mongoose.version}`);
-    
-    // Safer way to get MongoDB driver version
-    try {
-      const client = mongoose.connection.getClient();
-      let driverVersion = 'Unknown';
-      
-      // Try different ways to get driver version
-      if (client && client.options && client.options.metadata && client.options.metadata.driver) {
-        driverVersion = client.options.metadata.driver.version;
-      } else if (client && client.options && client.options.driverInfo) {
-        driverVersion = client.options.driverInfo.version || 'Available in driverInfo';
-      } else if (client && client.topology && client.topology.s && client.topology.s.options) {
-        driverVersion = client.topology.s.options.metadata?.driver?.version || 'Available in topology';
-      }
-      
-      console.log(`   MongoDB driver version: ${driverVersion}`);
-    } catch (driverErr) {
-      console.log(`   MongoDB driver version: Could not retrieve (${driverErr.message})`);
-    }
-    
-    // Get server info
-    try {
-      const serverStatus = await mongoose.connection.db.admin().serverStatus();
-      console.log(`   MongoDB server version: ${serverStatus.version}`);
-      console.log(`   MongoDB storage engine: ${serverStatus.storageEngine?.name || 'Unknown'}`);
-    } catch (statusErr) {
-      console.log(`   MongoDB server info: Could not retrieve (${statusErr.message})`);
-    }
-    
-    // Close connection gracefully
-    await mongoose.disconnect();
-    console.log('\n🔌 Disconnected from MongoDB');
-    
-    process.exit(0);
-  } catch (error) {
-    console.error('\n❌ Connection Error:', error.message);
-    
-    // More detailed error analysis
-    if (error.name === 'MongooseServerSelectionError') {
-      console.error('   This is a connection error. Possible causes:');
-      console.error('   - Network connectivity issues');
-      console.error('   - Incorrect connection string');
-      console.error('   - IP not whitelisted in Atlas');
-      console.error('   - Database cluster is paused or down');
-    } else if (error.name === 'MongooseError') {
-      console.error('   Mongoose-specific error occurred');
-    }
-    
-    console.error('\n🔧 Debug Information:');
-    console.error(`   Error name: ${error.name}`);
-    console.error(`   Error code: ${error.code || 'N/A'}`);
-    
-    // Check if it's an authentication error
-    if (error.message.includes('authentication')) {
-      console.error('   Authentication failed. Check username/password in connection string.');
-    }
-    
-    // Check if it's a DNS error
-    if (error.message.includes('getaddrinfo') || error.message.includes('ENOTFOUND')) {
-      console.error('   DNS resolution failed. Check the hostname in your connection string.');
-    }
-    
-    // Try to parse the connection string for debugging
-    try {
-      const uri = process.env.MONGODB_URI || '';
-      const match = uri.match(/mongodb\+srv:\/\/([^:]+):[^@]+@([^/]+)\/([^?]+)/);
-      if (match) {
-        console.error('\n📋 Connection String Analysis:');
-        console.error(`   Username: ${match[1]}`);
-        console.error(`   Cluster: ${match[2]}`);
-        console.error(`   Database: ${match[3]}`);
-      }
-    } catch (parseErr) {
-      // Ignore parse errors
-    }
-    
-    process.exit(1);
-  }
-}
-
-// Handle script termination
-process.on('SIGINT', async () => {
-  console.log('\n\n⚠️  Script interrupted by user');
-  try {
-    if (mongoose.connection.readyState === 1) {
-      await mongoose.disconnect();
-      console.log('🔌 Disconnected from MongoDB');
-    }
-  } catch (err) {
-    console.error('Error during disconnect:', err.message);
-  }
-  process.exit(0);
-});
-
-checkDatabase();
-
-================================================================================================================================================================================================
-C:\develop\UNILA-AQI\unila-aqi-backend\src\generateSampleData.js
-
-// File: src/generateSampleData.js
-const mongoose = require('mongoose');
-const SensorData = require('./models/SensorData');
-const Room = require('./models/Room');
-const { calculateAQIFromPM25 } = require('./utils/aqiCalculator');
-require('dotenv').config();
-
-async function generateSampleData() {
-  try {
-    await mongoose.connect(process.env.MONGODB_URI);
-    console.log('✅ Connected to MongoDB');
-    
-    // Get all rooms
-    const rooms = await Room.find({ isActive: true });
-    console.log(`Found ${rooms.length} active rooms`);
-    
-    for (const room of rooms) {
-      console.log(`\n📊 Generating sample data for ${room.name}...`);
-      
-      // Delete existing historical data for this room
-      await SensorData.deleteMany({ roomId: room._id });
-      console.log(`   Cleared existing data`);
-      
-      const sampleData = [];
-      const now = new Date();
-      
-      // Generate 7 days of data (every 15 minutes)
-      for (let day = 7; day >= 0; day--) {
-        for (let hour = 0; hour < 24; hour++) {
-          for (let minute = 0; minute < 60; minute += 15) {
-            const timestamp = new Date(now);
-            timestamp.setDate(now.getDate() - day);
-            timestamp.setHours(hour, minute, 0, 0);
-            
-            // Add realistic variation based on time of day
-            let variation = 1.0;
-            if (hour >= 8 && hour <= 17) {
-              // Office hours - higher pollution
-              variation = 1.2 + Math.random() * 0.3;
-            } else if (hour >= 18 && hour <= 22) {
-              // Evening - moderate
-              variation = 1.0 + Math.random() * 0.2;
-            } else {
-              // Night - lower
-              variation = 0.8 + Math.random() * 0.2;
-            }
-            
-            const pm25 = Math.max(5, Math.min(150, room.currentData.pm25 * variation));
-            const pm10 = Math.max(10, Math.min(200, room.currentData.pm10 * variation));
-            const co2 = Math.max(400, Math.min(1500, room.currentData.co2 * variation));
-            const temperature = room.currentData.temperature + (Math.random() * 4 - 2);
-            const humidity = Math.max(30, Math.min(80, room.currentData.humidity + (Math.random() * 10 - 5)));
-            
-            const { aqi, category } = calculateAQIFromPM25(pm25);
-            
-            sampleData.push({
-              roomId: room._id,
-              roomName: room.name,
-              buildingName: room.buildingName,
-              aqi: aqi,
-              pm25: parseFloat(pm25.toFixed(1)),
-              pm10: parseFloat(pm10.toFixed(1)),
-              co2: Math.round(co2),
-              temperature: parseFloat(temperature.toFixed(1)),
-              humidity: Math.round(humidity),
-              category: category,
-              timestamp: timestamp
-            });
-          }
-        }
-      }
-      
-      // Insert in batches
-      const batchSize = 100;
-      for (let i = 0; i < sampleData.length; i += batchSize) {
-        const batch = sampleData.slice(i, i + batchSize);
-        await SensorData.insertMany(batch);
-        console.log(`   Inserted batch ${Math.floor(i/batchSize) + 1}/${Math.ceil(sampleData.length/batchSize)}`);
-      }
-      
-      console.log(`✅ Generated ${sampleData.length} data points for ${room.name}`);
-    }
-    
-    console.log('\n🎉 Sample data generation completed!');
-    process.exit(0);
-  } catch (error) {
-    console.error('❌ Error:', error);
-    process.exit(1);
-  }
-}
-
-generateSampleData();
-
-================================================================================================================================================================================================
-C:\develop\UNILA-AQI\unila-aqi-backend\src\resetDatabase.js
+C:\Users\fatha\Develop\UNILA-AQI\unila-aqi-backend\src\resetDatabase.js
 
 const mongoose = require('mongoose');
 const { seedSampleData, clearSampleData } = require('./utils/seedData');
@@ -22139,217 +21986,68 @@ async function resetDatabase() {
 resetDatabase();
 
 ================================================================================================================================================================================================
-C:\develop\UNILA-AQI\unila-aqi-backend\src\syncBuildingNames.js
+C:\Users\fatha\Develop\UNILA-AQI\unila-aqi-backend\Dockerfile
 
-const mongoose = require('mongoose');
-require('dotenv').config();
+FROM node:20-alpine
 
-async function syncBuildingNames() {
-  try {
-    console.log('🔄 Starting building name sync...');
-    
-    // Connect to MongoDB
-    console.log('🔗 Connecting to MongoDB...');
-    await mongoose.connect(process.env.MONGODB_URI);
-    console.log('✅ Connected to MongoDB');
-    
-    // Import models after connection
-    const Building = require('./models/Building');
-    const Room = require('./models/Room');
-    
-    // Get all buildings
-    const buildings = await Building.find();
-    console.log(`📊 Found ${buildings.length} buildings`);
-    
-    let totalUpdated = 0;
-    
-    // For each building, update all related rooms
-    for (const building of buildings) {
-      try {
-        const result = await Room.updateMany(
-          { building: building._id },
-          { $set: { buildingName: building.name } }
-        );
-        
-        if (result.modifiedCount > 0) {
-          console.log(`✅ Updated ${result.modifiedCount} rooms in ${building.name}`);
-          totalUpdated += result.modifiedCount;
-        }
-      } catch (buildingError) {
-        console.error(`❌ Error updating rooms in ${building.name}:`, buildingError.message);
-      }
-    }
-    
-    console.log(`🎉 Sync completed! Total ${totalUpdated} rooms updated.`);
-    
-    // Verify sync
-    console.log('🔍 Verifying sync...');
-    const rooms = await Room.find();
-    let mismatched = 0;
-    
-    for (const room of rooms) {
-      try {
-        if (room.building) {
-          const building = await Building.findById(room.building);
-          if (building && room.buildingName !== building.name) {
-            mismatched++;
-            console.log(`❌ Mismatch: Room "${room.name}" has "${room.buildingName}" but building is "${building.name}"`);
-            
-            // Auto-fix mismatch
-            room.buildingName = building.name;
-            await room.save();
-            console.log(`   ↳ Fixed: Updated to "${building.name}"`);
-          }
-        }
-      } catch (roomError) {
-        console.error(`❌ Error checking room ${room.name}:`, roomError.message);
-      }
-    }
-    
-    if (mismatched > 0) {
-      console.log(`⚠️  Found and fixed ${mismatched} mismatches`);
-    } else {
-      console.log('✅ All room building names are correctly synced!');
-    }
-    
-    // Show summary
-    console.log('\n📊 SYNC SUMMARY:');
-    console.log('----------------');
-    console.log(`Total buildings: ${buildings.length}`);
-    console.log(`Total rooms: ${rooms.length}`);
-    console.log(`Rooms updated: ${totalUpdated}`);
-    console.log(`Mismatches fixed: ${mismatched}`);
-    
-    await mongoose.disconnect();
-    console.log('🔌 Disconnected from MongoDB');
-    process.exit(0);
-  } catch (error) {
-    console.error('❌ Error:', error.message);
-    console.error('Stack:', error.stack);
-    
-    // Show connection string for debugging
-    const uri = process.env.MONGODB_URI || '';
-    const maskedUri = uri.replace(/:[^:@]*@/, ':****@');
-    console.error('Connection string:', maskedUri);
-    
-    process.exit(1);
+WORKDIR /app
+
+COPY package*.json ./
+RUN npm ci --omit=dev
+
+COPY . .
+
+EXPOSE 5000
+
+CMD ["node", "src/app.js"]
+
+================================================================================================================================================================================================
+C:\Users\fatha\Develop\UNILA-AQI\unila-aqi-backend\package.json
+
+{
+  "name": "unila-aqi-backend",
+  "version": "1.0.0",
+  "description": "UNILA Air Quality Index Backend API",
+  "main": "src/app.js",
+  "scripts": {
+    "start": "node src/app.js",
+    "dev": "nodemon src/app.js",
+    "reset-db": "node src/resetDatabase.js",
+    "check-db": "node src/checkDatabase.js",
+    "seed": "node src/seedOnly.js",
+    "test-api": "node src/testApi.js",
+    "test-socket": "node src/testSocket.js",
+    "test": "node --test"
+  },
+  "keywords": ["aqi", "unila", "air-quality", "iot", "mongodb"],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "dependencies": {
+    "axios": "^1.13.2",
+    "bcryptjs": "^3.0.3",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.3",
+    "mongodb": "^7.0.0",
+    "mongoose": "^9.0.2",
+    "node-cron": "^4.2.1",
+    "nodemailer": "^10.1.7",
+    "socket.io": "^4.8.1"
+  },
+  "devDependencies": {
+    "nodemon": "^1.14.10"
   }
 }
 
-// Run the sync
-syncBuildingNames();
-
 ================================================================================================================================================================================================
-C:\develop\UNILA-AQI\unila-aqi-backend\src\testApi.js
+IOT SIMULATOR:
 
-const axios = require('axios');
-
-async function testApi() {
-  const baseUrl = 'http://localhost:5000/api';
-  
-  console.log('🧪 Testing API Endpoints...\n');
-  
-  try {
-    // Test 1: Public endpoints
-    console.log('1. Testing public endpoints...');
-    const statusRes = await axios.get(`${baseUrl}/test/status`);
-    console.log(`   Status: ${JSON.stringify(statusRes.data.data)}`);
-    
-    // Test 2: Get buildings
-    console.log('\n2. Testing buildings endpoint...');
-    const buildingsRes = await axios.get(`${baseUrl}/test/buildings`);
-    console.log(`   Buildings count: ${buildingsRes.data.count}`);
-    
-    // Test 3: Get rooms
-    console.log('\n3. Testing rooms endpoint...');
-    const roomsRes = await axios.get(`${baseUrl}/test/rooms`);
-    console.log(`   Rooms count: ${roomsRes.data.count}`);
-    
-    // Test 4: Auth check
-    console.log('\n4. Testing auth endpoint...');
-    const authRes = await axios.get(`${baseUrl}/auth/check-admin`);
-    console.log(`   Admin registered: ${authRes.data.isRegistered}`);
-    
-    console.log('\n✅ All API tests passed!');
-  } catch (error) {
-    console.error('❌ API Test failed:', error.message);
-  }
-}
-
-testApi();
-
-================================================================================================================================================================================================
-C:\develop\UNILA-AQI\unila-aqi-backend\src\testSocket.js
-
-const io = require('socket.io-client');
-
-const socket = io('http://localhost:5000');
-
-socket.on('connect', () => {
-  console.log('✅ Connected to server');
-  
-  // Join a test room
-  socket.emit('join-room', '694d0ebcdccf55038bed798a');
-  
-  // Send ping
-  socket.emit('ping');
-});
-
-socket.on('pong', (data) => {
-  console.log('🏓 Pong received:', data);
-});
-
-socket.on('room-update', (data) => {
-  console.log('📡 Room update:', data);
-});
-
-socket.on('disconnect', () => {
-  console.log('❌ Disconnected from server');
-});
-
-socket.on('error', (error) => {
-  console.error('❌ Socket error:', error);
-});
-
-// Test sending update after 5 seconds
-setTimeout(() => {
-  console.log('🔄 Testing room update...');
-  socket.emit('room-update', {
-    roomId: '694d0ebcdccf55038bed798a',
-    data: {
-      currentAQI: 45,
-      currentData: {
-        pm25: 10,
-        pm10: 20,
-        co2: 500,
-        temperature: 25,
-        humidity: 60,
-        updatedAt: new Date()
-      },
-      updatedAt: new Date()
-    }
-  });
-}, 5000);
-
-================================================================================================================================================================================================
-C:\develop\UNILA-AQI\unila-aqi-backend\.env
-
-PORT=5000
-MONGODB_URI=mongodb+srv://fathannursidiq:cVrpZXkJPWDESF2F@unila-aqi-cluster.oxakb3w.mongodb.net/
-JWT_SECRET=unila_aqi_secret_key_2025_vvyynnssxx141
-NODE_ENV=development
-
-ALLOW_PRIVATE_IOT_ENDPOINTS=true
-
-SMTP_HOST=smtp.emailsbit.com
-SMTP_PORT=588
-SMTP_SECURITY=STARTTLS
-SMTP_USERNAME=graph-73ce09cc9b504d94
-SMTP_PASSWORD=graph-73ce09cc9b504d94
-SMTP_FROM=unilaaqi@inboxtaken.com
-
-================================================================================================================================================================================================
-C:\develop\UNILA-AQI\unila-iot-simulator\iot-simulator-server-simple.js
+C:\Users\fatha\Develop\UNILA-AQI\unila-iot-simulator\iot-simulator-server-simple.js
 
 const http = require('http');
 const url = require('url');
@@ -22588,13 +22286,13 @@ function generate30SecondBasedData(deviceId) {
 
   const state = deviceStates.get(deviceId);
 
-  // Cache 30 detik
-  //if (secondDataCache.has(deviceId)) {
-   // const cached = secondDataCache.get(deviceId);
-   // if (cached.block30 === current30SecondBlock) {
-     // return cached.data;
-   // }
-  //}
+  //Cache 30 detik
+  if (secondDataCache.has(deviceId)) {
+   const cached = secondDataCache.get(deviceId);
+   if (cached.block30 === current30SecondBlock) {
+     return cached.data;
+   }
+  }
 
   const slot = getTimeSlot(hour);
   const r = TIME_RANGES[slot];
@@ -23224,7 +22922,7 @@ server.listen(PORT, HOST, () => {
 });
 
 ================================================================================================================================================================================================
-C:\develop\UNILA-AQI\unila-iot-simulator\package.json
+C:\Users\fatha\Develop\UNILA-AQI\unila-iot-simulator\package.json
 
 {
   "name": "unila-aqi-iot-simulator-simple",
