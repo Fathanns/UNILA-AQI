@@ -208,59 +208,33 @@ class RoomCard extends StatelessWidget {
 
               const SizedBox(height: 12),
 
-              // Footer
+              // Footer — semua ruangan kini bersumber dari device IoT
               Row(
                 mainAxisAlignment: MainAxisAlignment.start,
                 children: [
-                  if (room.isIot)
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFE3F2FD),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.sensors, size: 12, color: Colors.blue[700]),
-                          const SizedBox(width: 4),
-                          Text(
-                            'Device IoT',
-                            style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.blue[700],
-                            ),
-                          ),
-                        ],
-                      ),
-                    )
-                  else
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF3E5F5),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.auto_awesome,
-                              size: 12, color: Colors.purple[700]),
-                          const SizedBox(width: 4),
-                          Text(
-                            'Simulasi',
-                            style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.purple[700],
-                            ),
-                          ),
-                        ],
-                      ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE3F2FD),
+                      borderRadius: BorderRadius.circular(12),
                     ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.sensors, size: 12, color: Colors.blue[700]),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Device IoT',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.blue[700],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                   if (!hasAnyData && aqi == null)
                     Padding(
                       padding: const EdgeInsets.only(left: 8),

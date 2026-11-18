@@ -553,7 +553,6 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
     final aqiColor = Helpers.getAQIColor(aqi);
     final aqiLabel = Helpers.getAQILabel(aqi);
     final staleDuration = _getStaleDurationText(room);
-    final isIot = room.dataSource == 'iot';
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
@@ -650,7 +649,7 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
               ],
             ),
 
-            // Source badge
+            // Source badge — satu-satunya sumber data adalah device IoT
             const SizedBox(height: 12),
             Row(
               children: [
@@ -658,31 +657,24 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
                   padding: const EdgeInsets.symmetric(
                       horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(
-                    color: isIot
-                        ? Colors.blue.withOpacity(0.1)
-                        : Colors.purple.withOpacity(0.1),
+                    color: Colors.blue.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(
-                        isIot
-                            ? Icons.sensors
-                            : Icons.auto_awesome,
+                      const Icon(
+                        Icons.sensors,
                         size: 11,
-                        color:
-                            isIot ? Colors.blue : Colors.purple,
+                        color: Colors.blue,
                       ),
                       const SizedBox(width: 4),
                       Text(
-                        isIot ? 'Device IoT' : 'Simulasi',
+                        'Device IoT',
                         style: TextStyle(
                           fontSize: 10,
                           fontWeight: FontWeight.w600,
-                          color: isIot
-                              ? Colors.blue[700]
-                              : Colors.purple[700],
+                          color: Colors.blue[700],
                           fontFamily: 'Inter',
                         ),
                       ),
@@ -975,7 +967,7 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
 }
 
 // ============================================================
-// ADD / EDIT ROOM SCREEN (TIDAK BERUBAH)
+// ADD / EDIT ROOM SCREEN — sumber data: device IoT
 // ============================================================
 class AddEditRoomScreen extends StatefulWidget {
   final Room? room;
@@ -1002,7 +994,6 @@ class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
   final IoTDeviceRepository _iotDeviceRepository = IoTDeviceRepository();
 
   String? _selectedBuildingId;
-  String _selectedDataSource = 'simulation';
   String? _selectedIotDeviceId;
   bool _isLoading = false;
   List<IoTDevice> _iotDevices = [];
@@ -1023,13 +1014,20 @@ class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
               ? widget.buildings.first.id
               : null);
 
-      _selectedDataSource = room.dataSource;
       _selectedIotDeviceId = room.iotDeviceId;
     } else if (widget.buildings.isNotEmpty) {
       _selectedBuildingId = widget.buildings.first.id;
     }
 
     _loadIoTDevices();
+  }
+
+  /// Device yang terpilih tapi tidak ada di daftar akan dianggap null,
+  /// supaya Dropdown tidak crash saat device sudah dihapus / belum termuat.
+  String? get _safeSelectedIotDeviceId {
+    if (_selectedIotDeviceId == null) return null;
+    final exists = _iotDevices.any((d) => d.id == _selectedIotDeviceId);
+    return exists ? _selectedIotDeviceId : null;
   }
 
   Future<void> _loadIoTDevices() async {
@@ -1056,7 +1054,7 @@ class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
       return;
     }
 
-    if (_selectedDataSource == 'iot' && _selectedIotDeviceId == null) {
+    if (_safeSelectedIotDeviceId == null) {
       Helpers.showSnackBar(
           context, 'Pilih device IoT terlebih dahulu',
           isError: true);
@@ -1067,8 +1065,6 @@ class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
 
     try {
       if (widget.isEditing) {
-        final dataSourceChanged = _selectedDataSource !=
-            (widget.room?.dataSource ?? 'simulation');
         final deviceChanged =
             _selectedIotDeviceId != widget.room?.iotDeviceId;
 
@@ -1076,31 +1072,22 @@ class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
           id: widget.room!.id,
           name: _nameController.text.trim(),
           buildingId: _selectedBuildingId!,
-          dataSource: _selectedDataSource,
-          iotDeviceId:
-              _selectedDataSource == 'iot' ? _selectedIotDeviceId : null,
+          iotDeviceId: _selectedIotDeviceId,
         );
 
         if (!mounted) return;
 
         widget.onRoomSaved();
 
-        final String message;
-        if (_selectedDataSource == 'iot' &&
-            (dataSourceChanged || deviceChanged)) {
-          message =
-              'Ruangan diperbarui. Data partikel device baru sedang dimuat…';
-        } else {
-          message = 'Ruangan berhasil diperbarui';
-        }
+        final String message = deviceChanged
+            ? 'Ruangan diperbarui. Data partikel device baru sedang dimuat…'
+            : 'Ruangan berhasil diperbarui';
         Helpers.showSnackBar(context, message);
       } else {
         await _roomRepository.createRoom(
           name: _nameController.text.trim(),
           buildingId: _selectedBuildingId!,
-          dataSource: _selectedDataSource,
-          iotDeviceId:
-              _selectedDataSource == 'iot' ? _selectedIotDeviceId : null,
+          iotDeviceId: _selectedIotDeviceId,
         );
         if (!mounted) return;
         Helpers.showSnackBar(context, 'Ruangan berhasil ditambahkan');
@@ -1202,88 +1189,79 @@ class _AddEditRoomScreenState extends State<AddEditRoomScreen> {
                   style: TextStyle(
                       fontSize: 16, fontWeight: FontWeight.w500)),
               const SizedBox(height: 8),
-              Column(
-                children: [
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: Radio(
-                      value: 'simulation',
-                      groupValue: _selectedDataSource,
-                      onChanged: (value) {
-                        setState(() => _selectedDataSource = value!);
-                      },
-                    ),
-                    title: const Text('Simulasi'),
-                    subtitle: const Text('Data acak setiap 10 detik'),
-                    dense: true,
-                  ),
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: Radio(
-                      value: 'iot',
-                      groupValue: _selectedDataSource,
-                      onChanged: (value) {
-                        setState(() => _selectedDataSource = value!);
-                      },
-                    ),
-                    title: const Text('Device IoT'),
-                    subtitle: const Text('Data dari sensor fisik'),
-                    dense: true,
-                  ),
-                  if (_selectedDataSource == 'iot')
-                    Padding(
-                      padding: const EdgeInsets.only(left: 40, top: 8),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text('Pilih Device IoT:',
-                              style: TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w500)),
-                          const SizedBox(height: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 12),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(
-                                  color: Colors.grey.shade300),
-                            ),
-                            child: DropdownButtonHideUnderline(
-                              child: DropdownButton<String>(
-                                value: _selectedIotDeviceId,
-                                isExpanded: true,
-                                icon:
-                                    const Icon(Icons.arrow_drop_down),
-                                hint: const Text('Pilih Device IoT'),
-                                onChanged: (value) {
-                                  setState(() =>
-                                      _selectedIotDeviceId = value);
-                                },
-                                items: _iotDevices.map((device) {
-                                  return DropdownMenuItem(
-                                    value: device.id,
-                                    child: Text(device.name),
-                                  );
-                                }).toList(),
-                              ),
-                            ),
-                          ),
-                          if (_selectedIotDeviceId == null)
-                            const Padding(
-                              padding: EdgeInsets.only(top: 4),
-                              child: Text(
-                                'Device IoT wajib dipilih untuk sumber data IoT',
-                                style: TextStyle(
-                                    fontSize: 12, color: Colors.red),
-                              ),
-                            ),
-                        ],
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 12, vertical: 14),
+                decoration: BoxDecoration(
+                  color: AppColors.surface,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: AppColors.border),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.sensors,
+                        size: 18, color: AppColors.primary),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Device IoT (sensor fisik)',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textPrimary,
+                        ),
                       ),
                     ),
-                ],
+                  ],
+                ),
               ),
+              const SizedBox(height: 16),
+              const Text('Pilih Device IoT*',
+                  style: TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.w500)),
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.grey.shade300),
+                ),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    value: _safeSelectedIotDeviceId,
+                    isExpanded: true,
+                    icon: const Icon(Icons.arrow_drop_down),
+                    hint: const Text('Pilih Device IoT'),
+                    onChanged: (value) {
+                      setState(() => _selectedIotDeviceId = value);
+                    },
+                    items: _iotDevices.map((device) {
+                      return DropdownMenuItem(
+                        value: device.id,
+                        child: Text(device.name),
+                      );
+                    }).toList(),
+                  ),
+                ),
+              ),
+              if (_iotDevices.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.only(top: 6),
+                  child: Text(
+                    'Belum ada device IoT terdaftar. Tambahkan device terlebih dahulu di menu Kelola Device IoT.',
+                    style: TextStyle(fontSize: 12, color: Colors.red),
+                  ),
+                )
+              else if (_safeSelectedIotDeviceId == null)
+                const Padding(
+                  padding: EdgeInsets.only(top: 6),
+                  child: Text(
+                    'Device IoT wajib dipilih sebagai sumber data',
+                    style: TextStyle(fontSize: 12, color: Colors.red),
+                  ),
+                ),
               const SizedBox(height: 32),
               SizedBox(
                 width: double.infinity,

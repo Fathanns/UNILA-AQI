@@ -119,7 +119,6 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
           name: newName,
           buildingId: _currentRoomData.buildingId,
           buildingName: _currentRoomData.buildingName,
-          dataSource: _currentRoomData.dataSource,
           iotDeviceId: _currentRoomData.iotDeviceId,
           currentAQI: _currentRoomData.currentAQI,
           currentData: _currentRoomData.currentData,
@@ -157,7 +156,6 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
               name: newName?.toString() ?? _currentRoomData.name,
               buildingId: _currentRoomData.buildingId,
               buildingName: _currentRoomData.buildingName,
-              dataSource: _currentRoomData.dataSource,
               iotDeviceId: _currentRoomData.iotDeviceId,
               currentAQI: _currentRoomData.currentAQI,
               currentData: _currentRoomData.currentData,
@@ -190,7 +188,6 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
           name: _currentRoomData.name,
           buildingId: _currentRoomData.buildingId,
           buildingName: newBuildingName,
-          dataSource: _currentRoomData.dataSource,
           iotDeviceId: _currentRoomData.iotDeviceId,
           currentAQI: _currentRoomData.currentAQI,
           currentData: _currentRoomData.currentData,
@@ -375,19 +372,15 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(
-                      _currentRoomData.dataSource == 'iot'
-                          ? Icons.sensors_rounded
-                          : Icons.auto_awesome_mosaic_rounded,
+                    const Icon(
+                      Icons.sensors_rounded,
                       size: 12,
                       color: Colors.white,
                     ),
                     const SizedBox(width: 4),
-                    Text(
-                      _currentRoomData.dataSource == 'iot'
-                          ? 'IoT'
-                          : 'Simulasi',
-                      style: const TextStyle(
+                    const Text(
+                      'IoT',
+                      style: TextStyle(
                         fontSize: 10,
                         fontWeight: FontWeight.w700,
                         color: Colors.white,

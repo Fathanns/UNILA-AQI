@@ -27,9 +27,7 @@ class IoTService {
     this.io = io;
     console.log(`🚀 Starting IoT Service (polling every ${this.pollingInterval/1000}s)...`);
 
-    // 🔥 PERBAIKAN: IoT berjalan di detik ke-15 dan ke-45.
-    // Simulasi berjalan di detik ke-0 dan ke-30.
-    // Ini mencegah keduanya bertabrakan (race condition) di detik yang sama.
+    // IoT berjalan di detik ke-15 dan ke-45 setiap menit.
     this.task = cron.schedule('15,45 * * * * *', async () => {
       await this.pollAllIoTDevices();
     });
@@ -518,7 +516,7 @@ class IoTService {
       const room = await Room.findById(roomId);
       if (!room) return { success: false, message: 'Room not found' };
 
-      if (room.dataSource !== 'iot' || !room.iotDeviceId) {
+      if (!room.iotDeviceId) {
         return { success: false, message: 'Room is not configured for IoT' };
       }
 

@@ -288,20 +288,16 @@ router.post('/force-poll', authMiddleware, adminMiddleware, async (req, res) => 
 router.get('/service/status', authMiddleware, async (req, res) => {
   try {
     const iotService = require('../services/iotService');
-    const simulationService = require('../services/simulationService');
 
     const iotStatus = iotService.getStatus();
-    const simulationStatus = simulationService.getStatus();
 
     res.json({
       success: true,
       data: {
         iot: iotStatus,
-        simulation: simulationStatus,
         summary: {
           iotRunning: iotStatus.isRunning,
-          simulationRunning: simulationStatus.isRunning,
-          totalServices: (iotStatus.isRunning ? 1 : 0) + (simulationStatus.isRunning ? 1 : 0)
+          totalServices: iotStatus.isRunning ? 1 : 0
         }
       }
     });

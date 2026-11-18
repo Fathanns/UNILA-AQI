@@ -3,7 +3,6 @@ const express = require('express');
 const cors = require('cors');
 const http = require('http');
 const socketIo = require('socket.io');
-const simulationService = require('./services/simulationService');
 const iotService = require('./services/iotService');
 const { seedSampleData } = require('./utils/seedData');
 const seedRoutes = require('./routes/seedRoutes');
@@ -158,9 +157,6 @@ io.on('connection', (socket) => {
         timestamp: new Date(),
       });
     } else {
-      simulationService.updateAllRooms().catch((e) => {
-        console.error('❌ simulationService.updateAllRooms error:', e.message);
-      });
       iotService.pollAllIoTDevices().catch((e) => {
         console.error('❌ iotService.pollAllIoTDevices error:', e.message);
       });
@@ -287,15 +283,13 @@ const seedInitialAdmin = async () => {
 // ============================================================
 app.post('/api/force-refresh', authMiddleware, async (req, res) => {
   try {
-    await simulationService.forceUpdate();
     await iotService.forcePollAll();
 
     res.json({
       success: true,
-      message: 'Force refresh completed for both services',
+      message: 'Force refresh completed',
       timestamp: new Date(),
       services: {
-        simulation: 'Forced update completed',
         iot: 'Forced polling completed',
       },
     });
@@ -370,11 +364,9 @@ mongoose
     }
 
     // Start background services
-    simulationService.start(io);
     iotService.start(io);
 
     console.log('✅ All services started');
-    console.log('   - Simulation Service: ACTIVE (30 second intervals)');
     console.log('   - IoT Service: ACTIVE (30 second intervals)');
 
     // ✅ START SERVER SETELAH SEMUA SIAP
@@ -418,7 +410,6 @@ const shutdown = async (signal) => {
 
   // 1) Stop background services
   try {
-    simulationService.stop();
     iotService.stop();
     console.log('⏹️  Background services stopped');
   } catch (e) {

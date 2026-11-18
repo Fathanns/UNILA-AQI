@@ -21,7 +21,6 @@ const broadcastRoomUpdate = (io, room, action, oldData = null) => {
         name: room.name,
         buildingId: room.building,
         buildingName: room.buildingName,
-        dataSource: room.dataSource,
         iotDeviceId: room.iotDeviceId,
         currentAQI: room.currentAQI,
         currentData: room.currentData,
@@ -265,7 +264,7 @@ router.post('/:id/demo-aqi', authMiddleware, adminMiddleware, async (req, res) =
 });
 
 // POST /:id/reset-demo — matikan demoMode, room akan di-update normal
-// oleh simulationService / iotService pada tick berikutnya
+// oleh iotService pada tick berikutnya
 router.post('/:id/reset-demo', authMiddleware, adminMiddleware, async (req, res) => {
   try {
     const room = await Room.findById(req.params.id);
@@ -319,7 +318,7 @@ router.get('/:id', async (req, res) => {
 // POST create room (admin only)
 router.post('/', authMiddleware, adminMiddleware, async (req, res) => {
   try {
-    const { name, buildingId, dataSource, iotDeviceId } = req.body;
+    const { name, buildingId, iotDeviceId } = req.body;
     const io = req.app.get('socketio');
 
     if (!name) {
@@ -335,18 +334,10 @@ router.post('/', authMiddleware, adminMiddleware, async (req, res) => {
       return res.status(404).json({ success: false, message: 'Building not found' });
     }
 
-    const validDataSources = ['simulation', 'iot'];
-    if (dataSource && !validDataSources.includes(dataSource)) {
+    if (!iotDeviceId) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid data source. Must be "simulation" or "iot"'
-      });
-    }
-
-    if (dataSource === 'iot' && !iotDeviceId) {
-      return res.status(400).json({
-        success: false,
-        message: 'IoT Device ID is required for IoT data source'
+        message: 'IoT Device ID is required'
       });
     }
 
@@ -362,8 +353,7 @@ router.post('/', authMiddleware, adminMiddleware, async (req, res) => {
       name: name.trim(),
       building: buildingId,
       buildingName: building.name,
-      dataSource: dataSource || 'simulation',
-      iotDeviceId: dataSource === 'iot' ? iotDeviceId : null,
+      iotDeviceId: iotDeviceId,
       currentAQI: null,        // ✅ no_data sampai poll pertama
       currentData: {
         pm25: null, pm10: null, co: null,
@@ -399,7 +389,7 @@ router.post('/', authMiddleware, adminMiddleware, async (req, res) => {
 // PUT update room (admin only)
 router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
   try {
-    const { name, buildingId, dataSource, iotDeviceId } = req.body;
+    const { name, buildingId, iotDeviceId } = req.body;
     const io = req.app.get('socketio');
 
     const room = await Room.findById(req.params.id).populate('building', 'name');
@@ -411,24 +401,15 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
       name: room.name,
       buildingId: room.building._id ? room.building._id.toString() : room.building.toString(),
       buildingName: room.buildingName,
-      dataSource: room.dataSource,
       iotDeviceId: room.iotDeviceId || null
     };
 
     console.log(`🔄 Room update request for: ${room.name}`);
 
-    const validDataSources = ['simulation', 'iot'];
-    if (dataSource && !validDataSources.includes(dataSource)) {
+    if (iotDeviceId !== undefined && !iotDeviceId) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid data source. Must be "simulation" or "iot"'
-      });
-    }
-
-    if (dataSource === 'iot' && !iotDeviceId) {
-      return res.status(400).json({
-        success: false,
-        message: 'IoT Device ID is required for IoT data source'
+        message: 'IoT Device ID is required'
       });
     }
 
@@ -478,21 +459,14 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
       room.name = name.trim();
     }
 
-    const prevDataSource = oldData.dataSource;
     const prevIotDeviceId = oldData.iotDeviceId || null;
 
-    if (dataSource !== undefined) {
-      room.dataSource = dataSource;
-      room.iotDeviceId = dataSource === 'iot' ? iotDeviceId : null;
-    }
-    if (iotDeviceId !== undefined && dataSource === 'iot') {
+    if (iotDeviceId !== undefined) {
       room.iotDeviceId = iotDeviceId;
     }
     room.updatedAt = new Date();
 
-    const deviceChanged =
-      (prevDataSource !== room.dataSource) ||
-      (prevIotDeviceId !== (room.iotDeviceId || null));
+    const deviceChanged = prevIotDeviceId !== (room.iotDeviceId || null);
 
     if (deviceChanged) {
       room.currentAQI = null;
@@ -518,7 +492,7 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
 
     let deviceFetchStatus = null;
 
-    if (deviceChanged && room.dataSource === 'iot' && room.iotDeviceId) {
+    if (deviceChanged && room.iotDeviceId) {
       try {
         const iotService = require('../services/iotService');
         const fetchResult = await iotService.forceUpdateRoom(room._id.toString());
@@ -604,13 +578,12 @@ router.put('/:id', authMiddleware, adminMiddleware, async (req, res) => {
     const changes = {
       nameChanged: name && name !== oldData.name,
       buildingChanged: buildingChanged,
-      dataSourceChanged: dataSource && dataSource !== oldData.dataSource,
       deviceChanged: deviceChanged,
       deviceFetchStatus: deviceFetchStatus
     };
 
     let responseMessage = 'Room updated successfully';
-    if (deviceChanged && room.dataSource === 'iot') {
+    if (deviceChanged) {
       if (deviceFetchStatus === 'success') {
         responseMessage = 'Room updated & data partikel device baru berhasil dimuat.';
       } else if (deviceFetchStatus === 'failed' || deviceFetchStatus === 'error') {

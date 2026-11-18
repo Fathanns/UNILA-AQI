@@ -27,23 +27,23 @@ const sampleBuildings = [
 
 const sampleRooms = [
   // Gedung H
-  { name: 'H101', buildingCode: 'H', dataSource: 'simulation' },
-  { name: 'H102', buildingCode: 'H', dataSource: 'simulation' },
-  { name: 'H201', buildingCode: 'H', dataSource: 'simulation' },
-  { name: 'Lab Komputer H', buildingCode: 'H', dataSource: 'simulation' },
+  { name: 'H101', buildingCode: 'H' },
+  { name: 'H102', buildingCode: 'H' },
+  { name: 'H201', buildingCode: 'H' },
+  { name: 'Lab Komputer H', buildingCode: 'H' },
   
   // Gedung M
-  { name: 'M101', buildingCode: 'M', dataSource: 'simulation' },
-  { name: 'M102', buildingCode: 'M', dataSource: 'simulation' },
-  { name: 'Lab Kimia M', buildingCode: 'M', dataSource: 'simulation' },
+  { name: 'M101', buildingCode: 'M' },
+  { name: 'M102', buildingCode: 'M' },
+  { name: 'Lab Kimia M', buildingCode: 'M' },
   
   // Gedung A
-  { name: 'A101', buildingCode: 'A', dataSource: 'simulation' },
-  { name: 'Ruang Rapat A', buildingCode: 'A', dataSource: 'simulation' },
+  { name: 'A101', buildingCode: 'A' },
+  { name: 'Ruang Rapat A', buildingCode: 'A' },
   
   // Perpustakaan
-  { name: 'Lobi Perpustakaan', buildingCode: 'LIB', dataSource: 'simulation' },
-  { name: 'Ruang Baca', buildingCode: 'LIB', dataSource: 'simulation' }
+  { name: 'Lobi Perpustakaan', buildingCode: 'LIB' },
+  { name: 'Ruang Baca', buildingCode: 'LIB' }
 ];
 
 const seedSampleData = async () => {
@@ -80,7 +80,9 @@ const seedSampleData = async () => {
       }
     }
 
-    // CREATE ROOMS dengan buildingName yang benar
+    // CREATE ROOMS dengan buildingName yang benar.
+    // Ruangan hasil seed belum punya device IoT, jadi semua nilai data
+    // dikosongkan (null) sampai admin memilih device pada ruangan tsb.
     let roomCount = 0;
     for (const roomData of sampleRooms) {
       try {
@@ -102,16 +104,20 @@ const seedSampleData = async () => {
             name: roomData.name,
             building: building._id,
             buildingName: building.name,
-            dataSource: roomData.dataSource,
-            currentAQI: 0,
+            iotDeviceId: null,
+            currentAQI: null,
             currentData: {
-              pm25: 0,
-              pm10: 0,
-              co2: 0,
-              temperature: 0,
-              humidity: 0,
+              pm25: null,
+              pm10: null,
+              co: null,
+              so2: null,
+              o3: null,
+              no2: null,
+              temperature: null,
+              humidity: null,
               updatedAt: new Date()
             },
+            demoMode: false,
             createdAt: new Date(),
             updatedAt: new Date()
           });

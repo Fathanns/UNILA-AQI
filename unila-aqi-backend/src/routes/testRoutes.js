@@ -21,8 +21,7 @@ router.get('/status', async (req, res) => {
         rooms: roomCount,
         sensorData: sensorDataCount,
         latestUpdate: latestData ? latestData.timestamp : null,
-        serverTime: new Date(),
-        simulationRunning: true
+        serverTime: new Date()
       }
     });
   } catch (error) {

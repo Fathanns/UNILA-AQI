@@ -1,8 +1,8 @@
 /**
  * Service lock — memastikan hanya SATU siklus service
- * (simulation / iot) yang berjalan pada satu waktu.
+ * (iot) yang berjalan pada satu waktu.
  *
- * Tujuan: output terminal tidak saling memotong antar service.
+ * Tujuan: output terminal tidak saling memotong antar siklus.
  *
  * Cara kerja:
  *   - Setiap pemanggil `runExclusive(fn)` mengantre pada promise chain.

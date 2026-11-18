@@ -105,7 +105,6 @@ class RoomRepository {
   Future<Room> createRoom({
     required String name,
     required String buildingId,
-    String dataSource = 'simulation',
     String? iotDeviceId,
   }) async {
     try {
@@ -113,7 +112,6 @@ class RoomRepository {
       final body = jsonEncode({
         'name': name,
         'buildingId': buildingId,
-        'dataSource': dataSource,
         'iotDeviceId': iotDeviceId,
       });
 
@@ -143,7 +141,6 @@ class RoomRepository {
     required String id,
     required String name,
     required String buildingId,
-    String dataSource = 'simulation',
     String? iotDeviceId,
   }) async {
     try {
@@ -151,7 +148,6 @@ class RoomRepository {
       final body = jsonEncode({
         'name': name,
         'buildingId': buildingId,
-        'dataSource': dataSource,
         'iotDeviceId': iotDeviceId,
       });
 

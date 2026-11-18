@@ -15,11 +15,6 @@ const roomSchema = new mongoose.Schema({
     type: String,
     required: true
   },
-  dataSource: {
-    type: String,
-    enum: ['simulation', 'iot'],
-    default: 'simulation'
-  },
   iotDeviceId: {
     type: String,
     default: null
