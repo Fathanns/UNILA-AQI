@@ -87,11 +87,14 @@ app.use('/api/rooms', roomRoutes);
 app.use('/api/iot-devices', iotDeviceRoutes);
 app.use('/api/sensor-data', sensorDataRoutes);
 app.use('/api/ingest', ingestRoutes); // ✅ device mengirim data ke sini (POST /api/ingest/iot)
+const dns = require('dns');
+dns.setServers(['8.8.8.8', '1.1.1.1']);
 
 // Basic route (health check)
 app.get('/', (req, res) => {
   res.json({
     message: 'UNILA AQI Backend API is running',
+    
     database: mongoose.connection.readyState === 1 ? 'Connected' : 'Disconnected',
     timestamp: new Date(),
     socketIO: 'Active',
