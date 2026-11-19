@@ -11,6 +11,7 @@ const buildingRoutes = require('./routes/buildingRoutes');
 const roomRoutes = require('./routes/roomRoutes');
 const iotDeviceRoutes = require('./routes/iotDeviceRoutes');
 const sensorDataRoutes = require('./routes/sensorDataRoutes');
+const ingestRoutes = require('./routes/ingestRoutes'); // ✅ endpoint push dari device IoT
 
 require('dotenv').config();
 
@@ -85,6 +86,7 @@ app.use('/api/buildings', buildingRoutes);
 app.use('/api/rooms', roomRoutes);
 app.use('/api/iot-devices', iotDeviceRoutes);
 app.use('/api/sensor-data', sensorDataRoutes);
+app.use('/api/ingest', ingestRoutes); // ✅ device mengirim data ke sini (POST /api/ingest/iot)
 
 // Basic route (health check)
 app.get('/', (req, res) => {
@@ -198,7 +200,7 @@ io.on('connection', (socket) => {
     serverInfo: {
       name: 'UNILA AQI Backend',
       version: '1.0.0',
-      features: ['real-time-updates', 'room-monitoring', 'dashboard-updates'],
+      features: ['real-time-updates', 'room-monitoring', 'dashboard-updates', 'device-push'],
     },
   });
 });
@@ -281,6 +283,7 @@ const seedInitialAdmin = async () => {
 // ============================================================
 // 8) ENDPOINT FORCE-REFRESH (butuh auth)
 // ============================================================
+// Tombol refresh admin: tarik data dari device sekali (pull on-demand).
 app.post('/api/force-refresh', authMiddleware, async (req, res) => {
   try {
     await iotService.forcePollAll();
@@ -363,17 +366,18 @@ mongoose
       console.log(`📊 Database already has ${buildingCount} buildings, skipping sample seeding`);
     }
 
-    // Start background services
+    // Start background services (watchdog device push)
     iotService.start(io);
 
     console.log('✅ All services started');
-    console.log('   - IoT Service: ACTIVE (30 second intervals)');
+    console.log('   - IoT Service: ACTIVE (device push mode, watchdog 15s)');
 
     // ✅ START SERVER SETELAH SEMUA SIAP
     server.listen(PORT, HOST, () => {
       console.log('═══════════════════════════════════════════════════════');
       console.log(`🚀 Server running on http://${HOST}:${PORT}`);
       console.log(`🌐 API Base URL: /api`);
+      console.log(`📥 Device ingest: POST /api/ingest/iot`);
       console.log(`📡 WebSocket ready`);
       console.log(`🔌 Socket.IO ready for real-time updates`);
       console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
