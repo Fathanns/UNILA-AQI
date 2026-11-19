@@ -211,6 +211,8 @@ function applyAnomaly(pm25, pm10, co, so2, o3, no2, temperature, humidity) {
 }
 
 // Helper: Generate data per 30 detik
+// Hasil dicache per blok 30 detik — pemanggilan berulang dalam blok yang sama
+// mengembalikan data yang sama (GET manual maupun push).
 function generate30SecondBasedData(deviceId) {
   const now = new Date();
   const currentSecond = Math.floor(now.getTime() / 1000);
@@ -235,12 +237,12 @@ function generate30SecondBasedData(deviceId) {
 
   const state = deviceStates.get(deviceId);
 
-  //Cache 30 detik
+  // Cache 30 detik
   if (secondDataCache.has(deviceId)) {
-   const cached = secondDataCache.get(deviceId);
-   if (cached.block30 === current30SecondBlock) {
-     return cached.data;
-   }
+    const cached = secondDataCache.get(deviceId);
+    if (cached.block30 === current30SecondBlock) {
+      return cached.data;
+    }
   }
 
   const slot = getTimeSlot(hour);
@@ -473,18 +475,24 @@ const server = http.createServer((req, res) => {
 
         sendJson(res, 200, {
           status: 'ok',
-          service: 'UNILA AQI IoT Simulator - 30 SECOND UPDATES',
-          version: '7.0.0',
+          service: 'UNILA AQI IoT Simulator - 30 SECOND UPDATES (PUSH)',
+          version: '8.0.0',
           currentTime: now.toISOString(),
           current30SecondBlock,
           secondsInCurrentBlock: now.getSeconds() % 30,
           nextUpdateIn: nextChangeInSeconds,
           devices: registeredDevices.size,
           cacheSize: secondDataCache.size,
+          push: {
+            enabled: Boolean(INGEST_URL && INGEST_SECRET && PUSH_DEVICE_IDS.length),
+            target: INGEST_URL || null,
+            devices: PUSH_DEVICE_IDS,
+          },
           features: [
             '30-second updates',
+            'Push ke backend setiap blok 30 detik',
             'Predictable patterns',
-            'Anomaly simulation (5% spike, 3% error)',
+            'Anomaly simulation (5% spike, 3% sensor error)',
             'Room type variations',
             'Time-of-day patterns',
             'Full ISPU parameters (PM2.5, PM10, CO, SO2, O3, NO2)',
@@ -542,8 +550,6 @@ const server = http.createServer((req, res) => {
         const hasFieldsFilter  = fieldsQuery !== undefined;
         const hasExcludeFilter = excludeQuery !== undefined;
 
-        // ... auto-register, generate ...
-
         let sensorData = generate30SecondBasedData(deviceId);
 
         // ---- Filter SETELAH generate ----
@@ -554,7 +560,6 @@ const server = http.createServer((req, res) => {
           );
         }
 
-        // ---- 5. Bangun response (variabel `now` dst. seperti sebelumnya) ----
         const now = new Date();
         const secondsRemaining = 30 - (now.getSeconds() % 30);
 
@@ -571,7 +576,7 @@ const server = http.createServer((req, res) => {
             nextUpdateInSeconds: secondsRemaining,
             isAnomaly: sensorData.isAnomaly,
             anomalyType: sensorData.anomalyType,
-             appliedFilter: {
+            appliedFilter: {
               fields: hasFieldsFilter ? fieldsQuery : null,
               exclude: hasExcludeFilter ? excludeQuery : null,
             },
@@ -843,18 +848,132 @@ const server = http.createServer((req, res) => {
 });
 
 // ============================================================
+// PUSH KE BACKEND — device mengirim datanya sendiri setiap blok 30 detik
+// ============================================================
+// Konfigurasi (environment variable):
+//   INGEST_URL        contoh: https://unila-aqi-lt8b.onrender.com/api/ingest/iot
+//   INGEST_SECRET     harus sama dengan INGEST_SECRET di backend
+//   PUSH_DEVICE_IDS   daftar deviceId (segmen terakhir apiEndpoint), dipisah koma
+//   PUBLIC_BASE_URL   opsional; default RENDER_EXTERNAL_URL (diset otomatis oleh Render)
+const INGEST_URL = process.env.INGEST_URL || '';
+const INGEST_SECRET = process.env.INGEST_SECRET || '';
+const PUSH_DEVICE_IDS = (process.env.PUSH_DEVICE_IDS || '')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
+
+const PUSH_BLOCK_MS = 30 * 1000;
+const PUSH_OFFSET_MS = 50;     // kirim sedikit setelah pergantian blok
+const PUSH_TIMEOUT_MS = 8000;
+
+function getPublicBase() {
+  const base =
+    process.env.PUBLIC_BASE_URL ||
+    process.env.RENDER_EXTERNAL_URL ||
+    `http://localhost:${PORT}`;
+  return base.replace(/\/+$/, '');
+}
+
+function buildPushPayload(deviceId) {
+  // generate30SecondBasedData meng-cache per blok, jadi GET manual dan push
+  // dalam blok yang sama mengembalikan nilai yang identik.
+  const data = generate30SecondBasedData(deviceId);
+
+  return {
+    deviceId,
+    endpoint: `${getPublicBase()}/data/${deviceId}`,
+    sentAt: new Date().toISOString(),
+    data: {
+      pm25: data.pm25,
+      pm10: data.pm10,
+      co: data.co,
+      so2: data.so2,
+      o3: data.o3,
+      no2: data.no2,
+      temperature: data.temperature,
+      humidity: data.humidity,
+      aqi: data.aqi,
+      category: data.category,
+      dominant: data.dominant,
+      isAnomaly: data.isAnomaly,
+      anomalyType: data.anomalyType,
+      block30: data.block30,
+      timestamp: data.timestamp,
+    },
+  };
+}
+
+async function pushDevice(deviceId) {
+  const payload = buildPushPayload(deviceId);
+  const started = Date.now();
+
+  try {
+    const res = await fetch(INGEST_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Ingest-Secret': INGEST_SECRET,
+      },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(PUSH_TIMEOUT_MS),
+    });
+
+    const body = await res.json().catch(() => ({}));
+    const elapsed = Date.now() - started;
+
+    if (res.ok && body.success) {
+      console.log(
+        `📤 PUSH ${deviceId} → HTTP ${res.status} (${elapsed} ms) AQI=${payload.data.aqi} PM2.5=${payload.data.pm25}`
+      );
+    } else {
+      console.log(
+        `❌ PUSH ${deviceId} gagal → HTTP ${res.status}: ${body.message || 'unknown error'}`
+      );
+    }
+  } catch (err) {
+    console.log(`❌ PUSH ${deviceId} error: ${err.message}`);
+  }
+}
+
+function msUntilNextBlock() {
+  return PUSH_BLOCK_MS - (Date.now() % PUSH_BLOCK_MS) + PUSH_OFFSET_MS;
+}
+
+function startPushLoop() {
+  if (!INGEST_URL || !INGEST_SECRET || PUSH_DEVICE_IDS.length === 0) {
+    console.log('⚠️  Push ke backend NONAKTIF — set INGEST_URL, INGEST_SECRET, dan PUSH_DEVICE_IDS');
+    return;
+  }
+
+  console.log(`📤 Push ke backend aktif → ${INGEST_URL}`);
+  console.log(`   Device: ${PUSH_DEVICE_IDS.join(', ')}`);
+  console.log(`   Base endpoint: ${getPublicBase()}/data/<deviceId>`);
+
+  const tick = () => {
+    // Setiap device dikirim tanpa menunggu yang lain, supaya latensi tetap rendah.
+    PUSH_DEVICE_IDS.forEach((id) => {
+      pushDevice(id);
+    });
+    setTimeout(tick, msUntilNextBlock());
+  };
+
+  setTimeout(tick, msUntilNextBlock());
+}
+
+// ============================================================
 // DEPLOY RENDER: bind 0.0.0.0 & gunakan process.env.PORT
 // ============================================================
 const PORT = process.env.PORT || process.env.IOT_PORT || 3002;
 const HOST = '0.0.0.0'; // ✅ WAJIB untuk Render / Docker / VPS
 
 server.listen(PORT, HOST, () => {
-  console.log('🚀 UNILA AQI IoT Simulator - 30 SECOND UPDATES');
+  console.log('🚀 UNILA AQI IoT Simulator - 30 SECOND UPDATES (PUSH)');
   console.log(`📍 URL: http://${HOST}:${PORT}`);
   console.log(`📡 Health Check: http://${HOST}:${PORT}/health`);
 
   console.log('\n⏰ FEATURE HIGHLIGHTS:');
   console.log('   ✅ Data BERUBAH SETIAP 30 DETIK');
+  console.log('   ✅ PUSH ke backend tepat saat blok 30 detik berganti');
   console.log('   ✅ Pola berdasarkan waktu (jam, hari)');
   console.log('   ✅ ANOMALY: 5% spike (8-17x), 3% sensor error');
   console.log('   ✅ Cache per 30 detik');
@@ -868,4 +987,6 @@ server.listen(PORT, HOST, () => {
   console.log(`  Data akan berubah setiap 30 detik`);
   console.log(`  Sekitar 5% request akan menghasilkan AQI 100-500 (spike)`);
   console.log(`  Sekitar 3% request akan menghasilkan AQI=-1 (sensor error)`);
+
+  startPushLoop();
 });

@@ -4,6 +4,7 @@ import 'package:unila_aqi/data/repositories/room_repository.dart';
 import 'package:unila_aqi/core/services/socket_service.dart';
 import 'package:unila_aqi/core/services/storage_service.dart';
 import '../../data/models/room.dart';
+import '../../data/models/room_realtime.dart';
 
 class RoomProvider with ChangeNotifier {
   final RoomRepository _roomRepository = RoomRepository();
@@ -12,10 +13,9 @@ class RoomProvider with ChangeNotifier {
 
   static const String _cacheKey = 'cache_dashboard_rooms';
 
-  // FIXED: Auto-refresh UI tiap 1 menit.
-  // Backend tetap update DB tiap 10 detik — frontend hanya fetch ulang
-  // dari API setiap 60 detik, bukan live socket.
-  static const Duration _autoRefreshInterval = Duration(minutes: 1);
+  // Debounce untuk reload penuh saat ada perubahan struktur ruangan.
+  // Ini dipicu oleh event, bukan timer periodik.
+  static const Duration _reloadDebounce = Duration(milliseconds: 1200);
 
   List<Room> _rooms = [];
   List<Room> _filteredRooms = [];
@@ -28,12 +28,13 @@ class RoomProvider with ChangeNotifier {
   String _errorMessage = '';
   bool _socketConnected = false;
   bool _isRefreshing = false;
+  bool _wasDisconnected = false;
 
   DateTime _lastUpdate = DateTime.now();
 
-  StreamSubscription? _socketSubscription;
-  // FIXED: timer baru untuk auto-refresh 60 detik.
-  Timer? _autoRefreshTimer;
+  StreamSubscription<bool>? _connectionSubscription;
+  StreamSubscription<Map<String, dynamic>>? _dataSubscription;
+  Timer? _reloadTimer;
 
   List<Room> get rooms => _filteredRooms;
   List<Room> get allRooms => _rooms;
@@ -57,22 +58,19 @@ class RoomProvider with ChangeNotifier {
     return buildingSet.toList();
   }
 
+  // ============================================================
+  // SOCKET — dengarkan event realtime dari backend
+  // ============================================================
   Future<void> initSocket() async {
     try {
       final token = await _storageService.getString('auth_token');
       await _socketService.connect(token: token);
 
-      _socketSubscription = _socketService.connectionStream.listen((connected) {
-        _socketConnected = connected;
-        notifyListeners();
-      });
-
-      // FIXED: Tidak subscribe ke dataStream lagi.
-      // Data update lewat _autoRefreshTimer (60 detik) atau manual refresh.
-      // Socket hanya untuk event struktural (room added/deleted/renamed).
-
-      _setupSocketListeners();
-      _startAutoRefreshTimer();
+      // Subscription dibuat sekali; pemanggilan ulang tidak menduplikasi listener.
+      _connectionSubscription ??=
+          _socketService.connectionStream.listen(_onConnectionChanged);
+      _dataSubscription ??=
+          _socketService.dataStream.listen(_onRealtimeEvent);
 
       _socketConnected = _socketService.isConnected;
       await _storageService.setSocketConnected(_socketConnected);
@@ -84,103 +82,94 @@ class RoomProvider with ChangeNotifier {
     }
   }
 
-  /// FIXED: auto-refresh baru — 1 menit sekali, fetch ulang dari API.
-  void _startAutoRefreshTimer() {
-    _autoRefreshTimer?.cancel();
-    _autoRefreshTimer = Timer.periodic(_autoRefreshInterval, (_) async {
-      if (_isRefreshing) return;
-      print('🔄 RoomProvider auto-refresh (1 minute): fetching fresh data...');
-      await _refreshData();
-    });
+  void _onConnectionChanged(bool connected) {
+    _socketConnected = connected;
+
+    if (!connected) {
+      _wasDisconnected = true;
+    } else if (_wasDisconnected) {
+      // Koneksi pulih: sinkronkan sekali untuk mengambil event yang terlewat.
+      _wasDisconnected = false;
+      _scheduleReload();
+    }
+
+    notifyListeners();
   }
 
-  // FIXED: guard tipe data agar payload null/rusak tidak memicu TypeError.
-  void _handleRoomDeleted(dynamic data) {
-    if (data is! Map) return;
-    try {
-      final map = Map<String, dynamic>.from(data);
-      final roomId = map['roomId'];
-      final roomName = map['roomName'];
+  void _onRealtimeEvent(Map<String, dynamic> event) {
+    final raw = event['data'];
+    if (raw is! Map) return;
+    final data = Map<String, dynamic>.from(raw);
 
-      print('🗑️ Processing room deletion: $roomName ($roomId)');
-
-      final initialLength = _rooms.length;
-      _rooms.removeWhere((room) => room.id == roomId);
-
-      if (_rooms.length < initialLength) {
-        _lastUpdate = DateTime.now();
-        _applyFilters();
-        notifyListeners();
-        print('✅ Room removed from dashboard: $roomName');
-      }
-    } catch (e) {
-      print('❌ Error handling room deletion: $e');
+    switch (event['type']) {
+      case 'dashboard-update':
+        // Perubahan data sensor (IoT) — update in-place.
+        _applyTelemetry(data);
+        break;
+      case 'dashboard-room-updated':
+        // Ruangan dibuat / diubah (nama, gedung, device) — upsert snapshot.
+        _applyRoomSnapshot(data);
+        break;
+      case 'room-deleted':
+        final id = RoomRealtime.roomIdOf(data);
+        if (id == null) return;
+        _rooms.removeWhere((room) => room.id == id);
+        _commitChange();
+        break;
     }
   }
 
-  // FIXED: guard tipe data agar payload null/rusak tidak memicu TypeError.
-  void _handleDashboardRoomUpdated(dynamic data) {
-    if (data is! Map) return;
-    try {
-      final map = Map<String, dynamic>.from(data);
-      final action = map['action'];
-      final roomData = map['room'];
+  /// Update data sensor ruangan. Tidak ada request ke server bila snapshot
+  /// sudah dikirim backend.
+  void _applyTelemetry(Map<String, dynamic> data) {
+    final id = RoomRealtime.roomIdOf(data);
+    if (id == null) return;
 
-      if (action != 'created' || roomData == null || roomData is! Map) return;
-
-      final roomMap = Map<String, dynamic>.from(roomData);
-      final roomId = roomMap['id']?.toString();
-      if (roomId == null) return;
-
-      if (_rooms.any((r) => r.id == roomId)) {
-        print('ℹ️ Room already exists in list, skipping: $roomId');
-        return;
-      }
-
-      final newRoom = Room(
-        id: roomId,
-        name: roomMap['name']?.toString() ?? 'Unknown',
-        buildingId: roomMap['buildingId']?.toString() ?? '',
-        buildingName: roomMap['buildingName']?.toString() ?? 'Unknown',
-        iotDeviceId: roomMap['iotDeviceId']?.toString(),
-        iotDeviceName: roomMap['iotDeviceName']?.toString(),
-        currentAQI: (roomMap['currentAQI'] as num?)?.toInt() ?? 0,
-        currentData: RoomData.fromJson(
-          roomMap['currentData'] is Map
-              ? Map<String, dynamic>.from(roomMap['currentData'])
-              : <String, dynamic>{},
-        ),
-        createdAt: roomMap['createdAt'] != null
-            ? DateTime.parse(roomMap['createdAt'].toString())
-            : DateTime.now(),
-        updatedAt: roomMap['updatedAt'] != null
-            ? DateTime.parse(roomMap['updatedAt'].toString())
-            : DateTime.now(),
-      );
-
-      _rooms.add(newRoom);
-      _lastUpdate = DateTime.now();
-      _applyFilters();
-      notifyListeners();
-
-      print('✅ Room added to dashboard: ${newRoom.name} (${newRoom.buildingName})');
-    } catch (e) {
-      print('❌ Error handling dashboard-room-updated: $e');
+    final snap = RoomRealtime.snapshotOf(data);
+    if (snap == null) {
+      _scheduleReload();
+      return;
     }
+
+    final idx = _rooms.indexWhere((r) => r.id == id);
+    if (idx == -1) {
+      // Ruangan belum ada di daftar lokal — ambil daftar terbaru.
+      _scheduleReload();
+      return;
+    }
+
+    _rooms[idx] = RoomRealtime.merge(_rooms[idx], snap);
+    _commitChange();
   }
 
-  void _setupSocketListeners() {
-    // FIXED: hanya event STRUKTURAL yang di-listen.
-    // 'room-update' & 'dashboard-update' (data AQI tiap 10s) TIDAK di-listen
-    // lagi — data update via _autoRefreshTimer (60s) atau manual refresh.
-    _socketService.on('dashboard-room-updated', _handleDashboardRoomUpdated);
-    _socketService.on('room-name-changed', (data) {
-      handleRoomNameChanged(data);
-    });
-    _socketService.on('room-building-changed', (data) {
-      handleBuildingNameChanged(data);
-    });
-    _socketService.on('room-deleted', _handleRoomDeleted);
+  void _applyRoomSnapshot(Map<String, dynamic> data) {
+    final snap = RoomRealtime.snapshotOf(data);
+    final id = RoomRealtime.roomIdOf(data);
+    if (snap == null || id == null) {
+      _scheduleReload();
+      return;
+    }
+
+    final idx = _rooms.indexWhere((r) => r.id == id);
+    if (idx == -1) {
+      _rooms.add(RoomRealtime.merge(null, snap));
+    } else {
+      _rooms[idx] = RoomRealtime.merge(_rooms[idx], snap);
+    }
+    _commitChange();
+  }
+
+  void _commitChange() {
+    _applyFilters();
+    _lastUpdate = DateTime.now();
+    notifyListeners();
+  }
+
+  /// Reload penuh, digabung (debounce) agar beberapa event beruntun
+  /// hanya memicu satu request.
+  void _scheduleReload() {
+    _reloadTimer?.cancel();
+    _reloadTimer = Timer(_reloadDebounce, () => _refreshSilently());
   }
 
   void _validateSelectedBuilding() {
@@ -289,9 +278,9 @@ class RoomProvider with ChangeNotifier {
     }
   }
 
-  /// FIXED: silent background refresh — dipanggil oleh _autoRefreshTimer.
-  /// Tidak menampilkan spinner, hanya notify kalau ada perubahan.
-  Future<void> _refreshData() async {
+  /// Reload senyap — dipanggil saat ada perubahan struktur atau koneksi pulih.
+  /// Tidak menampilkan spinner, hanya notify bila ada perubahan.
+  Future<void> _refreshSilently() async {
     try {
       final newRooms = await _roomRepository.getRooms();
 
@@ -300,7 +289,10 @@ class RoomProvider with ChangeNotifier {
         hasChanges = true;
       } else {
         for (int i = 0; i < newRooms.length; i++) {
-          if (newRooms[i].currentAQI != _rooms[i].currentAQI ||
+          if (newRooms[i].id != _rooms[i].id ||
+              newRooms[i].name != _rooms[i].name ||
+              newRooms[i].buildingName != _rooms[i].buildingName ||
+              newRooms[i].currentAQI != _rooms[i].currentAQI ||
               newRooms[i].updatedAt != _rooms[i].updatedAt) {
             hasChanges = true;
             break;
@@ -314,19 +306,16 @@ class RoomProvider with ChangeNotifier {
         _lastUpdate = DateTime.now();
         notifyListeners();
 
-        // Cache diperbarui supaya cold-start berikutnya tampil data terbaru
         try {
           await _storageService.setJson(_cacheKey, {
             'data': _rooms.map((r) => r.toJson()).toList(),
           });
         } catch (_) {}
 
-        print('✅ RoomProvider auto-refresh updated ${_rooms.length} rooms');
-      } else {
-        print('ℹ️ RoomProvider auto-refresh: no changes');
+        print('✅ RoomProvider sync updated ${_rooms.length} rooms');
       }
     } catch (e) {
-      print('❌ Error during background refresh: $e');
+      print('❌ Error during silent refresh: $e');
     }
   }
 
@@ -427,101 +416,12 @@ class RoomProvider with ChangeNotifier {
     }
   }
 
-  // FIXED: signature diubah ke dynamic + guard tipe.
-  void handleBuildingNameChanged(dynamic data) {
-    if (data is! Map) return;
-    try {
-      final map = Map<String, dynamic>.from(data);
-      final buildingId = map['buildingId'];
-      final newBuildingName = map['newBuildingName'];
-
-      print('🔄 Processing building name change: $buildingId -> $newBuildingName');
-
-      bool hasChanges = false;
-      for (int i = 0; i < _rooms.length; i++) {
-        if (_rooms[i].buildingId == buildingId) {
-          final updatedRoom = Room(
-            id: _rooms[i].id,
-            name: _rooms[i].name,
-            buildingId: _rooms[i].buildingId,
-            buildingName: newBuildingName ?? _rooms[i].buildingName,
-            iotDeviceId: _rooms[i].iotDeviceId,
-            iotDeviceName: _rooms[i].iotDeviceName,
-            currentAQI: _rooms[i].currentAQI,
-            currentData: _rooms[i].currentData,
-            createdAt: _rooms[i].createdAt,
-            updatedAt: DateTime.now(),
-          );
-
-          _rooms[i] = updatedRoom;
-          hasChanges = true;
-
-          print('✅ Updated room ${_rooms[i].name}: building name -> $newBuildingName');
-        }
-      }
-
-      if (hasChanges) {
-        _applyFilters();
-        _lastUpdate = DateTime.now();
-        notifyListeners();
-      }
-    } catch (e) {
-      print('❌ Error handling building name change: $e');
-    }
-  }
-
-  // FIXED: signature diubah ke dynamic + guard tipe.
-  void handleRoomNameChanged(dynamic data) {
-    if (data is! Map) return;
-    try {
-      final map = Map<String, dynamic>.from(data);
-      final roomId = map['roomId'];
-      final newName = map['newName'];
-      final oldName = map['oldName'];
-      final buildingName = map['buildingName'];
-
-      print('🔄 Processing room name change: $oldName -> $newName ($roomId)');
-
-      final roomIndex = _rooms.indexWhere((room) => room.id == roomId);
-
-      if (roomIndex != -1) {
-        final updatedRoom = Room(
-          id: _rooms[roomIndex].id,
-          name: newName ?? _rooms[roomIndex].name,
-          buildingId: _rooms[roomIndex].buildingId,
-          buildingName: buildingName ?? _rooms[roomIndex].buildingName,
-          iotDeviceId: _rooms[roomIndex].iotDeviceId,
-          iotDeviceName: _rooms[roomIndex].iotDeviceName,
-          currentAQI: _rooms[roomIndex].currentAQI,
-          currentData: _rooms[roomIndex].currentData,
-          createdAt: _rooms[roomIndex].createdAt,
-          updatedAt: DateTime.now(),
-        );
-
-        _rooms[roomIndex] = updatedRoom;
-        _applyFilters();
-        _lastUpdate = DateTime.now();
-        notifyListeners();
-
-        print('✅ Room name updated: $oldName -> $newName');
-      } else {
-        print('⚠️ Room not found in local list: $roomId');
-        _refreshData();
-      }
-    } catch (e) {
-      print('❌ Error handling room name change: $e');
-    }
-  }
-
   @override
   void dispose() {
-    _autoRefreshTimer?.cancel();
-    _socketSubscription?.cancel();
+    _reloadTimer?.cancel();
+    _connectionSubscription?.cancel();
+    _dataSubscription?.cancel();
     _socketService.disconnect();
-    _socketService.off('dashboard-room-updated');
-    _socketService.off('room-deleted');
-    _socketService.off('room-name-changed');
-    _socketService.off('room-building-changed');
     super.dispose();
   }
 }

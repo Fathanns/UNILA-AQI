@@ -29,8 +29,10 @@ class DashboardScreen extends StatefulWidget {
 class _DashboardScreenState extends State<DashboardScreen> {
   final TextEditingController _searchController = TextEditingController();
 
-  // Timer? _autoRefreshTimer;
-  // int _autoRefreshCountdown = 10;
+  // Data ruangan diperbarui realtime oleh RoomProvider (via socket).
+  // Layar ini hanya menampilkan notifikasi perubahan nama ruangan.
+  StreamSubscription<Map<String, dynamic>>? _realtimeSubscription;
+
   bool _isMounted = false;
   bool _isRefreshing = false;
 
@@ -41,195 +43,100 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     // Delay initialization to avoid setState during build
     WidgetsBinding.instance.addPostFrameCallback((_) {
-    if (!_isMounted) return;
-
-    // 🔥 FIXED: sinkronkan search field dengan state provider.
-    // Kalau provider masih menyimpan query lama (mis. dari sesi
-    // sebelumnya), UI tidak akan menampilkan "Belum ada data"
-    // tanpa filter yang terlihat.
-    final roomProvider = Provider.of<RoomProvider>(context, listen: false);
-    if (roomProvider.searchQuery.isNotEmpty) {
-      _searchController.text = roomProvider.searchQuery;
-    }
-
-    _loadInitialData();
-    _setupBuildingUpdateListener();
-    _setupRoomNameUpdateListener();
-  });
-}
-
-  // 🔥 BARU: Setup listener untuk update nama ruangan
-  // FIXED: guard data agar tidak TypeError saat payload rusak.
-  void _setupRoomNameUpdateListener() {
-    Provider.of<RoomProvider>(context, listen: false);
-    final socketService = SocketService();
-
-    // Listen for room name updates
-    socketService.on('room-name-changed', (data) {
       if (!_isMounted) return;
-      final map = _asMap(data);
-      if (map == null) return;
 
-      final oldName = map['oldName']?.toString() ?? '-';
-      final newName = map['newName']?.toString() ?? '-';
+      // Sinkronkan search field dengan state provider.
+      final roomProvider = Provider.of<RoomProvider>(context, listen: false);
+      if (roomProvider.searchQuery.isNotEmpty) {
+        _searchController.text = roomProvider.searchQuery;
+      }
 
-      print('🔄 Room name update received: $oldName -> $newName');
-
-      // Refresh data untuk update tampilan
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (_isMounted) {
-          _refreshData();
-
-          // Show notification
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Nama ruangan diperbarui: $oldName -> $newName'),
-              backgroundColor: Colors.blue,
-              duration: Duration(seconds: 2),
-            ),
-          );
-        }
-      });
-    });
-
-    // Listen for dashboard-room-updated events
-    // FIXED: guard data + nested access.
-    socketService.on('dashboard-room-updated', (data) {
-      if (!_isMounted) return;
-      final map = _asMap(data);
-      if (map == null) return;
-      if (map['action'] != 'updated') return;
-
-      print('📡 Dashboard room update received');
-
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (_isMounted) {
-          _refreshData();
-        }
-      });
+      _loadInitialData();
+      _subscribeRoomNameNotification();
     });
   }
 
-  // FIXED: guard data agar tidak TypeError saat payload rusak.
-  void _setupBuildingUpdateListener() {
-    Provider.of<RoomProvider>(context, listen: false);
-    final socketService = SocketService();
+  void _subscribeRoomNameNotification() {
+    _realtimeSubscription?.cancel();
+    _realtimeSubscription = SocketService().dataStream.listen((event) {
+      if (!_isMounted || event['type'] != 'room-name-changed') return;
 
-    // Listen for building updates
-    socketService.on('building-updated', (data) {
-      if (!_isMounted) return;
-      final map = _asMap(data);
-      if (map == null) return;
+      final raw = event['data'];
+      if (raw is! Map) return;
 
-      print('🏢 Building update received: ${map['action']}');
+      final oldName = raw['oldName']?.toString() ?? '-';
+      final newName = raw['newName']?.toString() ?? '-';
 
-      // Jika building diedit, refresh data
-      if (map['action'] == 'updated') {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (_isMounted) {
-            _refreshData();
-
-            // Show notification
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Data gedung diperbarui'),
-                backgroundColor: Colors.green,
-                duration: Duration(seconds: 2),
-              ),
-            );
-          }
-        });
-      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Nama ruangan diperbarui: $oldName -> $newName'),
+          backgroundColor: Colors.blue,
+          duration: const Duration(seconds: 2),
+        ),
+      );
     });
-  }
-
-  // FIXED: helper untuk memvalidasi payload socket.
-  Map<String, dynamic>? _asMap(dynamic data) {
-    if (data == null) return null;
-    if (data is Map<String, dynamic>) return data;
-    if (data is Map) {
-      try {
-        return Map<String, dynamic>.from(data);
-      } catch (_) {
-        return null;
-      }
-    }
-    return null;
   }
 
   @override
   void dispose() {
     _isMounted = false;
+    _realtimeSubscription?.cancel();
     _searchController.dispose();
-    // _autoRefreshTimer?.cancel();
-
-    // Remove event listeners
-    final socketService = SocketService();
-    socketService.off('building-updated');
-    socketService.off('room-name-changed'); // 🔥 BARU: Hapus listener nama ruangan
-    socketService.off('dashboard-room-updated'); // 🔥 BARU: Hapus listener dashboard
-
     super.dispose();
   }
 
   Future<void> _loadInitialData() async {
-  if (!_isMounted) return;
+    if (!_isMounted) return;
 
-  final roomProvider = Provider.of<RoomProvider>(context, listen: false);
+    final roomProvider = Provider.of<RoomProvider>(context, listen: false);
 
-  // 1) Tampilkan cache dulu (instant, tanpa spinner)
-  await roomProvider.loadFromCache();
-  if (!_isMounted) return;
+    // 1) Tampilkan cache dulu (instant, tanpa spinner)
+    await roomProvider.loadFromCache();
+    if (!_isMounted) return;
 
-  // 2) Fetch dari server
-  try {
-    await roomProvider.loadRooms();
-  } catch (_) {
-    // sudah ditangani di provider
-  }
-  if (!_isMounted) return;
+    // 2) Fetch dari server
+    try {
+      await roomProvider.loadRooms();
+    } catch (_) {
+      // sudah ditangani di provider
+    }
+    if (!_isMounted) return;
 
-  // 3) Tangani state pasca-fetch
-  if (roomProvider.hasError) {
-    final isNetwork = Helpers.isNetworkError(roomProvider.errorMessage);
+    // 3) Tangani state pasca-fetch
+    if (roomProvider.hasError) {
+      final isNetwork = Helpers.isNetworkError(roomProvider.errorMessage);
 
-    if (roomProvider.rooms.isEmpty) {
-      // Kasus yang diminta user:
-      // tidak ada cache SAMA SEKALI + server mati → build() akan
-      // menampilkan error state layar penuh. Snackbar sebagai
-      // pemberitahuan tambahan.
-      if (isNetwork) {
-        Helpers.showServerError(context);
+      if (roomProvider.rooms.isEmpty) {
+        if (isNetwork) {
+          Helpers.showServerError(context);
+        } else {
+          Helpers.showSnackBar(
+            context,
+            'Gagal memuat data ruangan',
+            isError: true,
+          );
+        }
       } else {
-        Helpers.showSnackBar(
-          context,
-          'Gagal memuat data ruangan',
-          isError: true,
-        );
-      }
-    } else {
-      // Ada cache, fetch gagal → tetap tampilkan cache,
-      // cukup beri notifikasi bahwa data mungkin tidak terbaru.
-      if (isNetwork) {
-        Helpers.showSnackBar(
-          context,
-          'Server tidak dapat dihubungi. Menampilkan data terakhir.',
-          isError: true,
-        );
+        if (isNetwork) {
+          Helpers.showSnackBar(
+            context,
+            'Server tidak dapat dihubungi. Menampilkan data terakhir.',
+            isError: true,
+          );
+        }
       }
     }
   }
-}
 
   Future<void> _handleManualRefresh() async {
-  if (_isRefreshing) return;
-  setState(() => _isRefreshing = true);
-  try {
-    await _refreshData();
-  } finally {
-    if (mounted) setState(() => _isRefreshing = false);
+    if (_isRefreshing) return;
+    setState(() => _isRefreshing = true);
+    try {
+      await _refreshData();
+    } finally {
+      if (mounted) setState(() => _isRefreshing = false);
+    }
   }
-}
 
   Future<void> _refreshData() async {
     if (!_isMounted) return;
@@ -262,57 +169,34 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
   }
 
-  Future<void> _refreshDataSilently() async {
-  if (!_isMounted) return;
-
-  final roomProvider = Provider.of<RoomProvider>(context, listen: false);
-
-  try {
-    // `refresh()` di provider sudah punya guard `if (_isRefreshing) return;`
-    // sehingga aman dipanggil meskipun timer 60 detik sedang berjalan.
-    await roomProvider.refresh();
-  } catch (e) {
-    // Silent — cukup log, jangan ganggu user dengan snackbar
-    debugPrint('Auto-refresh on return failed: $e');
-  }
-}
-
   void _handleRoomTap(Room room) {
-  Navigator.push(
-    context,
-    MaterialPageRoute(
-      builder: (context) => RoomDetailScreen(room: room),
-    ),
-  ).then((_) {
-    // FIXED: begitu user kembali dari detail ruangan, ambil data terbaru
-    // dari server. Ini menangkap perubahan yang terjadi di detail
-    // (manual refresh, auto-refresh 60s, atau notification socket).
-    if (_isMounted) {
-      _refreshDataSilently();
-    }
-  });
-}
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => RoomDetailScreen(room: room),
+      ),
+    );
+  }
 
   // FIXED: sebelumnya tidak ada try-catch → unhandled exception saat server
   // mati. Sekarang: error di-log, navigasi tetap dijalankan di `finally`.
   void _handleLogout() async {
-  try {
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    final roomProvider = Provider.of<RoomProvider>(context, listen: false);
+    try {
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final roomProvider = Provider.of<RoomProvider>(context, listen: false);
 
-    await authProvider.logout();
+      await authProvider.logout();
 
-    // 🔥 FIXED: bersihkan state filter ruangan agar tidak "bocor"
-    // ke sesi login berikutnya (search, filter gedung, sort).
-    roomProvider.clearFilters();
-  } catch (e) {
-    debugPrint('❌ Logout error: $e');
-  } finally {
-    if (mounted) {
-      Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
+      // bersihkan state filter ruangan agar tidak "bocor" ke sesi berikutnya
+      roomProvider.clearFilters();
+    } catch (e) {
+      debugPrint('❌ Logout error: $e');
+    } finally {
+      if (mounted) {
+        Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
+      }
     }
   }
-}
 
   void _handleHelpTap() {
     Navigator.push(
@@ -358,31 +242,23 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ],
       ),
       drawer: AppDrawer(
-      isAdmin: widget.isAdminMode,
-      onDashboardTap: () => Navigator.pop(context),
-      onBuildingsTap: () {
-        Navigator.pushNamed(context, '/admin/buildings').then((_) {
-          if (_isMounted) _refreshDataSilently();
-        });
-      },
-      onRoomsTap: () {
-        Navigator.pushNamed(context, '/admin/rooms').then((_) {
-          if (_isMounted) _refreshDataSilently();
-        });
-      },
-      onDevicesTap: () {
-        Navigator.pushNamed(context, '/admin/iot-devices').then((_) {
-          if (_isMounted) _refreshDataSilently();
-        });
-      },
-      onProfileTap: () {
-        Navigator.pushNamed(context, '/admin/profile').then((_) {
-          if (_isMounted) _refreshDataSilently();
-        });
-  },
-  onHelpTap: _handleHelpTap,
-  onLogoutTap: _handleLogout,
-),
+        isAdmin: widget.isAdminMode,
+        onDashboardTap: () => Navigator.pop(context),
+        onBuildingsTap: () {
+          Navigator.pushNamed(context, '/admin/buildings');
+        },
+        onRoomsTap: () {
+          Navigator.pushNamed(context, '/admin/rooms');
+        },
+        onDevicesTap: () {
+          Navigator.pushNamed(context, '/admin/iot-devices');
+        },
+        onProfileTap: () {
+          Navigator.pushNamed(context, '/admin/profile');
+        },
+        onHelpTap: _handleHelpTap,
+        onLogoutTap: _handleLogout,
+      ),
       body: CustomScrollView(
         slivers: [
           // Search and Filter Section
@@ -460,118 +336,116 @@ class _DashboardScreenState extends State<DashboardScreen> {
             )
           // Error State — hanya jika TIDAK ada data sama sekali
           else if (roomProvider.hasError && roomProvider.rooms.isEmpty)
-  SliverFillRemaining(
-    child: Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(
-              Icons.cloud_off_rounded,
-              size: 72,
-              color: AppColors.textHint,
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'Tidak dapat memuat data ruangan',
-              style: Theme.of(context).textTheme.titleLarge,
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              Helpers.friendlyErrorMessage(roomProvider.errorMessage),
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontSize: 14,
-                color: AppColors.textSecondary,
-                height: 1.5,
+            SliverFillRemaining(
+              child: Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(
+                        Icons.cloud_off_rounded,
+                        size: 72,
+                        color: AppColors.textHint,
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Tidak dapat memuat data ruangan',
+                        style: Theme.of(context).textTheme.titleLarge,
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        Helpers.friendlyErrorMessage(roomProvider.errorMessage),
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          color: AppColors.textSecondary,
+                          height: 1.5,
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      ElevatedButton.icon(
+                        onPressed: _refreshData,
+                        icon: const Icon(Icons.refresh, size: 18),
+                        label: const Text('Coba Lagi'),
+                      ),
+                    ],
+                  ),
+                ),
               ),
-            ),
-            const SizedBox(height: 24),
-            ElevatedButton.icon(
-              onPressed: _refreshData,
-              icon: const Icon(Icons.refresh, size: 18),
-              label: const Text('Coba Lagi'),
-            ),
-          ],
-        ),
-      ),
-    ),
-  )
+            )
           // Empty State
           else if (roomProvider.rooms.isEmpty)
-  SliverFillRemaining(
-    child: Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Builder(
-            builder: (context) {
-              // 🔥 FIXED: baca dari provider (sumber kebenaran filter),
-              // bukan dari _searchController yang bisa saja belum disinkronkan.
-              final hasSearch = roomProvider.searchQuery.trim().isNotEmpty;
-              final hasBuildingFilter =
-                  roomProvider.selectedBuilding != 'Semua Gedung';
-              final hasFilter = hasSearch || hasBuildingFilter;
+            SliverFillRemaining(
+              child: Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Builder(
+                    builder: (context) {
+                      final hasSearch = roomProvider.searchQuery.trim().isNotEmpty;
+                      final hasBuildingFilter =
+                          roomProvider.selectedBuilding != 'Semua Gedung';
+                      final hasFilter = hasSearch || hasBuildingFilter;
 
-              final IconData icon;
-              if (hasSearch) {
-                icon = Icons.search_off;
-              } else if (hasBuildingFilter) {
-                icon = Icons.filter_alt_off_outlined;
-              } else {
-                icon = Icons.meeting_room_outlined;
-              }
+                      final IconData icon;
+                      if (hasSearch) {
+                        icon = Icons.search_off;
+                      } else if (hasBuildingFilter) {
+                        icon = Icons.filter_alt_off_outlined;
+                      } else {
+                        icon = Icons.meeting_room_outlined;
+                      }
 
-              final String message;
-              if (hasSearch && hasBuildingFilter) {
-                message =
-                    'Tidak ada ruangan atau gedung yang cocok dengan\n'
-                    '"${roomProvider.searchQuery.trim()}"\n'
-                    'di ${roomProvider.selectedBuilding}';
-              } else if (hasSearch) {
-                message =
-                    'Tidak ada ruangan atau gedung yang cocok dengan\n'
-                    '"${roomProvider.searchQuery.trim()}"';
-              } else if (hasBuildingFilter) {
-                message =
-                    'Tidak ada ruangan di gedung\n'
-                    '"${roomProvider.selectedBuilding}"';
-              } else {
-                message = 'Belum ada data ruangan';
-              }
+                      final String message;
+                      if (hasSearch && hasBuildingFilter) {
+                        message =
+                            'Tidak ada ruangan atau gedung yang cocok dengan\n'
+                            '"${roomProvider.searchQuery.trim()}"\n'
+                            'di ${roomProvider.selectedBuilding}';
+                      } else if (hasSearch) {
+                        message =
+                            'Tidak ada ruangan atau gedung yang cocok dengan\n'
+                            '"${roomProvider.searchQuery.trim()}"';
+                      } else if (hasBuildingFilter) {
+                        message =
+                            'Tidak ada ruangan di gedung\n'
+                            '"${roomProvider.selectedBuilding}"';
+                      } else {
+                        message = 'Belum ada data ruangan';
+                      }
 
-              return Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(icon, size: 64, color: Colors.grey),
-                  const SizedBox(height: 16),
-                  Text(
-                    message,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      color: Colors.grey,
-                      height: 1.5,
-                    ),
+                      return Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(icon, size: 64, color: Colors.grey),
+                          const SizedBox(height: 16),
+                          Text(
+                            message,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              fontSize: 16,
+                              color: Colors.grey,
+                              height: 1.5,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          if (hasFilter)
+                            TextButton.icon(
+                              onPressed: () {
+                                roomProvider.clearFilters();
+                                _searchController.clear();
+                              },
+                              icon: const Icon(Icons.refresh, size: 18),
+                              label: const Text('Reset Filter & Pencarian'),
+                            ),
+                        ],
+                      );
+                    },
                   ),
-                  const SizedBox(height: 8),
-                  if (hasFilter)
-                    TextButton.icon(
-                      onPressed: () {
-                        roomProvider.clearFilters();
-                        _searchController.clear();  // ← tetap clear controller
-                      },
-                      icon: const Icon(Icons.refresh, size: 18),
-                      label: const Text('Reset Filter & Pencarian'),
-                    ),
-                ],
-              );
-            },
-          )
-      ),
-    ),
-  )
+                ),
+              ),
+            )
           // Data State — tetap tampil walau refresh error
           else
             SliverList(
@@ -603,7 +477,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     // Remove duplicates from building list
     final uniqueBuildings = roomProvider.buildings.toSet().toList();
 
-    // ✅ Pastikan value selalu ada di items
+    // Pastikan value selalu ada di items
     String selectedValue = roomProvider.selectedBuilding;
     if (!uniqueBuildings.contains(selectedValue)) {
       selectedValue = 'Semua Gedung';
@@ -616,7 +490,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     return DropdownButtonHideUnderline(
       child: DropdownButton<String>(
-        value: selectedValue, // ✅ gunakan selectedValue
+        value: selectedValue,
         isExpanded: true,
         icon: const Icon(Icons.arrow_drop_down),
         onChanged: (value) {

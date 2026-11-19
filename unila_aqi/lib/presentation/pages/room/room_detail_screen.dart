@@ -4,6 +4,7 @@ import 'package:unila_aqi/core/constants/colors.dart';
 import 'package:unila_aqi/core/services/socket_service.dart';
 import 'package:unila_aqi/core/utils/helpers.dart';
 import 'package:unila_aqi/data/models/room.dart';
+import 'package:unila_aqi/data/models/room_realtime.dart';
 import 'package:unila_aqi/data/repositories/room_repository.dart';
 import 'package:unila_aqi/presentation/widgets/chart/history_chart.dart';
 import '../../widgets/common/server_status_indicator.dart';
@@ -33,13 +34,13 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
   String? _lastNotificationMessage;
   DateTime? _lastNotificationTime;
 
-  // Auto-refresh 1 menit
-  static const Duration _autoRefreshInterval = Duration(minutes: 1);
-
   bool _isRefreshing = false;
   bool _isMounted = false;
   late Room _currentRoomData;
-  Timer? _autoRefreshTimer;
+
+  StreamSubscription<Map<String, dynamic>>? _dataSubscription;
+  StreamSubscription<bool>? _connectionSubscription;
+  bool _wasDisconnected = false;
 
   @override
   void initState() {
@@ -47,177 +48,91 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
     _isMounted = true;
     _currentRoomData = widget.room;
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _joinRoomForUpdates();
-      _setupRealtimeListener();
-      _setupBuildingUpdateListener();
-      _setupRoomNameUpdateListener();
-      _ensureSocketConnected();
-      _startAutoRefreshTimer();
-    });
+    _subscribeRealtime();
   }
 
-  // FIXED: helper untuk validasi payload socket.
-  Map<String, dynamic>? _asMap(dynamic data) {
-    if (data == null) return null;
-    if (data is Map<String, dynamic>) return data;
-    if (data is Map) {
-      try {
-        return Map<String, dynamic>.from(data);
-      } catch (_) {
-        return null;
-      }
+  // ============================================================
+  // REALTIME — tanpa timer, update datang dari socket
+  // ============================================================
+  void _subscribeRealtime() {
+    if (!_socketService.isConnected && !_socketService.isConnecting) {
+      _socketService.connect();
     }
-    return null;
-  }
 
-  // Auto-refresh 60 detik — fetch ulang dari API.
-  void _startAutoRefreshTimer() {
-    _autoRefreshTimer?.cancel();
-    _autoRefreshTimer = Timer.periodic(_autoRefreshInterval, (_) async {
-      if (_isRefreshing || !_isMounted) return;
-      print('🔄 Room detail auto-refresh (1 minute): fetching fresh data...');
-      await _refreshData();
-    });
-  }
+    _dataSubscription = _socketService.dataStream.listen(_onRealtimeEvent);
 
-  void _ensureSocketConnected() {
-    if (!_socketService.isConnected && _isMounted) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _reconnectSocket();
-      });
-    }
-  }
-
-  Future<void> _reconnectSocket() async {
-    try {
-      await _socketService.connect();
-      await Future.delayed(const Duration(seconds: 2));
-      if (_socketService.isConnected) {
-        _joinRoomForUpdates();
-      }
-    } catch (e) {
-      print('❌ Failed to reconnect: $e');
-    }
-  }
-
-  // FIXED: guard data + nested access.
-  void _setupRoomNameUpdateListener() {
-    _socketService.on('room-name-updated', (data) {
+    _connectionSubscription =
+        _socketService.connectionStream.listen((connected) {
       if (!_isMounted) return;
-      final map = _asMap(data);
-      if (map == null) return;
-      if (map['roomId'] != widget.room.id) return;
+      if (!connected) {
+        _wasDisconnected = true;
+        return;
+      }
+      if (_wasDisconnected) {
+        // Koneksi pulih: sinkronkan sekali untuk event yang terlewat.
+        _wasDisconnected = false;
+        _refreshData();
+      }
+    });
+  }
 
-      final newName = map['newName']?.toString();
-      final oldName = map['oldName']?.toString();
-      if (newName == null) return;
+  void _onRealtimeEvent(Map<String, dynamic> event) {
+    if (!_isMounted) return;
 
-      setState(() {
-        _currentRoomData = Room(
-          id: _currentRoomData.id,
-          name: newName,
-          buildingId: _currentRoomData.buildingId,
-          buildingName: _currentRoomData.buildingName,
-          iotDeviceId: _currentRoomData.iotDeviceId,
-          iotDeviceName: _currentRoomData.iotDeviceName,
-          currentAQI: _currentRoomData.currentAQI,
-          currentData: _currentRoomData.currentData,
-          createdAt: _currentRoomData.createdAt,
-          updatedAt: DateTime.now(),
+    final raw = event['data'];
+    if (raw is! Map) return;
+    final data = Map<String, dynamic>.from(raw);
+
+    // Hanya proses event untuk ruangan ini.
+    if (RoomRealtime.roomIdOf(data) != widget.room.id) return;
+
+    final type = event['type'];
+
+    if (type == 'dashboard-update') {
+      // Perubahan data sensor.
+      final snap = RoomRealtime.snapshotOf(data);
+      if (snap == null) {
+        _refreshData();
+        return;
+      }
+      _applyRoomUpdate(RoomRealtime.merge(_currentRoomData, snap));
+    } else if (type == 'dashboard-room-updated') {
+      // Perubahan metadata (nama, gedung, device).
+      final snap = RoomRealtime.snapshotOf(data);
+      if (snap == null) {
+        _refreshData();
+        return;
+      }
+
+      final previous = _currentRoomData;
+      final merged = RoomRealtime.merge(previous, snap);
+      _applyRoomUpdate(merged);
+
+      if (merged.name != previous.name) {
+        _showNotification(
+          'Nama ruangan diperbarui: ${previous.name} -> ${merged.name}',
+          'info',
         );
-      });
-
-      _showNotification(
-          'Nama ruangan diperbarui: ${oldName ?? '-'} -> $newName', 'info');
-    });
-
-    _socketService.on('room-updated', (data) {
-      if (!_isMounted) return;
-      final map = _asMap(data);
-      if (map == null) return;
-
-      final roomData = map['room'];
-      if (roomData is! Map) return;
-      final roomMap = Map<String, dynamic>.from(roomData);
-
-      if (roomMap['id'] != widget.room.id) return;
-
-      if (map['action'] == 'updated' &&
-          map['oldData'] != null &&
-          map['oldData'] is Map) {
-        final oldMap = Map<String, dynamic>.from(map['oldData'] as Map);
-        final newName = roomMap['name'];
-        final oldName = oldMap['name'];
-
-        if (newName != oldName) {
-          setState(() {
-            _currentRoomData = Room(
-              id: _currentRoomData.id,
-              name: newName?.toString() ?? _currentRoomData.name,
-              buildingId: _currentRoomData.buildingId,
-              buildingName: _currentRoomData.buildingName,
-              iotDeviceId: _currentRoomData.iotDeviceId,
-              iotDeviceName: _currentRoomData.iotDeviceName,
-              currentAQI: _currentRoomData.currentAQI,
-              currentData: _currentRoomData.currentData,
-              createdAt: _currentRoomData.createdAt,
-              updatedAt: DateTime.now(),
-            );
-          });
-
-          _showNotification(
-              'Nama ruangan diperbarui: $oldName -> $newName', 'info');
-        }
-      }
-    });
-  }
-
-  // FIXED: guard data.
-  void _setupBuildingUpdateListener() {
-    _socketService.on('room-building-updated', (data) {
-      if (!_isMounted) return;
-      final map = _asMap(data);
-      if (map == null) return;
-      if (map['buildingId'] != widget.room.buildingId) return;
-
-      final newBuildingName = map['newBuildingName']?.toString();
-      if (newBuildingName == null) return;
-
-      setState(() {
-        _currentRoomData = Room(
-          id: _currentRoomData.id,
-          name: _currentRoomData.name,
-          buildingId: _currentRoomData.buildingId,
-          buildingName: newBuildingName,
-          iotDeviceId: _currentRoomData.iotDeviceId,
-          iotDeviceName: _currentRoomData.iotDeviceName,
-          currentAQI: _currentRoomData.currentAQI,
-          currentData: _currentRoomData.currentData,
-          createdAt: _currentRoomData.createdAt,
-          updatedAt: _currentRoomData.updatedAt,
+      } else if (merged.buildingName != previous.buildingName) {
+        _showNotification(
+          'Nama gedung diperbarui: ${merged.buildingName}',
+          'info',
         );
-      });
-
-      _showNotification('Nama gedung diperbarui: $newBuildingName', 'info');
-    });
+      }
+    }
   }
 
-  void _joinRoomForUpdates() {
-    _socketService.joinRoom(widget.room.id);
+  void _applyRoomUpdate(Room updated) {
+    if (!_isMounted) return;
+    setState(() => _currentRoomData = updated);
   }
 
-  void _setupRealtimeListener() {
-    _socketService.on('notification', (data) {
-      if (!_isMounted) return;
-      final map = _asMap(data);
-      if (map == null) return;
-
-      _showNotification(
-        map['message']?.toString() ?? '',
-        map['type']?.toString() ?? 'info',
-      );
-    });
+  @override
+  void dispose() {
+    _isMounted = false;
+    _dataSubscription?.cancel();
+    _connectionSubscription?.cancel();
+    super.dispose();
   }
 
   void _showNotification(String message, String type) {
@@ -283,7 +198,8 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
     );
   }
 
-  /// Fetch data terbaru dari server — dipakai manual refresh & auto-refresh.
+  /// Fetch data terbaru dari server — dipakai manual refresh & sinkronisasi
+  /// setelah koneksi pulih. Bukan polling.
   Future<void> _refreshData() async {
     if (!_isMounted) return;
 
@@ -979,7 +895,6 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
                         ),
                       ),
                       const Spacer(),
-                      // ✅ BARU: tombol refresh di kanan sejajar judul
                       IconButton(
                         onPressed: () => _historyKey.currentState?.refresh(),
                         icon: const Icon(Icons.refresh, size: 20),
@@ -992,7 +907,7 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
                   ),
                   const SizedBox(height: 8),
                   HistoryChart(
-                    key: _historyKey,  // ✅ BARU
+                    key: _historyKey,
                     roomId: _currentRoomData.id,
                     roomName: _currentRoomData.name,
                     buildingName: _currentRoomData.buildingName,
@@ -1000,27 +915,12 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
                 ],
               ),
             ),
-             const SizedBox(height: 16),
+            const SizedBox(height: 16),
             MonthlyTrendChart(roomId: _currentRoomData.id),
-            const SizedBox(height: 16),  
+            const SizedBox(height: 16),
           ],
         ),
       ),
     );
-  }
-
-  @override
-  void dispose() {
-    _isMounted = false;
-    _autoRefreshTimer?.cancel();
-
-    _socketService.leaveRoom(widget.room.id);
-
-    _socketService.off('notification');
-    _socketService.off('room-building-updated');
-    _socketService.off('room-name-updated');
-    _socketService.off('room-updated');
-
-    super.dispose();
   }
 }

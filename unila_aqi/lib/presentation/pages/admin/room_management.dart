@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../data/repositories/room_repository.dart';
 import '../../../data/repositories/building_repository.dart';
 import '../../../data/models/room.dart';
+import '../../../data/models/room_realtime.dart';
 import '../../../data/models/building.dart';
 import '../../../core/utils/helpers.dart';
 import '../../../core/constants/colors.dart';
@@ -29,7 +30,7 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
   final TextEditingController _searchController = TextEditingController();
 
   static const String _cacheKey = 'cache_rooms';
-  static const Duration _autoRefreshInterval = Duration(minutes: 1);
+  static const Duration _reloadDebounce = Duration(milliseconds: 1200);
 
   List<Room> _rooms = [];
   List<Room> _filteredRooms = [];
@@ -38,10 +39,12 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
   bool _isLoading = false;
   bool _hasError = false;
   bool _isRefreshing = false;
+  bool _wasDisconnected = false;
   String _errorMessage = '';
 
-  Timer? _reloadDebounce;
-  Timer? _autoRefreshTimer;
+  Timer? _reloadTimer;
+  StreamSubscription<Map<String, dynamic>>? _dataSubscription;
+  StreamSubscription<bool>? _connectionSubscription;
 
   List<String> get _availableBuildings {
     final set = <String>{'Semua Gedung'};
@@ -62,86 +65,86 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
   void initState() {
     super.initState();
     _loadCacheThenFetch();
-    _setupSocketListeners();
-    _startAutoRefreshTimer();
+    _subscribeRealtime();
   }
 
-  void _startAutoRefreshTimer() {
-    _autoRefreshTimer?.cancel();
-    _autoRefreshTimer = Timer.periodic(_autoRefreshInterval, (_) async {
-      if (_isRefreshing || !mounted) return;
-      await _loadData();
-    });
-  }
-
-  Map<String, dynamic>? _asMap(dynamic data) {
-    if (data == null) return null;
-    if (data is Map<String, dynamic>) return data;
-    if (data is Map) {
-      try {
-        return Map<String, dynamic>.from(data);
-      } catch (_) {
-        return null;
-      }
-    }
-    return null;
-  }
-
-  void _setupSocketListeners() {
+  // ============================================================
+  // REALTIME — tanpa timer, semua update datang dari socket
+  // ============================================================
+  void _subscribeRealtime() {
     if (!_socketService.isConnected && !_socketService.isConnecting) {
       _socketService.connect();
     }
 
-    _socketService.on(
-        'dashboard-room-updated', _handleDashboardRoomUpdated);
-    _socketService.on('room-deleted', _handleRoomDeleted);
-    _socketService.on('room-name-changed', _handleRoomNameChanged);
-    _socketService.on(
-        'room-building-changed', _handleRoomBuildingChanged);
-  }
+    _dataSubscription = _socketService.dataStream.listen(_onRealtimeEvent);
 
-  void _handleDashboardRoomUpdated(dynamic data) {
-    if (!mounted) return;
-    _scheduleReload();
-  }
-
-  void _handleRoomDeleted(dynamic data) {
-    if (!mounted) return;
-    final map = _asMap(data);
-    if (map == null) return;
-    final roomId = map['roomId']?.toString();
-    if (roomId == null) return;
-    setState(() {
-      _rooms.removeWhere((r) => r.id == roomId);
+    _connectionSubscription = _socketService.connectionStream.listen((connected) {
+      if (!mounted) return;
+      if (!connected) {
+        _wasDisconnected = true;
+        return;
+      }
+      if (_wasDisconnected) {
+        // Koneksi pulih: sinkronkan sekali untuk event yang terlewat.
+        _wasDisconnected = false;
+        _scheduleReload();
+      }
     });
+  }
+
+  void _onRealtimeEvent(Map<String, dynamic> event) {
+    if (!mounted) return;
+
+    final raw = event['data'];
+    if (raw is! Map) return;
+    final data = Map<String, dynamic>.from(raw);
+
+    switch (event['type']) {
+      case 'dashboard-update':
+        _applyTelemetry(data);
+        break;
+      case 'dashboard-room-updated':
+        // Perubahan struktur (nama, gedung, device) — reload terdebounce
+        // agar daftar gedung ikut terbarui.
+        _scheduleReload();
+        break;
+      case 'room-deleted':
+        final id = RoomRealtime.roomIdOf(data);
+        if (id == null) return;
+        _rooms.removeWhere((r) => r.id == id);
+        _filterRooms();
+        break;
+    }
+  }
+
+  void _applyTelemetry(Map<String, dynamic> data) {
+    final id = RoomRealtime.roomIdOf(data);
+    if (id == null) return;
+
+    final snap = RoomRealtime.snapshotOf(data);
+    final idx = _rooms.indexWhere((r) => r.id == id);
+
+    if (snap == null || idx == -1) {
+      _scheduleReload();
+      return;
+    }
+
+    _rooms[idx] = RoomRealtime.merge(_rooms[idx], snap);
     _filterRooms();
   }
 
-  void _handleRoomNameChanged(dynamic data) {
-    if (!mounted) return;
-    _scheduleReload();
-  }
-
-  void _handleRoomBuildingChanged(dynamic data) {
-    if (!mounted) return;
-    _scheduleReload();
-  }
-
   void _scheduleReload() {
-    _reloadDebounce?.cancel();
-    _reloadDebounce = Timer(const Duration(milliseconds: 1200), () {
+    _reloadTimer?.cancel();
+    _reloadTimer = Timer(_reloadDebounce, () {
       if (mounted) _loadData();
     });
   }
 
   @override
   void dispose() {
-    _reloadDebounce?.cancel();
-    _autoRefreshTimer?.cancel();
-    _socketService.off('dashboard-room-updated');
-    _socketService.off('room-deleted');
-    _socketService.off('room-name-changed');
-    _socketService.off('room-building-changed');
+    _reloadTimer?.cancel();
+    _dataSubscription?.cancel();
+    _connectionSubscription?.cancel();
     _searchController.dispose();
     super.dispose();
   }
@@ -247,6 +250,8 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
     try {
       ServerStatusIndicator.checkNow();
       try {
+        // Memaksa backend membaca semua device sekarang. Hasilnya tetap
+        // masuk ke UI lewat event socket, bukan lewat timer.
         await _apiService.forceRefresh();
       } catch (_) {}
       await _loadData();
@@ -256,43 +261,42 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
   }
 
   void _filterRooms() {
-  if (!_availableBuildings.contains(_selectedBuildingFilter)) {
-    _selectedBuildingFilter = 'Semua Gedung';
+    if (!_availableBuildings.contains(_selectedBuildingFilter)) {
+      _selectedBuildingFilter = 'Semua Gedung';
+    }
+
+    List<Room> filtered = _rooms;
+
+    if (_selectedBuildingFilter != 'Semua Gedung') {
+      filtered = filtered
+          .where((room) => room.buildingName == _selectedBuildingFilter)
+          .toList();
+    }
+
+    if (_searchController.text.isNotEmpty) {
+      final query = _searchController.text.toLowerCase();
+      filtered = filtered
+          .where((room) =>
+              room.name.toLowerCase().contains(query) ||
+              room.buildingName.toLowerCase().contains(query))
+          .toList();
+    }
+
+    // Kelompokkan per gedung (alfabetis), lalu nama ruangan (alfabetis).
+    filtered = List<Room>.from(filtered)
+      ..sort((a, b) {
+        final cmpBuilding =
+            a.buildingName.toLowerCase().compareTo(b.buildingName.toLowerCase());
+        if (cmpBuilding != 0) return cmpBuilding;
+        return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+      });
+
+    if (mounted) {
+      setState(() => _filteredRooms = filtered);
+    } else {
+      _filteredRooms = filtered;
+    }
   }
-
-  List<Room> filtered = _rooms;
-
-  if (_selectedBuildingFilter != 'Semua Gedung') {
-    filtered = filtered
-        .where((room) => room.buildingName == _selectedBuildingFilter)
-        .toList();
-  }
-
-  if (_searchController.text.isNotEmpty) {
-    final query = _searchController.text.toLowerCase();
-    filtered = filtered
-        .where((room) =>
-            room.name.toLowerCase().contains(query) ||
-            room.buildingName.toLowerCase().contains(query))
-        .toList();
-  }
-
-  // ✅ URUTAN BARU: kelompokkan per gedung (alfabetis),
-  // lalu di dalam gedung yang sama urutkan berdasarkan nama ruangan (alfabetis).
-  filtered = List<Room>.from(filtered)
-    ..sort((a, b) {
-      final cmpBuilding =
-          a.buildingName.toLowerCase().compareTo(b.buildingName.toLowerCase());
-      if (cmpBuilding != 0) return cmpBuilding;
-      return a.name.toLowerCase().compareTo(b.name.toLowerCase());
-    });
-
-  if (mounted) {
-    setState(() => _filteredRooms = filtered);
-  } else {
-    _filteredRooms = filtered;
-  }
-}
 
   Future<void> _deleteRoom(String roomId) async {
     final confirmed = await showDialog<bool>(
@@ -650,7 +654,6 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
             ),
 
             // Sumber data ruangan — tampilkan NAMA device yang dikaitkan.
-            // Bila ruangan belum punya device, tampilkan peringatan.
             const SizedBox(height: 12),
             _buildDeviceBadge(room),
 
@@ -734,51 +737,49 @@ class _RoomManagementScreenState extends State<RoomManagementScreen> {
   }
 
   /// Badge sumber data ruangan.
-  ///
   /// Menampilkan NAMA device IoT yang dikaitkan dengan ruangan ini.
-  /// Jika ruangan belum dikaitkan ke device, tampil teks peringatan.
   Widget _buildDeviceBadge(Room room) {
-  final hasDevice = room.hasDeviceLink;
-  final accent = hasDevice ? Colors.blue : Colors.orange;
-  final textColor = hasDevice ? Colors.blue[700]! : Colors.orange[800]!;
+    final hasDevice = room.hasDeviceLink;
+    final accent = hasDevice ? Colors.blue : Colors.orange;
+    final textColor = hasDevice ? Colors.blue[700]! : Colors.orange[800]!;
 
-  return Align(
-    alignment: Alignment.centerLeft,
-    child: Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: accent.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: accent.withOpacity(0.35)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            hasDevice ? Icons.sensors : Icons.sensors_off,
-            size: 14,
-            color: accent,
-          ),
-          const SizedBox(width: 6),
-          Flexible(
-            child: Text(
-              room.deviceLabel,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 11.5,
-                fontWeight: FontWeight.w600,
-                color: textColor,
-                fontFamily: 'Inter',
-                height: 1.3,
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: accent.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: accent.withOpacity(0.35)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              hasDevice ? Icons.sensors : Icons.sensors_off,
+              size: 14,
+              color: accent,
+            ),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(
+                room.deviceLabel,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w600,
+                  color: textColor,
+                  fontFamily: 'Inter',
+                  height: 1.3,
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
-    ),
-  );
-}
+    );
+  }
 
   Widget _buildCardAction({
     required IconData icon,
