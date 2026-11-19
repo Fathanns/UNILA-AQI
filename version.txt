@@ -20595,6 +20595,8 @@ app.use('/api/rooms', roomRoutes);
 app.use('/api/iot-devices', iotDeviceRoutes);
 app.use('/api/sensor-data', sensorDataRoutes);
 app.use('/api/ingest', ingestRoutes); // ✅ device mengirim data ke sini (POST /api/ingest/iot)
+const dns = require('dns');
+dns.setServers(['8.8.8.8', '1.1.1.1']);
 
 // Basic route (health check)
 app.get('/', (req, res) => {
@@ -21294,12 +21296,81 @@ const deviceStates = new Map();
 const secondDataCache = new Map();
 
 // ============================================================
+// ✅ BARU: Change Detection Configuration
+// Threshold untuk mendeteksi perubahan data yang signifikan
+// ============================================================
+const CHANGE_THRESHOLDS = {
+  pm25: 0.5,        // µg/m³ - perubahan minimal untuk trigger push
+  pm10: 0.5,        // µg/m³
+  co: 50,           // µg/m³ - CO punya range besar
+  so2: 1.0,         // µg/m³
+  o3: 1.0,          // µg/m³
+  no2: 1.0,         // µg/m³
+  temperature: 0.2, // °C
+  humidity: 1,      // %
+  aqi: 1,           // ISPU unit - perubahan AQI minimal 1
+};
+
+// ============================================================
+// ✅ BARU: Fungsi Deteksi Perubahan Data
+// Membandingkan data baru dengan data terakhir yang di-push
+// ============================================================
+function hasSignificantChange(deviceId, newData) {
+  const state = deviceStates.get(deviceId);
+  
+  // Jika belum ada data sebelumnya, selalu push
+  if (!state || !state.lastPushedData) {
+    return true;
+  }
+  
+  const last = state.lastPushedData;
+  
+  // Cek perubahan anomaly status (selalu push jika berubah)
+  if (last.isAnomaly !== newData.isAnomaly) {
+    console.log(`🔄 ${deviceId}: Anomaly status changed (${last.isAnomaly} → ${newData.isAnomaly})`);
+    return true;
+  }
+  
+  if (last.anomalyType !== newData.anomalyType) {
+    console.log(`🔄 ${deviceId}: Anomaly type changed (${last.anomalyType} → ${newData.anomalyType})`);
+    return true;
+  }
+  
+  // Cek perubahan kategori AQI (selalu push jika berubah)
+  if (last.category !== newData.category) {
+    console.log(`🔄 ${deviceId}: Category changed (${last.category} → ${newData.category})`);
+    return true;
+  }
+  
+  // Cek perubahan AQI (integer)
+  if (Math.abs((last.aqi || 0) - (newData.aqi || 0)) >= CHANGE_THRESHOLDS.aqi) {
+    return true;
+  }
+  
+  // Cek perubahan parameter individual
+  const params = ['pm25', 'pm10', 'co', 'so2', 'o3', 'no2', 'temperature', 'humidity'];
+  
+  for (const param of params) {
+    const lastVal = last[param] || 0;
+    const newVal = newData[param] || 0;
+    const threshold = CHANGE_THRESHOLDS[param];
+    
+    if (Math.abs(lastVal - newVal) >= threshold) {
+      return true;
+    }
+  }
+  
+  // Tidak ada perubahan signifikan
+  return false;
+}
+
+// ============================================================
 // Anomaly simulation (SAMA dengan backend dataGenerator)
 // 92% normal / 5% spike (8-17x) / 3% error
 // ============================================================
 function applyAnomaly(pm25, pm10, co, so2, o3, no2, temperature, humidity) {
   const roll = Math.random();
-
+  
   if (roll < 0.05) {
     const subRoll = Math.random();
     let multiplier;
@@ -21310,13 +21381,13 @@ function applyAnomaly(pm25, pm10, co, so2, o3, no2, temperature, humidity) {
     } else {
       multiplier = 13 + Math.random() * 4;  // 13-17x
     }
-
+    
     return {
       isAnomaly: true,
       anomalyType: 'spike',
       pm25: pm25 * multiplier,
       pm10: pm10 * multiplier,
-      co: co * (1.5 + Math.random()), // Spike CO 1.5x - 2.5x dari nilai normal
+      co: co * (1.5 + Math.random()),
       so2: so2 * multiplier,
       o3: o3 * multiplier,
       no2: no2 * multiplier,
@@ -21324,7 +21395,7 @@ function applyAnomaly(pm25, pm10, co, so2, o3, no2, temperature, humidity) {
       humidity,
     };
   }
-
+  
   if (roll < 0.08) {
     return {
       isAnomaly: true,
@@ -21334,7 +21405,7 @@ function applyAnomaly(pm25, pm10, co, so2, o3, no2, temperature, humidity) {
       temperature: -1, humidity: -1,
     };
   }
-
+  
   return {
     isAnomaly: false,
     anomalyType: null,
@@ -21352,7 +21423,7 @@ function generate30SecondBasedData(deviceId) {
   const hour = now.getHours();
   const minute = now.getMinutes();
   const second = now.getSeconds();
-
+  
   // Inisialisasi state device
   if (!deviceStates.has(deviceId)) {
     const hash = deviceId.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
@@ -21361,14 +21432,18 @@ function generate30SecondBasedData(deviceId) {
       prevValues: null,
       last30SecondBlock: current30SecondBlock - 1,
       updateCounter: 0,
+      lastPushedData: null,  // ✅ BARU: Track data terakhir yang di-push
+      lastPushedBlock: -1,   // ✅ BARU: Block terakhir saat push
+      pushCount: 0,          // ✅ BARU: Counter jumlah push
+      skipCount: 0,          // ✅ BARU: Counter jumlah skip
     });
     console.log(`📊 Init device ${deviceId}:`, {
       roomType: ['Kelas', 'Laboratorium', 'Perpustakaan', 'Aula'][deviceStates.get(deviceId).roomType],
     });
   }
-
+  
   const state = deviceStates.get(deviceId);
-
+  
   // Cache 30 detik
   if (secondDataCache.has(deviceId)) {
     const cached = secondDataCache.get(deviceId);
@@ -21376,10 +21451,10 @@ function generate30SecondBasedData(deviceId) {
       return cached.data;
     }
   }
-
+  
   const slot = getTimeSlot(hour);
   const r = TIME_RANGES[slot];
-
+  
   const rawPm25 = randomInRange(r.pm25.min, r.pm25.max, r.pm25.mean);
   const rawPm10 = randomInRange(r.pm10.min, r.pm10.max, r.pm10.mean);
   const rawCo   = randomInRange(r.co.min,  r.co.max,  r.co.mean);
@@ -21388,13 +21463,14 @@ function generate30SecondBasedData(deviceId) {
   const rawNo2  = randomInRange(r.no2.min, r.no2.max, r.no2.mean);
   const rawTemp = randomInRange(r.temperature.min, r.temperature.max, r.temperature.mean);
   const rawRh   = randomInRange(r.humidity.min,    r.humidity.max,    r.humidity.mean);
-
+  
   const alpha = 0.4;
   const prev = state.prevValues || {
     pm25: rawPm25, pm10: rawPm10, co: rawCo,
     so2: rawSo2, o3: rawO3, no2: rawNo2,
     temperature: rawTemp, humidity: rawRh,
   };
+  
   const pm25 = prev.pm25 * (1 - alpha) + rawPm25 * alpha;
   const pm10 = prev.pm10 * (1 - alpha) + rawPm10 * alpha;
   const co   = prev.co  * (1 - alpha) + rawCo  * alpha;
@@ -21403,16 +21479,17 @@ function generate30SecondBasedData(deviceId) {
   const no2  = prev.no2 * (1 - alpha) + rawNo2 * alpha;
   const temperature = prev.temperature * (1 - alpha) + rawTemp * alpha;
   const humidity    = prev.humidity    * (1 - alpha) + rawRh   * alpha;
-
+  
   // Update state (JANGAN feed anomali ke state — supaya spike transien 1 tick)
   state.prevValues = { pm25, pm10, co, so2, o3, no2, temperature, humidity };
   state.updateCounter++;
   state.last30SecondBlock = current30SecondBlock;
-
+  
   const anomalous = applyAnomaly(pm25, pm10, co, so2, o3, no2, temperature, humidity);
-
+  
   // Hitung AQI — konsisten dengan backend aqiCalculator.js
   let finalAQI, finalCategory, dominant;
+  
   if (anomalous.anomalyType === 'error') {
     finalAQI = -1;
     finalCategory = 'error';
@@ -21424,7 +21501,7 @@ function generate30SecondBasedData(deviceId) {
     const ispuSO2  = calculateISPUFromSO2(anomalous.so2);
     const ispuO3   = calculateISPUFromO3(anomalous.o3);
     const ispuNO2  = calculateISPUFromNO2(anomalous.no2);
-
+    
     // Tie-breaker: CO → SO2 → O3 → NO2 → PM2.5 → PM10
     const ordered = [
       { name: 'co',   value: ispuCO   },
@@ -21434,17 +21511,17 @@ function generate30SecondBasedData(deviceId) {
       { name: 'pm25', value: ispuPM25 },
       { name: 'pm10', value: ispuPM10 },
     ];
-
+    
     finalAQI = Math.max(...ordered.map((c) => c.value));
     dominant = ordered.find((c) => c.value === finalAQI).name;
-
+    
     if (finalAQI <= 50) finalCategory = 'baik';
     else if (finalAQI <= 100) finalCategory = 'sedang';
     else if (finalAQI <= 200) finalCategory = 'tidak_sehat';
     else if (finalAQI <= 300) finalCategory = 'sangat_tidak_sehat';
     else finalCategory = 'berbahaya';
   }
-
+  
   const sensorData = {
     deviceId,
     timestamp: now.toISOString(),
@@ -21468,13 +21545,13 @@ function generate30SecondBasedData(deviceId) {
     isAnomaly: anomalous.isAnomaly,
     anomalyType: anomalous.anomalyType,
   };
-
+  
   secondDataCache.set(deviceId, {
     block30: current30SecondBlock,
     data: sensorData,
     timestamp: now,
   });
-
+  
   if (anomalous.isAnomaly) {
     console.log(
       `🚨 ${deviceId} ANOMALY (${anomalous.anomalyType}): AQI=${finalAQI} (${finalCategory}), PM2.5=${sensorData.pm25}, dominant=${dominant}`
@@ -21484,16 +21561,14 @@ function generate30SecondBasedData(deviceId) {
       `🔄 ${deviceId} [${slot}] AQI=${finalAQI} (${dominant}), PM2.5=${sensorData.pm25}, PM10=${sensorData.pm10}, CO=${sensorData.co}, SO2=${sensorData.so2}, O3=${sensorData.o3}, NO2=${sensorData.no2}`
     );
   }
-
+  
   return sensorData;
 }
 
 function filterSensorData(data, fieldsQuery, excludeQuery) {
   const allFields = ['pm25','pm10','co','so2','o3','no2','temperature','humidity'];
-
   let selected;
-
-  // ✅ Gunakan !== undefined agar `?fields=` (string kosong) tetap dianggap filter
+  
   if (fieldsQuery !== undefined) {
     selected = new Set(
       fieldsQuery.split(',').map((f) => f.trim()).filter(Boolean)
@@ -21506,22 +21581,23 @@ function filterSensorData(data, fieldsQuery, excludeQuery) {
   } else {
     selected = new Set(allFields);
   }
-
+  
   const result = { ...data };
   allFields.forEach((f) => {
     if (!selected.has(f)) result[f] = null;
   });
-
+  
   // Recompute AQI dari field yang tersisa
   const has = (v) => typeof v === 'number' && !isNaN(v) && v >= 0;
   const ispus = [];
+  
   if (has(result.pm25)) ispus.push({ name: 'pm25', value: calculateISPUFromPM25(result.pm25) });
   if (has(result.pm10)) ispus.push({ name: 'pm10', value: calculateISPUFromPM10(result.pm10) });
   if (has(result.co))   ispus.push({ name: 'co',   value: calculateISPUFromCO(result.co)   });
   if (has(result.so2))  ispus.push({ name: 'so2',  value: calculateISPUFromSO2(result.so2)  });
   if (has(result.o3))   ispus.push({ name: 'o3',   value: calculateISPUFromO3(result.o3)   });
   if (has(result.no2))  ispus.push({ name: 'no2',  value: calculateISPUFromNO2(result.no2)  });
-
+  
   if (ispus.length === 0) {
     result.aqi = null;
     result.dominant = null;
@@ -21533,13 +21609,14 @@ function filterSensorData(data, fieldsQuery, excludeQuery) {
     const dom = ispus.find((i) => i.value === maxVal);
     result.aqi = maxVal;
     result.dominant = dom.name;
+    
     if (maxVal <= 50) result.category = 'baik';
     else if (maxVal <= 100) result.category = 'sedang';
     else if (maxVal <= 200) result.category = 'tidak_sehat';
     else if (maxVal <= 300) result.category = 'sangat_tidak_sehat';
     else result.category = 'berbahaya';
   }
-
+  
   return result;
 }
 
@@ -21547,7 +21624,6 @@ function filterSensorData(data, fieldsQuery, excludeQuery) {
 setInterval(() => {
   const now = Date.now();
   const currentBlock = Math.floor(now / (30 * 1000));
-
   for (const [deviceId, cache] of secondDataCache.entries()) {
     if (cache.block30 < currentBlock - 3) {
       secondDataCache.delete(deviceId);
@@ -21573,21 +21649,20 @@ const server = http.createServer((req, res) => {
   const parsedUrl = url.parse(req.url, true);
   const pathname = parsedUrl.pathname;
   const method = req.method;
-
   const now = new Date();
+  
   console.log(`[${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}] ${method} ${pathname}`);
-
+  
   setCorsHeaders(res);
-
+  
   if (method === 'OPTIONS') {
     res.writeHead(200);
     res.end();
     return;
   }
-
+  
   let body = '';
   req.on('data', chunk => { body += chunk.toString(); });
-
   req.on('end', () => {
     let requestData = {};
     if (body && req.headers['content-type'] === 'application/json') {
@@ -21597,18 +21672,26 @@ const server = http.createServer((req, res) => {
         return sendJson(res, 400, { success: false, message: 'Invalid JSON' });
       }
     }
-
+    
     try {
       if (pathname === '/health' && (method === 'GET' || method === 'HEAD')) {
         const now = new Date();
         const currentSecond = Math.floor(Date.now() / 1000);
         const current30SecondBlock = Math.floor(currentSecond / 30);
         const nextChangeInSeconds = 30 - (now.getSeconds() % 30);
-
+        
+        // ✅ BARU: Hitung statistik push
+        let totalPush = 0;
+        let totalSkip = 0;
+        for (const [id, state] of deviceStates.entries()) {
+          totalPush += state.pushCount || 0;
+          totalSkip += state.skipCount || 0;
+        }
+        
         sendJson(res, 200, {
           status: 'ok',
-          service: 'UNILA AQI IoT Simulator - 30 SECOND UPDATES (PUSH)',
-          version: '8.0.0',
+          service: 'UNILA AQI IoT Simulator - CHANGE-DETECTION PUSH',
+          version: '9.0.0',
           currentTime: now.toISOString(),
           current30SecondBlock,
           secondsInCurrentBlock: now.getSeconds() % 30,
@@ -21619,10 +21702,19 @@ const server = http.createServer((req, res) => {
             enabled: Boolean(INGEST_URL && INGEST_SECRET && PUSH_DEVICE_IDS.length),
             target: INGEST_URL || null,
             devices: PUSH_DEVICE_IDS,
+            mode: 'change-detection',  // ✅ BARU
+            stats: {                   // ✅ BARU
+              totalPush,
+              totalSkip,
+              pushRate: totalPush + totalSkip > 0 
+                ? ((totalPush / (totalPush + totalSkip)) * 100).toFixed(1) + '%'
+                : '0%'
+            }
           },
           features: [
-            '30-second updates',
-            'Push ke backend setiap blok 30 detik',
+            '30-second data generation',
+            '✅ Push ONLY when data changes significantly',
+            'Change detection with configurable thresholds',
             'Predictable patterns',
             'Anomaly simulation (5% spike, 3% sensor error)',
             'Room type variations',
@@ -21633,19 +21725,19 @@ const server = http.createServer((req, res) => {
         });
         return;
       }
-
+      
       if (pathname === '/register' && method === 'POST') {
         const { deviceId, deviceName, location, roomType } = requestData;
-
+        
         if (!deviceId) {
           return sendJson(res, 400, { success: false, message: 'deviceId is required' });
         }
-
+        
         let roomTypeNum = 0;
         if (roomType === 'laboratory' || roomType === 'lab') roomTypeNum = 1;
         else if (roomType === 'library') roomTypeNum = 2;
         else if (roomType === 'auditorium' || roomType === 'hall') roomTypeNum = 3;
-
+        
         registeredDevices.set(deviceId, {
           deviceId,
           deviceName: deviceName || `Device-${deviceId.substring(0, 8)}`,
@@ -21654,11 +21746,11 @@ const server = http.createServer((req, res) => {
           registeredAt: new Date(),
           lastSeen: new Date(),
           status: 'active',
-          updatePattern: '30-second-based'
+          updatePattern: 'change-detection-push'
         });
-
+        
         console.log(`✅ Device registered: ${deviceId}`);
-
+        
         sendJson(res, 200, {
           success: true,
           message: 'Device registered successfully',
@@ -21666,43 +21758,41 @@ const server = http.createServer((req, res) => {
         });
         return;
       }
-
+      
       if (pathname.startsWith('/data/') && method === 'GET') {
         const deviceId = pathname.split('/')[2];
-
+        
         if (!deviceId) {
           return sendJson(res, 400, { success: false, message: 'Device ID is required' });
         }
-
-        // ---- Baca query param DULU ----
+        
         const fieldsQuery  = parsedUrl.query.fields;
         const excludeQuery = parsedUrl.query.exclude;
-
-        // ✅ Deteksi keberadaan query KEY, bukan truthiness value
+        
         const hasFieldsFilter  = fieldsQuery !== undefined;
         const hasExcludeFilter = excludeQuery !== undefined;
-
+        
         let sensorData = generate30SecondBasedData(deviceId);
-
-        // ---- Filter SETELAH generate ----
+        
         if (hasFieldsFilter || hasExcludeFilter) {
           sensorData = filterSensorData(sensorData, fieldsQuery, excludeQuery);
           console.log(
             `🔎 Filtered ${deviceId}: fields=${JSON.stringify(fieldsQuery)} exclude=${JSON.stringify(excludeQuery)} → AQI=${sensorData.aqi}, dominant=${sensorData.dominant}`
           );
         }
-
+        
         const now = new Date();
         const secondsRemaining = 30 - (now.getSeconds() % 30);
-
+        
         const response = {
           success: true,
           message: 'Sensor data (updates every 30 seconds)',
           device: registeredDevices.get(deviceId),
           data: sensorData,
           metadata: {
-            source: 'UNILA AQI IoT Simulator - 30 SECOND UPDATES',
+            source: 'UNILA AQI IoT Simulator - CHANGE DETECTION PUSH',
             updateFrequency: 'Every 30 seconds',
+            pushMode: 'change-detection',
             currentBlock: sensorData.block30,
             secondsInCurrentBlock: sensorData.secondsInBlock,
             nextUpdateInSeconds: secondsRemaining,
@@ -21724,33 +21814,33 @@ const server = http.createServer((req, res) => {
             }
           }
         };
-
+        
         sendJson(res, 200, response);
         return;
       }
-
+      
       if (pathname.startsWith('/status/') && method === 'GET') {
         const deviceId = pathname.split('/')[2];
-
+        
         if (!deviceId) {
           return sendJson(res, 400, { success: false, message: 'Device ID is required' });
         }
-
+        
         const deviceInfo = registeredDevices.get(deviceId);
         if (!deviceInfo) {
           return sendJson(res, 404, { success: false, message: 'Device not found' });
         }
-
+        
         const now = new Date();
         const lastSeen = new Date(deviceInfo.lastSeen);
         const secondsSinceLastSeen = (now - lastSeen) / 1000;
         const currentSecond = Math.floor(now.getTime() / 1000);
         const current30SecondBlock = Math.floor(currentSecond / 30);
         const secondsRemaining = 30 - (now.getSeconds() % 30);
-
+        
         const state = deviceStates.get(deviceId);
         const cache = secondDataCache.get(deviceId);
-
+        
         sendJson(res, 200, {
           success: true,
           device: deviceInfo,
@@ -21766,56 +21856,65 @@ const server = http.createServer((req, res) => {
             stateInfo: state ? {
               roomType: ['Kelas', 'Laboratorium', 'Perpustakaan', 'Aula'][state.roomType],
               updateCounter: state.updateCounter,
+              pushCount: state.pushCount || 0,
+              skipCount: state.skipCount || 0,
+              lastPushedBlock: state.lastPushedBlock || -1,
             } : 'Not initialized'
           }
         });
         return;
       }
-
+      
       if (pathname.startsWith('/force-update/') && method === 'POST') {
         const deviceId = pathname.split('/')[2];
-
+        
         if (!deviceId) {
           return sendJson(res, 400, { success: false, message: 'Device ID is required' });
         }
-
+        
         secondDataCache.delete(deviceId);
-
+        
         if (deviceStates.has(deviceId)) {
           const state = deviceStates.get(deviceId);
           state.last30SecondBlock = -1;
+          // ✅ BARU: Reset lastPushedData agar force update selalu push
+          state.lastPushedData = null;
         }
-
+        
         console.log(`🔄 Force update triggered for ${deviceId}`);
-
+        
         sendJson(res, 200, {
           success: true,
           message: 'Force update triggered',
           deviceId,
-          note: 'Next request will generate new 30-second-based data'
+          note: 'Next request will generate new 30-second-based data and force push'
         });
         return;
       }
-
+      
       if (pathname.startsWith('/set-base/') && method === 'POST') {
         const deviceId = pathname.split('/')[2];
         const { pm25, pm10, co, so2, o3, no2, temperature, humidity, roomType } = requestData;
-
+        
         if (!deviceId) {
           return sendJson(res, 400, { success: false, message: 'Device ID is required' });
         }
-
+        
         if (!deviceStates.has(deviceId)) {
           deviceStates.set(deviceId, {
             basePM25: 20, basePM10: 40, baseCO: 1500,
             baseSO2: 40, baseO3: 60, baseNO2: 50,
             baseTemp: 23, baseHumidity: 50, roomType: 0,
-            trendPM25: 0, trendCO: 0, last30SecondBlock: -1, updateCounter: 0
+            trendPM25: 0, trendCO: 0, last30SecondBlock: -1, updateCounter: 0,
+            lastPushedData: null,
+            lastPushedBlock: -1,
+            pushCount: 0,
+            skipCount: 0,
           });
         }
-
+        
         const state = deviceStates.get(deviceId);
-
+        
         if (pm25 !== undefined) state.basePM25 = pm25;
         if (pm10 !== undefined) state.basePM10 = pm10;
         if (co !== undefined) state.baseCO = co;
@@ -21830,9 +21929,9 @@ const server = http.createServer((req, res) => {
           else if (roomType === 'auditorium' || roomType === 'hall') state.roomType = 3;
           else state.roomType = 0;
         }
-
+        
         secondDataCache.delete(deviceId);
-
+        
         sendJson(res, 200, {
           success: true,
           message: 'Custom base values set',
@@ -21851,50 +21950,49 @@ const server = http.createServer((req, res) => {
         });
         return;
       }
-
+      
       if (pathname.startsWith('/history/') && method === 'GET') {
         const deviceId = pathname.split('/')[2];
         const blocks = parseInt(parsedUrl.query.blocks) || 60;
-
+        
         if (!deviceId) {
           return sendJson(res, 400, { success: false, message: 'Device ID is required' });
         }
-
+        
         const now = new Date();
         const currentSecond = Math.floor(now.getTime() / 1000);
         const currentBlock = Math.floor(currentSecond / 30);
         const history = [];
-
+        
         if (deviceStates.has(deviceId)) {
           const state = deviceStates.get(deviceId);
-
+          
           for (let i = blocks; i >= 0; i--) {
             const historyBlock = currentBlock - i;
             const historyTime = new Date(now.getTime() - (i * 30 * 1000));
-
             const updateOffset = state.updateCounter - i;
             const hour = historyTime.getHours();
             const minute = historyTime.getMinutes();
-
+            
             let timeFactor = 1.0;
             if (hour >= 7 && hour <= 18) timeFactor = 1.2;
-
+            
             const pm25 = state.basePM25 * timeFactor * (1 + Math.sin(updateOffset * 0.2) * 0.2);
             const pm10 = pm25 * 2;
             const co = state.baseCO * timeFactor;
             const so2 = (state.baseSO2 ?? 40) * timeFactor;
             const o3 = (state.baseO3 ?? 60) * timeFactor;
             const no2 = (state.baseNO2 ?? 50) * timeFactor;
-
-            // AQI dihitung dari semua parameter (konsisten dgn backend)
+            
             const ispuPM25 = calculateISPUFromPM25(pm25);
             const ispuPM10 = calculateISPUFromPM10(pm10);
             const ispuCO   = calculateISPUFromCO(co);
             const ispuSO2  = calculateISPUFromSO2(so2);
             const ispuO3   = calculateISPUFromO3(o3);
             const ispuNO2  = calculateISPUFromNO2(no2);
+            
             const aqi = Math.min(500, Math.max(ispuPM25, ispuPM10, ispuCO, ispuSO2, ispuO3, ispuNO2));
-
+            
             history.push({
               timestamp: historyTime.toISOString(),
               block: historyBlock,
@@ -21910,7 +22008,7 @@ const server = http.createServer((req, res) => {
             });
           }
         }
-
+        
         sendJson(res, 200, {
           success: true,
           deviceId,
@@ -21921,20 +22019,20 @@ const server = http.createServer((req, res) => {
         });
         return;
       }
-
+      
       if (pathname === '/devices' && method === 'GET') {
         const devices = Array.from(registeredDevices.values());
         const now = new Date();
         const currentSecond = Math.floor(now.getTime() / 1000);
         const currentBlock = Math.floor(currentSecond / 30);
         const secondsRemaining = 30 - (now.getSeconds() % 30);
-
+        
         const devicesWithInfo = devices.map(device => {
           const lastSeen = new Date(device.lastSeen);
           const secondsSinceLastSeen = (now - lastSeen) / 1000;
           const state = deviceStates.get(device.deviceId);
           const cache = secondDataCache.get(device.deviceId);
-
+          
           return {
             ...device,
             roomTypeName: ['Kelas', 'Laboratorium', 'Perpustakaan', 'Aula'][device.roomType || 0],
@@ -21942,13 +22040,15 @@ const server = http.createServer((req, res) => {
             secondsSinceLastSeen: Math.round(secondsSinceLastSeen),
             hasState: !!state,
             updateCounter: state ? state.updateCounter : 0,
+            pushCount: state ? state.pushCount || 0 : 0,
+            skipCount: state ? state.skipCount || 0 : 0,
             cachedData: !!cache,
             cachedAtBlock: cache ? cache.block30 : null,
             currentBlock,
             nextUpdateIn: secondsRemaining
           };
         });
-
+        
         sendJson(res, 200, {
           success: true,
           currentBlock,
@@ -21961,13 +22061,13 @@ const server = http.createServer((req, res) => {
         });
         return;
       }
-
+      
       sendJson(res, 404, {
         success: false,
         message: 'Endpoint not found',
         path: pathname
       });
-
+      
     } catch (error) {
       console.error('❌ Server error:', error);
       sendJson(res, 500, {
@@ -21980,13 +22080,8 @@ const server = http.createServer((req, res) => {
 });
 
 // ============================================================
-// PUSH KE BACKEND — device mengirim datanya sendiri setiap blok 30 detik
+// ✅ DIUBAH: PUSH KE BACKEND — Hanya saat data berubah signifikan
 // ============================================================
-// Konfigurasi (environment variable):
-//   INGEST_URL        contoh: https://unila-aqi-lt8b.onrender.com/api/ingest/iot
-//   INGEST_SECRET     harus sama dengan INGEST_SECRET di backend
-//   PUSH_DEVICE_IDS   daftar deviceId (segmen terakhir apiEndpoint), dipisah koma
-//   PUBLIC_BASE_URL   opsional; default RENDER_EXTERNAL_URL (diset otomatis oleh Render)
 const INGEST_URL = process.env.INGEST_URL || '';
 const INGEST_SECRET = process.env.INGEST_SECRET || '';
 const PUSH_DEVICE_IDS = (process.env.PUSH_DEVICE_IDS || '')
@@ -21995,7 +22090,7 @@ const PUSH_DEVICE_IDS = (process.env.PUSH_DEVICE_IDS || '')
   .filter(Boolean);
 
 const PUSH_BLOCK_MS = 30 * 1000;
-const PUSH_OFFSET_MS = 50;     // kirim sedikit setelah pergantian blok
+const PUSH_OFFSET_MS = 50;
 const PUSH_TIMEOUT_MS = 8000;
 
 function getPublicBase() {
@@ -22007,10 +22102,7 @@ function getPublicBase() {
 }
 
 function buildPushPayload(deviceId) {
-  // generate30SecondBasedData meng-cache per blok, jadi GET manual dan push
-  // dalam blok yang sama mengembalikan nilai yang identik.
   const data = generate30SecondBasedData(deviceId);
-
   return {
     deviceId,
     endpoint: `${getPublicBase()}/data/${deviceId}`,
@@ -22035,10 +22127,27 @@ function buildPushPayload(deviceId) {
   };
 }
 
+// ✅ DIUBAH: pushDevice sekarang mengecek perubahan data
 async function pushDevice(deviceId) {
+  const data = generate30SecondBasedData(deviceId);
+  
+  // ✅ BARU: Cek apakah ada perubahan signifikan
+  const hasChanged = hasSignificantChange(deviceId, data);
+  
+  if (!hasChanged) {
+    // Data tidak berubah, skip push
+    const state = deviceStates.get(deviceId);
+    if (state) {
+      state.skipCount = (state.skipCount || 0) + 1;
+    }
+    console.log(`⏭️  SKIP ${deviceId}: Data tidak berubah (AQI=${data.aqi}, Block=${data.block30})`);
+    return;
+  }
+  
+  // Data berubah, lakukan push
   const payload = buildPushPayload(deviceId);
   const started = Date.now();
-
+  
   try {
     const res = await fetch(INGEST_URL, {
       method: 'POST',
@@ -22049,13 +22158,21 @@ async function pushDevice(deviceId) {
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(PUSH_TIMEOUT_MS),
     });
-
+    
     const body = await res.json().catch(() => ({}));
     const elapsed = Date.now() - started;
-
+    
     if (res.ok && body.success) {
+      // ✅ BARU: Update lastPushedData setelah push berhasil
+      const state = deviceStates.get(deviceId);
+      if (state) {
+        state.lastPushedData = { ...data };
+        state.lastPushedBlock = data.block30;
+        state.pushCount = (state.pushCount || 0) + 1;
+      }
+      
       console.log(
-        `📤 PUSH ${deviceId} → HTTP ${res.status} (${elapsed} ms) AQI=${payload.data.aqi} PM2.5=${payload.data.pm25}`
+        `📤 PUSH ${deviceId} → HTTP ${res.status} (${elapsed} ms) AQI=${payload.data.aqi} PM2.5=${payload.data.pm25} [CHANGED]`
       );
     } else {
       console.log(
@@ -22071,24 +22188,27 @@ function msUntilNextBlock() {
   return PUSH_BLOCK_MS - (Date.now() % PUSH_BLOCK_MS) + PUSH_OFFSET_MS;
 }
 
+// ✅ DIUBAH: startPushLoop tetap ada untuk trigger pengecekan, tapi push conditional
 function startPushLoop() {
   if (!INGEST_URL || !INGEST_SECRET || PUSH_DEVICE_IDS.length === 0) {
     console.log('⚠️  Push ke backend NONAKTIF — set INGEST_URL, INGEST_SECRET, dan PUSH_DEVICE_IDS');
     return;
   }
-
-  console.log(`📤 Push ke backend aktif → ${INGEST_URL}`);
+  
+  console.log(`📤 Push ke backend aktif (CHANGE DETECTION MODE) → ${INGEST_URL}`);
   console.log(`   Device: ${PUSH_DEVICE_IDS.join(', ')}`);
   console.log(`   Base endpoint: ${getPublicBase()}/data/<deviceId>`);
-
+  console.log(`   ✅ Push hanya terjadi ketika data berubah signifikan`);
+  console.log(`   Thresholds: AQI≥1, PM2.5≥0.5, PM10≥0.5, CO≥50, Suhu≥0.2°C, RH≥1%`);
+  
   const tick = () => {
-    // Setiap device dikirim tanpa menunggu yang lain, supaya latensi tetap rendah.
+    // Setiap device dicek, push hanya jika data berubah
     PUSH_DEVICE_IDS.forEach((id) => {
       pushDevice(id);
     });
     setTimeout(tick, msUntilNextBlock());
   };
-
+  
   setTimeout(tick, msUntilNextBlock());
 }
 
@@ -22096,16 +22216,16 @@ function startPushLoop() {
 // DEPLOY RENDER: bind 0.0.0.0 & gunakan process.env.PORT
 // ============================================================
 const PORT = process.env.PORT || process.env.IOT_PORT || 3002;
-const HOST = '0.0.0.0'; // ✅ WAJIB untuk Render / Docker / VPS
+const HOST = '0.0.0.0';
 
 server.listen(PORT, HOST, () => {
-  console.log('🚀 UNILA AQI IoT Simulator - 30 SECOND UPDATES (PUSH)');
-  console.log(`📍 URL: http://${HOST}:${PORT}`);
+  console.log('🚀 UNILA AQI IoT Simulator - CHANGE DETECTION PUSH');
+  console.log(`📡 URL: http://${HOST}:${PORT}`);
   console.log(`📡 Health Check: http://${HOST}:${PORT}/health`);
-
-  console.log('\n⏰ FEATURE HIGHLIGHTS:');
-  console.log('   ✅ Data BERUBAH SETIAP 30 DETIK');
-  console.log('   ✅ PUSH ke backend tepat saat blok 30 detik berganti');
+  console.log('\n🎯 FEATURE HIGHLIGHTS:');
+  console.log('   ✅ Data di-generate setiap 30 detik');
+  console.log('   ✅ PUSH hanya saat data BERUBAH SIGNIFIKAN');
+  console.log('   ✅ Change detection dengan threshold yang dapat dikonfigurasi');
   console.log('   ✅ Pola berdasarkan waktu (jam, hari)');
   console.log('   ✅ ANOMALY: 5% spike (8-17x), 3% sensor error');
   console.log('   ✅ Cache per 30 detik');
@@ -22113,13 +22233,22 @@ server.listen(PORT, HOST, () => {
   console.log('   ✅ EMA smoothing (alpha=0.4)');
   console.log('   ✅ ISPU untuk 6 parameter: PM2.5, PM10, CO, SO2, O3, NO2');
   console.log('   ✅ Dominant pollutant detection');
-
+  console.log('\n💡 Change Thresholds:');
+  console.log(`   AQI: ≥${CHANGE_THRESHOLDS.aqi} unit`);
+  console.log(`   PM2.5: ≥${CHANGE_THRESHOLDS.pm25} µg/m³`);
+  console.log(`   PM10: ≥${CHANGE_THRESHOLDS.pm10} µg/m³`);
+  console.log(`   CO: ≥${CHANGE_THRESHOLDS.co} µg/m³`);
+  console.log(`   SO2: ≥${CHANGE_THRESHOLDS.so2} µg/m³`);
+  console.log(`   O3: ≥${CHANGE_THRESHOLDS.o3} µg/m³`);
+  console.log(`   NO2: ≥${CHANGE_THRESHOLDS.no2} µg/m³`);
+  console.log(`   Temperature: ≥${CHANGE_THRESHOLDS.temperature}°C`);
+  console.log(`   Humidity: ≥${CHANGE_THRESHOLDS.humidity}%`);
   console.log('\n💡 Contoh untuk Aplikasi AQI:');
   console.log(`  Endpoint: http://${HOST}:${PORT}/data/kelas-h101`);
-  console.log(`  Data akan berubah setiap 30 detik`);
-  console.log(`  Sekitar 5% request akan menghasilkan AQI 100-500 (spike)`);
-  console.log(`  Sekitar 3% request akan menghasilkan AQI=-1 (sensor error)`);
-
+  console.log(`  Data akan di-generate setiap 30 detik`);
+  console.log(`  Push ke backend hanya saat ada perubahan signifikan`);
+  console.log(`  Anomaly (spike/error) selalu trigger push`);
+  
   startPushLoop();
 });
 
